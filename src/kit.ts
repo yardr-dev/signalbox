@@ -7,14 +7,15 @@
 // drops in here and nowhere else. A model that does not load is a box of the
 // palette instead, and the page still draws.
 //
-// None is drawn in its own colours: the packs paint a model from a texture
-// they share, and flat sorts its faces into the palette's tones instead
-// (palette.ts), so the yard is one flat picture.
+// But for the figures, none is drawn in its own colours: the packs paint a
+// model from a texture they share, and flat sorts its faces into the
+// palette's tones and accents instead (palette.ts), so the yard is one flat
+// picture. A figure wears the pack's texture as it came.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { hat, paint, type Tone } from "./palette";
+import { building, hat, paint, type Accent, type Building, type Tone } from "./palette";
 
 export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
 export type Outfit = "builder" | "reviewer" | "crew";
@@ -93,22 +94,31 @@ const clips: Record<Clip, string> = { idle: "idle", walk: "walk", work: "interac
 const FIGURE_SIZE = 2;
 const FIGURE_HEIGHT = 1.35;
 
+// The name of a material the scene replaces with a colour of its own: a
+// silo's band, by its provider, and the body of what carries a bead, by the
+// bead.
+export const TINT = "tint";
+
 // Length, height, width of the box that stands in for a part.
-const boxes: Record<Part, [number, number, number, Tone]> = {
+// A building's is in its walls' accent, and what a bead rides in is the
+// scene's to paint.
+const boxes: Record<Part, [number, number, number, Tone | Accent | typeof TINT]> = {
   rail: [1, 0.12, 0.8, "track"],
-  wagon: [2.7, 1.3, 1.2, "roof"],
-  locomotive: [2.6, 1.6, 1.3, "slate"],
+  wagon: [2.7, 1.3, 1.2, TINT],
+  locomotive: [2.6, 1.6, 1.3, TINT],
   shunter: [2.4, 1.6, 1.2, "slate"],
-  station: [3.2, 1.3, 1.4, "wall"],
-  hut: [2, 1.4, 2.4, "wall"],
-  office: [2.9, 1.2, 1.7, "wall"],
-  works: [2, 2.2, 2.5, "pale"],
-  silo: [3.6, SILO_HEIGHT, 3.6, "wall"],
+  station: [3.2, 1.3, 1.4, building.station[0]],
+  hut: [2, 1.4, 2.4, building.hut[0]],
+  office: [2.9, 1.2, 1.7, building.office[0]],
+  works: [2, 2.2, 2.5, building.works[0]],
+  silo: [3.6, SILO_HEIGHT, 3.6, building.silo[0]],
 };
 
 function box(part: Part): THREE.Object3D {
-  const [length, height, width, tone] = boxes[part];
-  const group = new THREE.Group().add(block(tone, length, height, width, 0));
+  const [length, height, width, wears] = boxes[part];
+  const body = block(wears === TINT ? "slate" : wears, length, height, width, 0);
+  if (wears === TINT) body.material = accent();
+  const group = new THREE.Group().add(body);
   if (part === "silo") {
     // A silo's box has the band its provider's colour goes on.
     const band = block("slate", length + 0.1, height / 4, width + 0.1, height / 4);
@@ -117,7 +127,7 @@ function box(part: Part): THREE.Object3D {
   }
   if (part !== "works") return group;
   // A works smokes: its box has a stub of a chimney on the roof.
-  const stub = block("roof", STUB, STUB, STUB, height);
+  const stub = block(building.works[1], STUB, STUB, STUB, height);
   stub.position.x = length / 4;
   group.userData[CHIMNEY] = [length / 4, height + STUB, 0];
   return group.add(stub);
@@ -156,7 +166,6 @@ function chimney(model: THREE.Object3D): [number, number, number] | undefined {
 // texture, which every model shares: the faces that lie there become a
 // second material of the mesh, by the name of TINT, for the scene to replace
 // with a colour of its own.
-export const TINT = "tint";
 const ACCENT_U = 0.719;
 function accent(): THREE.MeshStandardMaterial {
   const tint = new THREE.MeshStandardMaterial({ color: 0xff9f38, roughness: 0.95 });
@@ -239,24 +248,37 @@ function texture(u: number, v: number, wears: THREE.Material): Tone {
   return texel ? toned(...texel(u, v)) : "pale";
 }
 
+// What a face is painted in: a tone or an accent of the palette, or TINT for
+// the scene to say.
+export type Wear = Tone | Accent | typeof TINT;
+
 // A part's faces by its texture, each part in its own way. Rail is the
-// track's tone with its rails dark on it. What rolls is a tone darker than
-// what stands, so a wagon is seen before a building and on a platform.
+// track's tone with its rails dark on it. A building has its light faces in
+// its walls' accent and its middling ones in its roof's (palette.ts); its
+// glass and its darkest stay tones. What carries a bead keeps its darkest,
+// wheels and frame, and the rest of it is its body, which the scene paints
+// by the bead. A shunter carries none: it is a tone darker than the packs
+// have it, so it is seen on a platform.
 const DARKER: Partial<Record<Tone, Tone>> = { wall: "pale", pale: "roof", roof: "slate" };
-const ROLLS = new Set<Part>(["wagon", "locomotive", "shunter"]);
-function textured(part: Part): (u: number, v: number, wears: THREE.Material) => Tone {
+function textured(part: Part): (u: number, v: number, wears: THREE.Material) => Wear {
   return (u, v, wears) => {
     const tone = texture(u, v, wears);
     if (part === "rail") return tone === "slate" || tone === "roof" ? "slate" : "track";
-    return ROLLS.has(part) ? (DARKER[tone] ?? tone) : tone;
+    if (part === "shunter") return DARKER[tone] ?? tone;
+    if (part === "wagon" || part === "locomotive") return tone === "slate" ? tone : TINT;
+    if (tone === "slate" || wears.name.endsWith("specular")) return tone;
+    const [wall, roof] = building[part satisfies Building];
+    return tone === "roof" ? roof : wall;
   };
 }
 
-// Paint a model flat: every face in the palette's paint of the tone that
-// tone names for it, by the middle of the face on its texture and the
-// material it wore. The faces are sorted by their paint, a material of the
-// mesh for each. A face the scene paints itself (TINT) stays as it is.
-export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: THREE.Material) => Tone = texture) {
+// Paint a model flat: every face in the palette's paint of what tone names
+// for it, by the middle of the face on its texture and the material it
+// wore. The faces are sorted by their paint, a material of the mesh for
+// each. A face the scene paints itself (TINT) stays as it is, or becomes of
+// one such material for the whole model.
+export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: THREE.Material) => Wear = texture) {
+  const tint = accent();
   model.traverse((part) => {
     if (!(part instanceof THREE.Mesh)) return;
     part.castShadow = part.receiveShadow = true;
@@ -274,7 +296,8 @@ export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: 
       for (let i = run.start; i + 2 < Math.min(run.start + run.count, corners); i += 3) {
         const face = [corner(i), corner(i + 1), corner(i + 2)];
         const middle = (of: "getX" | "getY") => (uv ? face.reduce((sum, c) => sum + uv[of](c), 0) / 3 : 0);
-        const wear = own.name === TINT ? own : paint(tone(middle("getX"), middle("getY"), own));
+        const named = own.name === TINT ? TINT : tone(middle("getX"), middle("getY"), own);
+        const wear = named !== TINT ? paint(named) : own.name === TINT ? own : tint;
         const faces = sorted.get(wear) ?? [];
         sorted.set(wear, faces);
         faces.push(...face);
@@ -292,7 +315,7 @@ export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: 
   });
 }
 
-function block(of: Tone | number, width: number, height: number, depth: number, y: number): THREE.Mesh {
+function block(of: Tone | Accent | number, width: number, height: number, depth: number, y: number): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), paint(of));
   mesh.position.y = y + height / 2;
   mesh.castShadow = mesh.receiveShadow = true;
@@ -311,7 +334,7 @@ function boxFigure(outfit: Outfit): Figure {
 // top of the head, which ends 0.33 above the bone, and a crown on it. It is
 // one part by the name of HAT: a figure that sits has it off.
 export const HAT = "hat";
-function wear(figure: THREE.Object3D, colour: Tone) {
+function wear(figure: THREE.Object3D, colour: number) {
   const head = figure.getObjectByName("head");
   if (!head) return;
   const shell = block(colour, 0.36, 0.07, 0.34, 0.3);
@@ -353,7 +376,10 @@ export async function loadKit(base: string): Promise<Kit> {
     // The pack's figures look along z.
     file.scene.rotation.y = Math.PI / 2;
     file.scene.scale.setScalar(FIGURE_SIZE);
-    flat(file.scene);
+    // In the pack's own colours, and under the yard's one sun and shadow.
+    file.scene.traverse((part) => {
+      if (part instanceof THREE.Mesh) part.castShadow = part.receiveShadow = true;
+    });
     const found: Figure["clips"] = {};
     for (const [clip, name] of Object.entries(clips) as [Clip, string][]) {
       const animation = file.animations.find((a) => a.name === name);

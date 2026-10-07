@@ -1,17 +1,20 @@
 // The picture's colours, all of them, and the paint made of them. The look is
-// Mini Motorways' (Dinosaur Polo Club): flat colour, a pale ground, and
-// nothing saturated but what says something. So there are two kinds here.
-// The tones are the greys and creams everything is built of, one set by day
-// and one by night; the colours that mean something (a lamp, a provider, a
-// fault) are the same in both. Nothing else in the page names a colour of
-// the picture: the labels' are the tones ink and pill, which the page hands
-// to its stylesheet (main.ts).
+// Mini Motorways' (Dinosaur Polo Club) ground and labels with Catppuccin's
+// accents: flat colour, a pale ground, and on it a town of coloured blocks.
+// So there are three kinds here. The tones are the greys and creams the
+// ground, the track and the platforms are built of, one set by day and one by
+// night. The accents are Catppuccin's, Latte's by day and Mocha's by night
+// under the same names: what stands and what rolls is painted in them. The
+// colours that mean something of their own (a lamp, a fault, the weather)
+// are the same in both. Nothing else in the page names a colour of the
+// picture: the labels' are the tones ink and pill, which the page hands to
+// its stylesheet (main.ts).
 
 import * as THREE from "three";
 
-// By day: a cream map, the depots' beds a little darker, buildings off-white
-// under grey roofs. The kits' models are sorted into wall, pale, roof and
-// slate by how light each of their own colours is (kit.ts).
+// By day: a cream map, the depots' beds a little darker. The kits' models are
+// sorted into wall, pale, roof and slate by how light each of their own
+// colours is (kit.ts): what has no accent of its own is painted in these.
 const day = {
   ground: 0xf4efe4,
   bed: 0xe8e1d2,
@@ -50,7 +53,77 @@ const night: Record<Tone, number> = {
 // The tones as they are now: dress changes them.
 export const palette: Record<Tone, number> = { ...day };
 
-// Lamps carry the signal's meaning; the people and their hats stay neutral.
+// Catppuccin's fourteen accents and the middle one of its three overlays
+// (github.com/catppuccin/palette, palette.json 1.8.0): Latte by day.
+const latte = {
+  rosewater: 0xdc8a78,
+  flamingo: 0xdd7878,
+  pink: 0xea76cb,
+  mauve: 0x8839ef,
+  red: 0xd20f39,
+  maroon: 0xe64553,
+  peach: 0xfe640b,
+  yellow: 0xdf8e1d,
+  green: 0x40a02b,
+  teal: 0x179299,
+  sky: 0x04a5e5,
+  sapphire: 0x209fb5,
+  blue: 0x1e66f5,
+  lavender: 0x7287fd,
+  overlay: 0x8c8fa1,
+};
+
+export type Accent = keyof typeof latte;
+
+// Mocha by night: an accent keeps its name, so what is mauve is mauve.
+const mocha: Record<Accent, number> = {
+  rosewater: 0xf5e0dc,
+  flamingo: 0xf2cdcd,
+  pink: 0xf5c2e7,
+  mauve: 0xcba6f7,
+  red: 0xf38ba8,
+  maroon: 0xeba0ac,
+  peach: 0xfab387,
+  yellow: 0xf9e2af,
+  green: 0xa6e3a1,
+  teal: 0x94e2d5,
+  sky: 0x89dceb,
+  sapphire: 0x74c7ec,
+  blue: 0x89b4fa,
+  lavender: 0xb4befe,
+  overlay: 0x7f849c,
+};
+
+// The accents as they are now: dress changes them with the tones.
+export const accents: Record<Accent, number> = { ...latte };
+
+// What stands, by its kind: its walls in one accent and its roof in a
+// neighbour of it. The colour says nothing: a hut is a hut's colour in every
+// depot, so the yard reads as a town of coloured blocks. Red and maroon are
+// no building's: red is a fault's and a stop lamp's. box is a signal box,
+// post a pole of the telegraph, board a peer's sign.
+export const building = {
+  box: ["rosewater", "flamingo"],
+  station: ["teal", "green"],
+  hut: ["yellow", "peach"],
+  office: ["sky", "sapphire"],
+  works: ["lavender", "mauve"],
+  silo: ["pink", "pink"],
+  post: ["yellow", "yellow"],
+  board: ["sapphire", "sapphire"],
+} as const satisfies Record<string, readonly [wall: Accent, roof: Accent]>;
+export type Building = keyof typeof building;
+
+// A wagon by the type of its bead, the same across the yard, so a train's
+// wagons are told from tasks at a glance; sky for a type the table does not
+// have. They are of the accents a lamp, a flag, chocks and moss read on: the
+// blues and the purples, and no warm one.
+export const stock: Record<string, Accent> = { task: "blue", train: "mauve", wagon: "teal", memory: "lavender" };
+export function stocked(type: string): Accent {
+  return Object.hasOwn(stock, type) ? stock[type]! : "sky";
+}
+
+// Lamps carry the signal's meaning.
 // wait is the amber of a wagon that waits for another bead, out a lamp that
 // is not lit.
 export const lamp = { clear: 0x2fc46b, stop: 0xe5484d, wait: 0xffb224, out: 0x4b525b } as const;
@@ -59,13 +132,16 @@ export const smoke = 0x70757c;
 // The iron of the coal in a silo's indicators.
 export const iron = 0x33373d;
 // A silo's band by the provider whose quota it holds, the key as the yard
-// has it (a group's kind): Claude's orange, OpenAI's green for codex, a blue
-// for kimi, and slate for any other.
-export const livery: Record<string, number> = { claude: 0xf0763f, codex: 0x12b886, kimi: 0x3b82f6 };
-export function liveried(provider: string): number {
-  return Object.hasOwn(livery, provider) ? livery[provider]! : palette.slate;
+// has it (a group's kind): peach for Claude's orange, green for OpenAI's of
+// codex, blue for kimi, and overlay for any other.
+export const livery: Record<string, Accent> = { claude: "peach", codex: "green", kimi: "blue" };
+export function liveried(provider: string): Accent {
+  return Object.hasOwn(livery, provider) ? livery[provider]! : "overlay";
 }
-export const hat = { builder: "roof", reviewer: "wall" } as const satisfies Record<"builder" | "reviewer", Tone>;
+// The people are the kit's own, in its colours. A hard hat is ours, and what
+// tells a crew from the top of the yard: hi-vis for builders, white for
+// reviewers.
+export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
 // A lamp that flashes is dark between, and a wheel chock is its own orange.
 export const fault = { dark: 0x4a1512, chock: 0xf58a1f } as const;
 
@@ -78,14 +154,19 @@ export const weathering = { dull: 0xa6a6a0, rusted: 0xb9744a, moss: 0x7c9a5e } a
 // and every roof are their tone exactly.
 export const SHADE = 0.76;
 
-// Paint: one material for every tone and for every colour that means
-// something, shared by all that wear it. Matt, and every face of one shade:
+// A tone or an accent as it is now.
+export function shade(of: Tone | Accent): number {
+  return Object.hasOwn(palette, of) ? palette[of as Tone] : accents[of as Accent];
+}
+
+// Paint: one material for every tone, every accent and every colour that
+// means something, shared by all that wear it. Matt, and every face of one shade:
 // under one sun and seen from one side, a face is one flat colour.
-const paints = new Map<Tone | number, THREE.MeshLambertMaterial>();
-export function paint(of: Tone | number): THREE.MeshLambertMaterial {
+const paints = new Map<Tone | Accent | number, THREE.MeshLambertMaterial>();
+export function paint(of: Tone | Accent | number): THREE.MeshLambertMaterial {
   let m = paints.get(of);
   if (!m) {
-    m = new THREE.MeshLambertMaterial({ color: typeof of === "number" ? of : palette[of], flatShading: true });
+    m = new THREE.MeshLambertMaterial({ color: typeof of === "number" ? of : shade(of), flatShading: true });
     paints.set(of, m);
   }
   return m;
@@ -109,11 +190,13 @@ function tint({ m, from, by }: { m: THREE.Material; from: THREE.Material; by: nu
   if (color) color.copy((from as THREE.MeshLambertMaterial).color).multiply(new THREE.Color(by));
 }
 
-// Day or night: every tone's paint changes where it is, on what wears it,
-// and so does the weathered paint made of it. What means something stays.
+// Day or night: every tone's and every accent's paint changes where it is,
+// on what wears it, and so does the weathered paint made of it. What means
+// something of its own stays.
 export function dress(dark: boolean) {
   Object.assign(palette, dark ? night : day);
-  for (const [of, m] of paints) if (typeof of !== "number") m.color.setHex(palette[of]);
+  Object.assign(accents, dark ? mocha : latte);
+  for (const [of, m] of paints) if (typeof of !== "number") m.color.setHex(shade(of));
   for (const w of worn.values()) tint(w);
 }
 

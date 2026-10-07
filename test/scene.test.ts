@@ -1,11 +1,12 @@
 // @vitest-environment node
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
-import { banded, CHIMNEY, flat, loadKit, SILO_HEIGHT, TINT, toned, type Kit } from "../src/kit";
+import { banded, CHIMNEY, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
 import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
-import { dress, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, smoke, tinted, weathering, type Tone } from "../src/palette";
+import { accents, building, dress, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stock, stocked, tinted, weathering, type Accent, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
 import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
@@ -69,6 +70,20 @@ describe("a kit whose files are missing", () => {
     expect(works.clone().userData[CHIMNEY]).toEqual(works.userData[CHIMNEY]);
     expect(warned).toContain("kit: people/character-male-e did not load, drawing a box");
     expect(warned).toContain("kit: city/building-i did not load, drawing a box");
+  });
+
+  test("a building's box is in its walls' accent, and a wagon's and a locomotive's are the scene's to paint", () => {
+    const wears = (o: THREE.Object3D) => {
+      const seen: THREE.Material[] = [];
+      o.traverse((part) => {
+        if (part instanceof THREE.Mesh) seen.push(part.material as THREE.Material);
+      });
+      return seen;
+    };
+    for (const part of ["station", "hut", "office", "silo"] as const) expect(wears(kit.make(part))[0], part).toBe(paint(building[part][0]));
+    expect(wears(kit.make("works"))).toEqual([paint(building.works[0]), paint(building.works[1])]);
+    for (const part of ["wagon", "locomotive"] as const) expect(wears(kit.make(part)).map((m) => m.name), part).toEqual([TINT]);
+    expect(wears(kit.make("shunter"))).toEqual([paint("slate")]);
   });
 
   test("a silo is a box with the band its provider's colour goes on", () => {
@@ -148,6 +163,28 @@ describe("a kit whose files are missing", () => {
     expect(paint("wall").map).toBeNull();
   });
 
+  test("the faces a model leaves to the scene are one material of it, by the name of the band's", () => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(new Array(27).fill(0), 3));
+    const body = [0.1, 0.6];
+    const frame = [0.9, 0.9];
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute([...body, ...body, ...body, ...frame, ...frame, ...frame, ...body, ...body, ...body], 2));
+    geometry.setIndex([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+    flat(mesh, (u) => (u > 0.5 ? "slate" : TINT));
+    const [left, frames] = mesh.material as unknown as THREE.Material[];
+    expect(left!.name).toBe(TINT);
+    expect(frames).toBe(paint("slate"));
+    expect(geometry.groups).toEqual([
+      { start: 0, count: 6, materialIndex: 0 },
+      { start: 6, count: 3, materialIndex: 1 },
+    ]);
+    // An accent is paint as a tone is.
+    const plain = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+    flat(plain, () => "mauve");
+    expect(plain.material).toEqual([paint("mauve")]);
+  });
+
   test("a colour of the packs is a tone by how light it is, whatever its hue", () => {
     expect(toned(255, 255, 255)).toBe("wall");
     expect(toned(0xd0, 0xe4, 0xff)).toBe("wall");
@@ -158,6 +195,77 @@ describe("a kit whose files are missing", () => {
     for (const tone of tones) expect(["pale", "roof"]).toContain(tone);
   });
 });
+
+describe("the kit's figures", () => {
+  // The pack's files as far as a figure goes: one mesh in the texture all
+  // its figures share, on a head bone.
+  const worn = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+  let cast: Kit;
+  beforeAll(async () => {
+    const loading = vi.spyOn(GLTFLoader.prototype, "loadAsync").mockImplementation(async (name) => {
+      if (!String(name).startsWith("people/")) throw new Error("no such file");
+      const head = new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), worn));
+      head.name = "head";
+      return { scene: new THREE.Group().add(head), animations: [] } as never;
+    });
+    cast = await loadKit("/");
+    loading.mockRestore();
+  });
+
+  test("a figure is the pack's own: its texture as it came, under the yard's sun, and no paint of the palette", () => {
+    for (const outfit of ["builder", "reviewer", "crew"] as const) {
+      const own: THREE.Mesh[] = [];
+      cast.figure(outfit).object.traverse((part) => {
+        if (part instanceof THREE.Mesh && !part.parent?.name.startsWith(HAT)) own.push(part);
+      });
+      expect(own.length, outfit).toBe(1);
+      expect(own[0]!.material, outfit).toBe(worn);
+      expect(own[0]!.castShadow && own[0]!.receiveShadow, outfit).toBe(true);
+    }
+    expect(worn.map).not.toBeNull();
+  });
+
+  test("a builder's hard hat is hi-vis and a reviewer's white, by day and by night; the crew has none", () => {
+    const hats = (outfit: "builder" | "reviewer" | "crew") => {
+      const seen: number[] = [];
+      cast.figure(outfit).object.getObjectByName(HAT)?.traverse((part) => {
+        if (part instanceof THREE.Mesh) seen.push((part.material as THREE.MeshLambertMaterial).color.getHex());
+      });
+      return seen;
+    };
+    for (const dark of [false, true]) {
+      dress(dark);
+      expect(hats("builder")).toEqual([hat.builder, hat.builder]);
+      expect(hats("reviewer")).toEqual([hat.reviewer, hat.reviewer]);
+      expect(hats("crew")).toEqual([]);
+    }
+    dress(false);
+    expect([hat.builder, hat.reviewer]).toEqual([0xffd21f, 0xffffff]);
+  });
+});
+
+// A colour as the light has it, and how far two are apart to the eye: their
+// distance in Oklab (Ottosson 2020), where 0.02 is about the least that is
+// seen and black to white is 1. Two that are READS apart are told from one
+// another at a glance, whatever their lightness.
+type Triple = [number, number, number];
+const READS = 0.1;
+const linear = (colour: number): Triple => {
+  const { r, g, b } = new THREE.Color(colour);
+  return [r, g, b];
+};
+const times = (a: Triple, b: Triple): Triple => [a[0] * b[0], a[1] * b[1], a[2] * b[2]];
+const lit = (a: Triple, by: number): Triple => [a[0] * by, a[1] * by, a[2] * by];
+const oklab = ([r, g, b]: Triple): Triple => {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+};
+const apart = (a: Triple, b: Triple) => {
+  const [p, q] = [oklab(a), oklab(b)];
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+};
 
 // How far a colour is from grey: the widest gap between its red, green and
 // blue, of 1.
@@ -173,10 +281,90 @@ describe("the palette", () => {
     for (const dark of [false, true]) {
       dress(dark);
       for (const [tone, colour] of Object.entries(palette)) expect(chroma(colour), `${tone} ${dark ? "by night" : "by day"}`).toBeLessThan(0.12);
-      for (const tone of Object.values(hat)) expect(chroma(palette[tone]), `hat ${tone}`).toBeLessThan(0.12);
+      // An accent is a colour in both, but for overlay, which is no provider's.
+      for (const [accent, colour] of Object.entries(accents)) {
+        if (accent !== "overlay") expect(chroma(colour), `${accent} ${dark ? "by night" : "by day"}`).toBeGreaterThan(0.09);
+      }
+      expect(chroma(accents.overlay)).toBeLessThan(0.12);
     }
-    const bold = [lamp.clear, lamp.stop, lamp.wait, ...Object.values(livery), tint.chock];
+    const bold = [lamp.clear, lamp.stop, lamp.wait, tint.chock, hat.builder];
     for (const colour of bold) expect(chroma(colour), colour.toString(16)).toBeGreaterThan(0.5);
+  });
+
+  test("the accents are Catppuccin's: Latte's by day and Mocha's by night, under the same names, and their paint changes where it is", () => {
+    // As palette.json has them.
+    const latte = { rosewater: 0xdc8a78, flamingo: 0xdd7878, pink: 0xea76cb, mauve: 0x8839ef, red: 0xd20f39, maroon: 0xe64553, peach: 0xfe640b, yellow: 0xdf8e1d, green: 0x40a02b, teal: 0x179299, sky: 0x04a5e5, sapphire: 0x209fb5, blue: 0x1e66f5, lavender: 0x7287fd, overlay: 0x8c8fa1 };
+    const mocha = { rosewater: 0xf5e0dc, flamingo: 0xf2cdcd, pink: 0xf5c2e7, mauve: 0xcba6f7, red: 0xf38ba8, maroon: 0xeba0ac, peach: 0xfab387, yellow: 0xf9e2af, green: 0xa6e3a1, teal: 0x94e2d5, sky: 0x89dceb, sapphire: 0x74c7ec, blue: 0x89b4fa, lavender: 0xb4befe, overlay: 0x7f849c };
+    dress(false);
+    const mauve = paint("mauve");
+    const rusted = tinted(mauve, weathering.rusted) as THREE.MeshLambertMaterial;
+    expect(accents).toEqual(latte);
+    expect(mauve.color.getHex()).toBe(latte.mauve);
+    expect(shade("mauve")).toBe(latte.mauve);
+    expect(shade("wall")).toBe(palette.wall);
+    dress(true);
+    expect(accents).toEqual(mocha);
+    expect(paint("mauve")).toBe(mauve);
+    expect(mauve.color.getHex()).toBe(mocha.mauve);
+    expect(rusted.color.getHex()).toBe(new THREE.Color(mocha.mauve).multiply(new THREE.Color(weathering.rusted)).getHex());
+    dress(false);
+    expect(mauve.color.getHex()).toBe(latte.mauve);
+  });
+
+  test("a building is its kind's two accents and a wagon its bead's type's; none is red or maroon, which are a fault's", () => {
+    expect(Object.keys(building).sort()).toEqual(["board", "box", "hut", "office", "post", "silo", "station", "works"]);
+    const worn: Accent[] = [...Object.values(building).flat(), ...Object.values(stock), stocked("no such type")];
+    for (const accent of worn) {
+      expect(Object.keys(accents)).toContain(accent);
+      expect(["red", "maroon"]).not.toContain(accent);
+    }
+    // A type is one colour, and no two types the same.
+    expect(["task", "train", "wagon", "memory"].map(stocked)).toEqual(["blue", "mauve", "teal", "lavender"]);
+    expect(stocked("spike")).toBe("sky");
+    expect(stocked("toString")).toBe("sky");
+    expect(new Set([...Object.values(stock), stocked("spike")]).size).toBe(Object.keys(stock).length + 1);
+    // The kinds of building that stand in a depot are told apart by their roofs.
+    const roofs = (["station", "hut", "office", "works"] as const).map((kind) => building[kind][1]);
+    expect(new Set(roofs).size).toBe(4);
+  });
+
+  test("a lamp, a flag, chocks and moss read on every wagon colour, fresh, dull and rusted, in the sun and in the shade, by day and by night", () => {
+    for (const dark of [false, true]) {
+      dress(dark);
+      const when = dark ? "by night" : "by day";
+      for (const type of [...Object.keys(stock), "any other"]) {
+        const own = linear(shade(stocked(type)));
+        const dull = times(own, linear(weathering.dull));
+        const rusted = times(own, linear(weathering.rusted));
+        // A face is its paint in the sun, and SHADE of it out of it.
+        const faces = [own, dull, rusted].flatMap((paint) => [paint, lit(paint, SHADE)]);
+        const least = (mark: Triple[]) => Math.min(...faces.flatMap((face) => mark.map((m) => apart(m, face))));
+        // A lamp shines: it is its colour whatever the sun does.
+        expect(least([linear(lamp.stop)]), `the fault's lamp on ${type} ${when}`).toBeGreaterThan(READS);
+        expect(least([linear(lamp.wait)]), `the wait's lamp on ${type} ${when}`).toBeGreaterThan(READS);
+        // A flag and chocks are painted, and have a side in the shade.
+        expect(least([linear(lamp.stop), lit(linear(lamp.stop), SHADE)]), `the flag on ${type} ${when}`).toBeGreaterThan(READS);
+        expect(least([linear(tint.chock), lit(linear(tint.chock), SHADE)]), `chocks on ${type} ${when}`).toBeGreaterThan(READS);
+        // Moss lies on rust, on the roof, and the weather's steps are told
+        // from one another.
+        const moss = linear(weathering.moss);
+        expect(Math.min(apart(moss, rusted), apart(moss, lit(rusted, SHADE)), apart(lit(moss, SHADE), lit(rusted, SHADE))), `moss on ${type} ${when}`).toBeGreaterThan(READS);
+        expect(apart(own, dull), `dull ${type} ${when}`).toBeGreaterThan(READS);
+        expect(apart(dull, rusted), `rusted ${type} ${when}`).toBeGreaterThan(READS);
+      }
+    }
+  });
+
+  test("a provider's band stands out from its silo, and from another provider's, by day and by night", () => {
+    for (const dark of [false, true]) {
+      dress(dark);
+      const bands = ["claude", "codex", "kimi", "any other"].map(liveried);
+      expect(bands).toEqual(["peach", "green", "blue", "overlay"]);
+      for (const band of bands) {
+        for (const wall of building.silo) expect(apart(linear(shade(band)), linear(shade(wall))), `${band} on ${wall} ${dark ? "by night" : "by day"}`).toBeGreaterThan(READS);
+        for (const other of bands) if (other !== band) expect(apart(linear(shade(band)), linear(shade(other))), `${band} by ${other}`).toBeGreaterThan(READS);
+      }
+    }
   });
 
   test("night is the same picture: the ground dark, the labels turned round, and every tone in its place between the others", () => {
@@ -195,7 +383,7 @@ describe("the palette", () => {
     for (const tone of Object.keys(day) as Tone[]) expect(palette[tone], tone).not.toBe(day[tone]);
   });
 
-  test("night changes a tone's paint where it is, and the weathered paint made of it; a lamp's and a provider's stay", () => {
+  test("night changes a tone's paint where it is, and the weathered paint made of it; a lamp's stays, and a provider's is its accent's", () => {
     dress(false);
     const wall = paint("wall");
     const rusted = tinted(wall, weathering.rusted);
@@ -210,9 +398,10 @@ describe("the palette", () => {
     expect(tinted(wall, weathering.rusted)).toBe(rusted);
     expect((rusted as THREE.MeshLambertMaterial).color.getHex()).toBe(by(wall));
     expect(stop.color.getHex()).toBe(lamp.stop);
-    expect(claude.color.getHex()).toBe(livery.claude);
-    // A provider with no colour is slate, as slate is now.
-    expect(liveried("grok")).toBe(palette.slate);
+    expect(livery.claude).toBe("peach");
+    expect(claude.color.getHex()).toBe(accents.peach);
+    // A provider with no colour is overlay, as overlay is now.
+    expect(paint(liveried("grok")).color.getHex()).toBe(accents.overlay);
     dress(false);
     expect(wall.color.getHex()).toBe(day);
   });
@@ -615,6 +804,60 @@ describe("the weather of the stock", () => {
     const old = bead("signalbox-a", 9);
     expect(tip(old, false, 9.2)).toBe("signalbox-a\nsignalbox-a\nsignalbox · task · backlog\nin backlog 9 days");
     expect(tip(old, false)).toBe("signalbox-a\nsignalbox-a\nsignalbox · task · backlog");
+  });
+});
+
+describe("the colours of the stock", () => {
+  const bead = (id: string, type: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type, stage: "backlog", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z", ...over });
+  // The paint of a thing's body: its own parts, and not what is put on it.
+  const body = (o: THREE.Object3D) => {
+    const seen: THREE.Material[] = [];
+    o.traverse((part) => {
+      if (part instanceof THREE.Mesh) seen.push(...([part.material].flat() as THREE.Material[]));
+    });
+    return seen;
+  };
+  // A train stands at its platform with its wagons alone: the others are
+  // at their own.
+  const beads = [bead("signalbox-a", "task", { stage: "new" }), bead("yardr-b", "task", { depot: "yardr" }), bead("signalbox-t", "train"), bead("signalbox-w", "wagon", { train: "signalbox-t" }), bead("aiquokka-s", "spike", { depot: "aiquokka" })];
+
+  test("a wagon is its bead's type's accent, the same in every depot, and a train's wagons are not a task's", () => {
+    const stock = new Stock(layout({ ...yard, beads }), kit);
+    const of = (id: string) => body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!);
+    expect(of("signalbox-a")).toEqual([paint("blue")]);
+    expect(of("yardr-b")).toEqual([paint("blue")]);
+    expect(of("signalbox-t")).toEqual([paint("mauve")]);
+    expect(of("signalbox-w")).toEqual([paint("teal")]);
+    expect(of("aiquokka-s")).toEqual([paint("sky")]);
+    // Nothing that rolls is left in the kit's own tint, a shunter neither.
+    stock.root.traverse((part) => {
+      if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) expect((m as THREE.Material).name).not.toBe(TINT);
+    });
+  });
+
+  test("night changes a wagon's colour where it is, under the weather too: blue is Mocha's blue", () => {
+    const now = Date.parse("2099-01-09T00:00:00Z");
+    const stock = new Stock(layout({ ...yard, beads: [bead("signalbox-a", "task"), bead("signalbox-b", "task", { created_at: "2099-01-08T23:00:00Z" })] }, {}, now), kit);
+    const of = (id: string) => (body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!)[0] as THREE.MeshLambertMaterial).color.getHex();
+    const rusted = (blue: number) => new THREE.Color(blue).multiply(new THREE.Color(weathering.rusted)).getHex();
+    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([0x1e66f5, rusted(0x1e66f5)]);
+    dress(true);
+    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([0x89b4fa, rusted(0x89b4fa)]);
+    dress(false);
+  });
+
+  test("a building of the scene's own is its kind's accents: a signal box, the telegraph's poles, a peer's board", () => {
+    const worn = new Set<THREE.Material>();
+    draw(layout(yard), kit).root.traverse((part) => {
+      if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) worn.add(m as THREE.Material);
+    });
+    for (const kind of ["box", "post", "board"] as const) {
+      for (const accent of building[kind]) expect(worn.has(paint(accent)), `${kind} ${accent}`).toBe(true);
+    }
+    // The kit's are their boxes here: all walls.
+    for (const kind of ["station", "hut", "works"] as const) expect(worn.has(paint(building[kind][0])), kind).toBe(true);
+    // Nothing that stands is a fault's red.
+    expect(worn.has(paint("red")) || worn.has(paint("maroon")) || worn.has(paint(lamp.stop))).toBe(false);
   });
 });
 
@@ -1037,7 +1280,7 @@ describe("the providers' silos", () => {
     expect(week.min.y).toBeGreaterThan(0);
   });
 
-  test("its band is its provider's colour, and slate for one the table does not have", () => {
+  test("its band is its provider's colour, and overlay for one the table does not have", () => {
     const y = { ...yard, crew: [...yard.crew, { ...yard.crew[0]!, name: "c", kind: "codex" }, { ...yard.crew[0]!, name: "g", kind: "grok" }] };
     const band = (o: THREE.Object3D) => {
       const found: number[] = [];
@@ -1050,19 +1293,19 @@ describe("the providers' silos", () => {
     expect(all.map((o) => o.userData.tower.provider).sort()).toEqual(["claude", "codex", "grok", "kimi"]);
     for (const o of all) {
       const provider = o.userData.tower.provider as string;
-      expect(band(o), provider).toContain(liveried(provider));
+      expect(band(o), provider).toContain(shade(liveried(provider)));
       // No part is left in the kit's own tint.
       o.traverse((part) => {
         if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) expect((m as THREE.Material).name).not.toBe(TINT);
       });
     }
     expect(liveried("claude")).toBe(livery.claude);
-    expect(liveried("grok")).toBe(palette.slate);
-    expect(liveried("toString")).toBe(palette.slate);
+    expect(liveried("grok")).toBe("overlay");
+    expect(liveried("toString")).toBe("overlay");
     expect(new Set(["claude", "codex", "kimi", "grok"].map(liveried)).size).toBe(4);
     // A refuel leaves the band as it is.
     refuel(all, quota(provider("claude", 99, 99)));
-    expect(band(of(all, "claude"))).toContain(livery.claude);
+    expect(band(of(all, "claude"))).toContain(shade("peach"));
   });
 
   test("under 20 percent left the fill is amber, under 5 red, and at none there is no coal and the sign says out", () => {

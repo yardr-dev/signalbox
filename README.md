@@ -28,31 +28,62 @@ it runs when the serve script serves it.
 
 ## Look
 
-The yard is drawn flat, in the manner of Mini Motorways (Dinosaur Polo Club,
-https://dinopoloclub.com/games/mini-motorways/): a cream ground with nothing
-behind it, the depots as pads a little darker, a track as a warm grey ribbon,
-buildings off-white under grey roofs, thin labels on white pills, one sun and
-one soft shadow. No model wears its texture: each face is one colour of the
-palette, by how light the kit had painted it. Nothing is saturated but what
-says something: a lamp (green, amber, red), a provider's band on its silo, a
-fault's lamp, flag and chocks. People and their hats stay neutral.
-`src/palette.ts` is the one
-place that names a colour of the picture, the labels' ink and pill too: its
-tones are the greys and creams, one set by day and one by night, and the
-colours that mean something are the same in both. Night is the same picture on
-a near-black blue with the labels turned round. The page takes it when the
+The yard is drawn flat: the ground and the labels in the manner of Mini
+Motorways (Dinosaur Polo Club,
+https://dinopoloclub.com/games/mini-motorways/), the colours on it
+Catppuccin's accents (https://github.com/catppuccin/palette). A cream ground
+with nothing behind it, the depots as pads a little darker, a track as a warm
+grey ribbon, thin labels on white pills, one sun and one soft shadow, and on
+that a town of coloured blocks. No building and nothing that rolls wears its
+texture: each face is one colour of the palette, by how light the kit had
+painted it.
+
+A building is two accents by its kind, its walls in one and its roof in a
+neighbour of it. The colour says nothing: a hut is a hut's in every depot.
+
+| building | walls | roof |
+| --- | --- | --- |
+| a people's station | teal | green |
+| a builders' hut | yellow | peach |
+| a reviewers' office | sky | sapphire |
+| a works | lavender | mauve |
+| a signal box | rosewater | flamingo |
+| a silo | pink | pink |
+| the telegraph's poles | yellow | yellow |
+| a peer's board | sapphire | sapphire |
+
+A wagon is one accent by the type of its bead, the same across the yard, so
+a train's wagons are told from tasks at a glance: a task blue, a train's
+locomotive mauve, a wagon teal, a memory lavender, any other type sky. They
+are the blues and purples because those are the accents a red or amber lamp,
+a red flag, orange chocks and green moss read on, fresh, dull and rusted: a
+test measures it (`test/scene.test.ts`, the distance in Oklab), and a warm
+accent or pink fails it. A shunter and a peer's goods carry no bead and stay
+grey. Red and maroon are no building's and no wagon's: red is a fault's and a
+stop lamp's.
+
+The people are the kit's own, in its texture as it came; a hard hat is ours,
+hi-vis yellow for a builder and white for a reviewer.
+
+`src/palette.ts` is the one place that names a colour of the picture, the
+labels' ink and pill too. Its tones are the greys and creams of the ground,
+the track and the platforms, one set by day and one by night. Its accents are
+Latte's by day and Mocha's by night under the same names, so what is mauve is
+mauve in both. A lamp, a fault and the weather are the same in both. Night is
+the same picture on a near-black blue with the labels turned round. The page takes it when the
 reader's system is dark; Night on the bar says otherwise, and the browser
 remembers that until it is what the system says anyway. The camera looks down
 at an angle and is orthographic, as it was: nothing grows smaller with
 distance, so the yard reads as a map.
 
-Before (the old page used the same picture in both system settings):
+Before the flat treatment (the old page used the same picture in both system
+settings):
 
 ![The first view before the flat treatment](docs/look-before.png)
 
-After, by day:
+Now, by day:
 
-![The first view after the flat treatment, by day](docs/yard.png)
+![The first view by day](docs/yard.png)
 
 ![The first view by night](docs/look-night.png)
 
@@ -99,7 +130,7 @@ group has a building beside a platform it is routed to: people a station, a
 group whose sessions are scripts a works, at each of their platforms. A
 group that runs sessions in panes is a crew, and has one building on each
 board it is routed to, at the first of its platforms there: builders a site
-hut and grey hard hats, reviewers an office and white ones. A figure
+hut and yellow hard hats, reviewers an office and white ones. A figure
 walks from its own board's building and back, never from one board to
 another. Every building has its door to
 its platform; a crew stand idle in a row from the door's corner down the
@@ -185,12 +216,14 @@ is the kit's large tank, and the band round it is the provider's colour:
 
 | provider | band |
 | --- | --- |
-| `claude` | orange, `#f0763f` |
-| `codex` | OpenAI's green, `#12b886` |
-| `kimi` | blue, `#3b82f6` |
-| any other | slate, the palette's tone |
+| `claude` | peach, for Claude's orange |
+| `codex` | green, for OpenAI's |
+| `kimi` | blue |
+| any other | overlay, Catppuccin's grey |
 
-The table is `livery` in `src/palette.ts`, by the provider's key. What is left
+The table is `livery` in `src/palette.ts`, by the provider's key; the colours
+are Catppuccin's accents of those names, as the day or the night has them, on
+a pink silo. What is left
 stands outside the silo, in two indicators to its right: the coal in the
 first is what is left of the provider's weekly quota, 100 less the percent
 used; the second, lower one is the five-hour window the same way. Under 20
@@ -350,14 +383,21 @@ of this is there, and the page is the committed snapshot and its replay.
   is a material of its own (`TINT`), cut from the faces that lie on the
   palette texture's orange, since the pack's models share the texture: the
   scene puts the provider's colour there, and on the band of a silo's box.
-  Every other face of a model is sorted the same way (`flat`): the texture
-  is read where the face lies on it, and the face painted in the tone that
-  colour is by its lightness (`toned`), rolling stock a tone darker and rail
-  in the track's. Platforms, signals, signal boxes and the silos' indicators
-  are boxes in the palette's tones. The kit's diesel is the shunter.
+  Every other face of a model but a figure's is sorted the same way
+  (`flat`): the texture is read where the face lies on it, and the face
+  painted by how light that colour is (`toned`). A building's light faces
+  are its walls' accent and its middling ones its roof's; a wagon's and a
+  locomotive's body is left to the scene as the band is (`TINT`), which
+  paints it by the bead's type; a shunter is a tone darker than the pack
+  has it and rail is in the track's. A figure keeps the pack's texture.
+  Platforms, signals and the silos' indicators are boxes in the palette's
+  tones, a signal box, the telegraph's poles and a peer's board in their
+  accents. The kit's diesel is the shunter.
 - `src/palette.ts`: every colour of the picture (see Look): the tones by day
-  and by night, the colours that mean something, and `paint`, the one flat
-  material of each. `dress` changes day to night on the paint that is worn.
+  and by night, Catppuccin's accents by day and by night, which building
+  (`building`) and which type of bead (`stock`) wears which, the colours
+  that mean something of their own, and `paint`, the one flat material of
+  each. `dress` changes day to night on the paint that is worn.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not

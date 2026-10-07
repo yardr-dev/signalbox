@@ -53,7 +53,7 @@ import {
   walkSeconds,
   type Stop,
 } from "./motion";
-import { fault, iron, lamp, livery, paint, smoke, tinted, weathering, type Tone } from "./palette";
+import { building, fault, iron, lamp, liveried, paint, smoke, stocked, tinted, weathering, type Accent, type Tone } from "./palette";
 import { freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
 import type { Allowance, Bead, Provider, Quota } from "./yard";
 
@@ -130,8 +130,8 @@ export interface Picture {
 }
 
 // A box standing on y, centred on x and z, in the palette's paint: of a tone,
-// or of a colour that means something.
-function block(of: Tone | number, width: number, height: number, depth: number, x: number, y: number, z: number): THREE.Mesh {
+// of an accent, or of a colour that means something.
+function block(of: Tone | Accent | number, width: number, height: number, depth: number, x: number, y: number, z: number): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), paint(of));
   mesh.position.set(x, y + height / 2, z);
   mesh.castShadow = mesh.receiveShadow = true;
@@ -336,12 +336,25 @@ export function gateLamp(gate: Gate | undefined): number {
   return gate.last === "landed" ? lamp.clear : lamp.stop;
 }
 
+// A signal box: its lower floor in its walls' accent, the upper one, which
+// is all windows, a tone, under its roof's accent.
 function signalBox(x: number, z: number): THREE.Object3D {
+  const [wall, roof] = building.box;
   const g = new THREE.Group();
-  g.add(block("pale", 3, 1.6, 2.2, x, 0, z));
+  g.add(block(wall, 3, 1.6, 2.2, x, 0, z));
   g.add(block("wall", 3.3, 1.2, 2.5, x, 1.6, z));
-  g.add(block("roof", 3.8, 0.3, 3, x, 2.8, z));
+  g.add(block(roof, 3.8, 0.3, 3, x, 2.8, z));
   return g;
+}
+
+// Paint what the kit left for the scene (TINT): a silo's band, a wagon's
+// body.
+function coat(model: THREE.Object3D, wears: THREE.Material) {
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    const own = part.material as THREE.Material | THREE.Material[];
+    part.material = Array.isArray(own) ? own.map((m) => (m.name === TINT ? wears : m)) : own.name === TINT ? wears : own;
+  });
 }
 
 // What fills: a box that stands on its own floor, as high as it is scaled. Its
@@ -381,14 +394,7 @@ function tower(t: Tower, kit: Kit): THREE.Object3D {
   const g = new THREE.Group();
   g.position.set(t.at.x, 0, t.at.z);
   const tank = kit.make("silo");
-  // As liveried says: slate, as it is by day or by night, for a provider
-  // that has no colour.
-  const band = paint(Object.hasOwn(livery, t.provider) ? livery[t.provider]! : "slate");
-  tank.traverse((part) => {
-    if (!(part instanceof THREE.Mesh)) return;
-    const own = part.material as THREE.Material | THREE.Material[];
-    part.material = Array.isArray(own) ? own.map((m) => (m.name === TINT ? band : m)) : own.name === TINT ? band : own;
-  });
+  coat(tank, paint(liveried(t.provider)));
   const silo: Silo = {
     week: gauge(g, WEEK_X, WEEK),
     short: gauge(g, SHORT_X, SHORT),
@@ -511,8 +517,8 @@ export function draw(l: Layout, kit: Kit): Picture {
   const wire = l.wire;
   root.add(block("slate", wire.length, 0.06, 0.06, wire.at.x + wire.length / 2, POLE_HEIGHT - 0.2, wire.at.z));
   for (let x = 0; x <= wire.length; x += POLE_PITCH) {
-    root.add(block("slate", 0.16, POLE_HEIGHT, 0.16, wire.at.x + x, GROUND_Y, wire.at.z));
-    root.add(block("slate", 0.12, 0.12, 1.2, wire.at.x + x, POLE_HEIGHT - 0.3, wire.at.z));
+    root.add(block(building.post[0], 0.16, POLE_HEIGHT, 0.16, wire.at.x + x, GROUND_Y, wire.at.z));
+    root.add(block(building.post[1], 0.12, 0.12, 1.2, wire.at.x + x, POLE_HEIGHT - 0.3, wire.at.z));
   }
   root.add(label("hooks", "wire", wire.at.x + 1, POLE_HEIGHT, wire.at.z, [0, 1]));
   grow(wire.at.x, wire.at.z, POLE_HEIGHT);
@@ -523,7 +529,7 @@ export function draw(l: Layout, kit: Kit): Picture {
     rails.run({ x: p.at.x, z: p.at.z - PEER_RAIL_Z }, p.length);
     root.add(block("bed", p.length, -GROUND_Y - 0.02, 1.6 + 2 * PEER_RAIL_Z, p.at.x + p.length / 2, GROUND_Y, p.at.z));
     // The sign, behind the far rail.
-    root.add(block("wall", 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
+    root.add(block(building.board[0], 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
     root.add(block("slate", 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 2));
     root.add(label(`to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 2, [0.5, 1]));
     grow(p.at.x - 2, p.at.z - 3);
@@ -732,6 +738,8 @@ export class Stock {
         const old = this.parting.get(v.key);
         if (old) giveUp(old.engine);
         const object = v.kind === "locomotive" ? this.kit.make("locomotive") : this.kit.make("wagon", hash(v.bead.id));
+        // Its body by its bead's type, before the weather is at it.
+        coat(object, paint(stocked(v.bead.type)));
         // Measured before it is anywhere, at its full size.
         const top = new THREE.Box3().setFromObject(object).max.y;
         wagon = { object, size: 1, stop, platform: v.platform, track: on, top };
@@ -1180,6 +1188,8 @@ export class Stock {
     if (!line || !engine) return;
     const [pick, size] = GOODS[kind ?? ""] ?? GOODS.mail!;
     const wagon: Mover = { object: this.kit.make("wagon", pick), size };
+    // No bead rides in it: it is no type's colour.
+    coat(wagon.object, paint("roof"));
     wagon.object.scale.setScalar(size);
     wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));
     wagon.object.visible = false;
