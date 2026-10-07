@@ -8,6 +8,7 @@ import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
 import { describe, draw } from "./scene";
 import "./style.css";
+import type { Slots } from "./layout";
 import type { Bead, Yard } from "./yard";
 
 // Where the camera stands from what it looks at: turned a little off the
@@ -27,7 +28,11 @@ async function start() {
   const response = await fetch(`${base}yard.json`);
   if (!response.ok) throw new Error(`yard.json: ${response.status}`);
   const yard = (await response.json()) as Yard;
-  const picture = draw(layout(yard), await loadKit(base));
+  // The slots given so far. The page only reads them: what the file does not
+  // hold yet is placed after what it does, the same way on every load.
+  const remembered = await fetch(`${base}layout.json`);
+  const slots = remembered.ok ? ((await remembered.json()) as Partial<Slots>) : {};
+  const picture = draw(layout(yard, slots), await loadKit(base));
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.grass);

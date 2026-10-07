@@ -29,10 +29,16 @@ So far the page is a still picture of one yard: no motion, no events.
   (`npm run snapshot`, with `YARDR=` to name the binary). The committed file is
   the demo data and the tests' fixture: the tests name its depots, groups and
   beads, so a new snapshot may need them brought along.
-- `src/yard.ts`: the shape of that file.
-- `src/layout.ts`: from the structure to positions, one pure function. Every
-  element is placed by its index in its parent, so a yard that grows keeps
-  what it had where it was. The mapping from yard to railway is decided here.
+- `public/layout.json` is the layout's memory: the slot of every depot, flow,
+  stage and peer drawn so far. The snapshot script writes it when it is
+  missing and adds what is new to it otherwise (`scripts/slots.mjs`); the page
+  only reads it. Delete it to have the yard laid out afresh.
+- `src/yard.ts`: the shape of the snapshot.
+- `src/layout.ts`: from the structure to positions, one pure function. A
+  flow's stages stand in the order a bead travels them, its terminal stage
+  last; an element with a slot in `layout.json` keeps it, so a yard that grows
+  or is listed in another order keeps what it had where it was. The mapping
+  from yard to railway is decided here.
 - `src/kit.ts`: the models, behind `loadKit`. Kenney's Train Kit
   (`public/kit/`, CC0, with its licence) has the rails, wagons and locomotives;
   platforms, sheds, signals and signal boxes are boxes in six colours.

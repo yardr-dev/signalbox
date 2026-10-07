@@ -32,27 +32,51 @@
             {
               "stage": "backlog",
               "group": "backlog",
+              "next": [
+                "new",
+                "decide"
+              ],
               "human": true
             },
             {
               "stage": "new",
-              "group": "yardr-builders"
+              "group": "yardr-builders",
+              "next": [
+                "review",
+                "decide",
+                "backlog"
+              ]
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "backlog",
+                "new"
+              ],
               "human": true
             },
             {
               "stage": "review",
-              "group": "yardr-reviewers"
+              "group": "yardr-reviewers",
+              "next": [
+                "approved",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "approved",
-              "group": "aiquokka-landing"
+              "group": "aiquokka-landing",
+              "next": [
+                "merged",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "merged",
+              "next": [],
               "terminal": true
             }
           ]
@@ -63,15 +87,23 @@
           "stages": [
             {
               "stage": "review",
-              "group": "yardr-reviewers"
+              "group": "yardr-reviewers",
+              "next": [
+                "done",
+                "decide"
+              ]
             },
             {
               "stage": "done",
+              "next": [],
               "terminal": true
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "review"
+              ],
               "human": true
             }
           ]
@@ -87,27 +119,51 @@
             {
               "stage": "backlog",
               "group": "backlog",
+              "next": [
+                "new",
+                "decide"
+              ],
               "human": true
             },
             {
               "stage": "new",
-              "group": "yardr-builders"
+              "group": "yardr-builders",
+              "next": [
+                "review",
+                "decide",
+                "backlog"
+              ]
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "backlog",
+                "new"
+              ],
               "human": true
             },
             {
               "stage": "review",
-              "group": "yardr-reviewers"
+              "group": "yardr-reviewers",
+              "next": [
+                "approved",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "approved",
-              "group": "signalbox-assembly"
+              "group": "signalbox-assembly",
+              "next": [
+                "merged",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "merged",
+              "next": [],
               "terminal": true
             }
           ]
@@ -123,27 +179,51 @@
             {
               "stage": "backlog",
               "group": "backlog",
+              "next": [
+                "new",
+                "decide"
+              ],
               "human": true
             },
             {
               "stage": "new",
-              "group": "yardr-builders"
+              "group": "yardr-builders",
+              "next": [
+                "review",
+                "decide",
+                "backlog"
+              ]
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "backlog",
+                "new"
+              ],
               "human": true
             },
             {
               "stage": "review",
-              "group": "yardr-reviewers"
+              "group": "yardr-reviewers",
+              "next": [
+                "approved",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "approved",
-              "group": "yardr-refinery"
+              "group": "yardr-refinery",
+              "next": [
+                "merged",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "merged",
+              "next": [],
               "terminal": true
             }
           ]
@@ -155,37 +235,75 @@
             {
               "stage": "backlog",
               "group": "backlog",
+              "next": [
+                "open"
+              ],
               "human": true
             },
             {
               "stage": "open",
-              "group": "yardr-integrators"
+              "group": "yardr-integrators",
+              "next": [
+                "review",
+                "open",
+                "merge",
+                "backlog"
+              ]
             },
             {
               "stage": "review",
-              "group": "yardr-reviewers"
+              "group": "yardr-reviewers",
+              "next": [
+                "approved",
+                "open",
+                "decide"
+              ]
             },
             {
-              "stage": "merge"
+              "stage": "merge",
+              "next": [
+                "open",
+                "decide"
+              ]
             },
             {
               "stage": "approved",
-              "group": "yardr-refinery"
+              "group": "yardr-refinery",
+              "next": [
+                "in-pr",
+                "open",
+                "merge",
+                "merged"
+              ]
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "open",
+                "backlog"
+              ],
               "human": true
             },
             {
-              "stage": "in-pr"
+              "stage": "in-pr",
+              "next": [
+                "land",
+                "open",
+                "decide"
+              ]
             },
             {
               "stage": "merged",
+              "next": [],
               "terminal": true
             },
             {
-              "stage": "land"
+              "stage": "land",
+              "next": [
+                "merged",
+                "open"
+              ]
             }
           ]
         },
@@ -196,23 +314,41 @@
             {
               "stage": "backlog",
               "group": "backlog",
+              "next": [
+                "new"
+              ],
               "human": true
             },
             {
               "stage": "new",
-              "group": "yardr-builders"
+              "group": "yardr-builders",
+              "next": [
+                "approved",
+                "decide",
+                "backlog"
+              ]
             },
             {
               "stage": "approved",
-              "group": "yardr-refinery"
+              "group": "yardr-refinery",
+              "next": [
+                "merged",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "backlog",
+                "new"
+              ],
               "human": true
             },
             {
               "stage": "merged",
+              "next": [],
               "terminal": true
             }
           ]
@@ -228,27 +364,51 @@
             {
               "stage": "backlog",
               "group": "backlog",
+              "next": [
+                "new",
+                "decide"
+              ],
               "human": true
             },
             {
               "stage": "new",
-              "group": "yardr-builders"
+              "group": "yardr-builders",
+              "next": [
+                "review",
+                "decide",
+                "backlog"
+              ]
             },
             {
               "stage": "decide",
               "group": "decisions",
+              "next": [
+                "backlog",
+                "new"
+              ],
               "human": true
             },
             {
               "stage": "review",
-              "group": "yardr-reviewers"
+              "group": "yardr-reviewers",
+              "next": [
+                "approved",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "approved",
-              "group": "yardr.dev-assembly"
+              "group": "yardr.dev-assembly",
+              "next": [
+                "merged",
+                "new",
+                "decide"
+              ]
             },
             {
               "stage": "merged",
+              "next": [],
               "terminal": true
             }
           ]

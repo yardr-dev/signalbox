@@ -38,6 +38,8 @@ export interface Stage {
   stage: string;
   // The group the stage is routed to, as flow show resolved it.
   group?: string;
+  // The stages a bead can move to from here, as the flow's transitions say.
+  next?: string[];
   // Only a person moves a bead on from here.
   human?: boolean;
   terminal?: boolean;

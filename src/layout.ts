@@ -1,11 +1,17 @@
 // From a yard's structure to positions on the ground: one pure function.
 //
-// Every element is placed by its index in its parent and by constants, never
-// by how much else there is: depot i, flow j of its depot, stage k of its
-// flow, shed n of its stage, bay b of its shed, crew member c, peer p. So the
-// same structure gives the same picture, and a structure that only grew (a
-// stage, flow, depot, peer or crew member appended) leaves everything that was
-// there where it was. Only extents grow: a track's length, a board's size.
+// Every element is placed by its slot in its parent and by constants, never
+// by how much else there is: the board of a depot, the track of a flow in its
+// depot, the platform of a stage in its flow, the line of a peer; and by its
+// index shed n of its stage, bay b of its shed, crew member c. So the same
+// structure gives the same picture. Only extents grow: a track's length, a
+// board's size.
+//
+// A slot is given once (place, below) and remembered: public/layout.json
+// holds the slots given so far, and an element in that file keeps its slot
+// whatever happens around it. So a depot named before an old one, or a
+// transition that changes how a flow's stages follow each other, moves
+// nothing that was placed; what is new takes the next free slot.
 //
 // The ground is the x/z plane, in the train kit's units (a wagon is 2.7 long
 // and 1.2 wide): x runs along the tracks, to the right; z runs down the page,
@@ -164,6 +170,71 @@ export interface Layout {
   wire: { at: Point; length: number };
 }
 
+// The slots given so far, by name: what public/layout.json holds. A slot is
+// a place in a row (board 2, platform 4), not a position.
+export interface Slots {
+  depots: Record<string, number>;
+  // By depot, then by flow.
+  flows: Record<string, Record<string, number>>;
+  // By `${depot}/${flow}`, then by stage.
+  stages: Record<string, Record<string, number>>;
+  peers: Record<string, number>;
+}
+
+// The stages of a flow in the order a bead travels them: breadth first along
+// the transitions from the first stage, then what no transition reaches, then
+// the terminal stages, so the track ends where a bead does. A siding has its
+// place in this order too: it stands off the line, beside that place.
+export function travelOrder(flow: Flow): string[] {
+  const known = new Map(flow.stages.map((s) => [s.stage, s]));
+  const seen = new Set<string>();
+  const queue = flow.stages.slice(0, 1).map((s) => s.stage);
+  for (let q = 0; q < queue.length; q++) {
+    const name = queue[q]!;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    for (const next of known.get(name)?.next ?? []) {
+      if (known.has(next) && !seen.has(next)) queue.push(next);
+    }
+  }
+  const order = [...seen, ...flow.stages.map((s) => s.stage).filter((n) => !seen.has(n))];
+  const terminal = (n: string) => known.get(n)?.terminal === true;
+  return [...order.filter((n) => !terminal(n)), ...order.filter(terminal)];
+}
+
+// The names that have a slot keep it; the others take the slots after the
+// last one given, in the order they come. A slot once given is not given
+// again, so what left the yard leaves a gap and finds its place if it returns.
+function seat(taken: Record<string, number> | undefined, names: string[]): Record<string, number> {
+  const out: Record<string, number> = { ...taken };
+  let free = Math.max(-1, ...Object.values(out)) + 1;
+  for (const name of names) {
+    if (!Object.hasOwn(out, name)) out[name] = free++;
+  }
+  return out;
+}
+
+// A slot for every depot, flow, stage and peer of the yard: the remembered
+// one, else the next free one in order of first sight (depots, flows and
+// peers as the yard lists them, stages as a bead travels them). What memory
+// holds and the yard does not is kept.
+export function place(yard: Yard, memory: Partial<Slots> = {}): Slots {
+  const out: Slots = {
+    depots: seat(memory.depots, yard.depots.map((d) => d.name)),
+    flows: { ...memory.flows },
+    stages: { ...memory.stages },
+    peers: seat(memory.peers, yard.peers.map((p) => p.name)),
+  };
+  for (const { depot, flows } of yard.flows) {
+    out.flows[depot] = seat(out.flows[depot], flows.map((f) => f.name));
+    for (const flow of flows) {
+      const id = `${depot}/${flow.name}`;
+      out.stages[id] = seat(out.stages[id], travelOrder(flow));
+    }
+  }
+  return out;
+}
+
 // A human stage is a siding, except the one a flow starts at: the backlog is
 // where the track begins, not a place off it.
 export function isSiding(flow: Flow, k: number): boolean {
@@ -197,7 +268,8 @@ function byAge(a: Bead, b: Bead): number {
   return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-export function layout(yard: Yard): Layout {
+export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
+  const slots = place(yard, memory);
   const out: Layout = {
     boards: [],
     tracks: [],
@@ -216,22 +288,27 @@ export function layout(yard: Yard): Layout {
   const coupled = (b: Bead) => b.train !== undefined && open.has(b.train);
   let right = 0;
 
-  yard.depots.forEach((depot, i) => {
+  yard.depots.forEach((depot) => {
     const flows = yard.flows.find((f) => f.depot === depot.name)?.flows ?? [];
-    const top = i * DEPOT_PITCH;
+    const top = slots.depots[depot.name]! * DEPOT_PITCH;
     const beads = yard.beads.filter((b) => b.depot === depot.name);
+    // How far the board reaches: its last platform, its last track.
     let stages = 1;
+    let tracks = 1;
 
     flows.forEach((flow, j) => {
-      const z = top + FIRST_TRACK_Z + j * FLOW_PITCH;
+      const track = slots.flows[depot.name]![flow.name]!;
+      const z = top + FIRST_TRACK_Z + track * FLOW_PITCH;
       const id = `${depot.name}/${flow.name}`;
       const here = beads.filter((b) => flowIndex(flows, b.type) === j);
-      stages = Math.max(stages, flow.stages.length);
+      const platform = (stage: string) => slots.stages[id]![stage]!;
+      tracks = Math.max(tracks, track + 1);
 
       // The main line runs from the first platform to the last one on it.
       let last = 0;
-      flow.stages.forEach((_, k) => {
-        if (!isSiding(flow, k)) last = k;
+      flow.stages.forEach((stage, k) => {
+        stages = Math.max(stages, platform(stage.stage) + 1);
+        if (!isSiding(flow, k)) last = Math.max(last, platform(stage.stage));
       });
       out.tracks.push({
         key: id,
@@ -243,7 +320,7 @@ export function layout(yard: Yard): Layout {
       });
 
       flow.stages.forEach((stage, k) => {
-        const x = k * STAGE_PITCH;
+        const x = platform(stage.stage) * STAGE_PITCH;
         const siding = isSiding(flow, k);
         const key = `${id}/${stage.stage}`;
         const rail = z + (siding ? SIDING_Z : 0);
@@ -340,18 +417,18 @@ export function layout(yard: Yard): Layout {
       depot: depot.name,
       at: { x: BOARD_X, z: top },
       width,
-      depth: BOARD_HEAD + Math.max(flows.length, 1) * FLOW_PITCH,
+      depth: BOARD_HEAD + tracks * FLOW_PITCH,
     });
   });
 
   yard.crew.forEach((member, c) => {
     out.boxes.push({ key: `crew/${member.name}`, name: member.name, at: { x: c * CREW_PITCH, z: CREW_Z } });
   });
-  yard.peers.forEach((peer, p) => {
+  yard.peers.forEach((peer) => {
     out.peers.push({
       key: `peer/${peer.name}`,
       name: peer.name,
-      at: { x: 0, z: PEER_Z - p * PEER_PITCH },
+      at: { x: 0, z: PEER_Z - slots.peers[peer.name]! * PEER_PITCH },
       length: PEER_LENGTH,
     });
   });
@@ -360,7 +437,7 @@ export function layout(yard: Yard): Layout {
 }
 
 // Where every element of a layout is, by its key: what must not move when
-// the structure grows.
+// the structure grows or its order changes.
 export function positions(l: Layout): Map<string, Point> {
   const at = new Map<string, Point>();
   const put = (kind: string, key: string, p: Point) => at.set(`${kind}:${key}`, p);

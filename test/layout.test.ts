@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
+import remembered from "../public/layout.json";
 import snapshot from "../public/yard.json";
-import { DEPOT_PITCH, layout, positions, shedGroups, SLOT_PITCH, SLOTS, STAGE_PITCH } from "../src/layout";
-import type { Bead, Yard } from "../src/yard";
+import { DEPOT_PITCH, FIRST_TRACK_Z, FLOW_PITCH, layout, PEER_PITCH, PEER_Z, place, positions, shedGroups, SLOT_PITCH, SLOTS, STAGE_PITCH, travelOrder } from "../src/layout";
+import type { Bead, Flow, Yard } from "../src/yard";
 
 // The committed snapshot is the fixture: this yard, as scripts/snapshot.sh
 // wrote it.
@@ -12,10 +13,11 @@ function bead(id: string, over: Partial<Bead>): Bead {
   return { id, title: id, type: "task", stage: "new", depot: "yardr", priority: 2, created_at: "2099-01-01T00:00:00Z", ...over };
 }
 
-// Every element of before is in after, where it was.
+// Every element of before is in after, where it was: after is laid out with
+// the slots before was given, as the page is with public/layout.json.
 function expectKept(before: Yard, after: Yard) {
   const was = positions(layout(before));
-  const is = positions(layout(after));
+  const is = positions(layout(after, place(before)));
   expect(was.size).toBeGreaterThan(0);
   for (const [key, at] of was) {
     expect(is.get(key), key).toEqual(at);
@@ -78,6 +80,106 @@ describe("a structure that only grew keeps every old position", () => {
     expect(is.has("box:crew/pointsman")).toBe(true);
     expect(is.has("shed:yardr/default/review/auditors")).toBe(true);
     expect(is.has("vehicle:yardr-zzzz")).toBe(true);
+  });
+});
+
+describe("a slot once given is kept when the structure's order changes", () => {
+  test("the committed layout.json holds this snapshot, as first seen", () => {
+    expect(place(yard, remembered)).toEqual(remembered);
+    expect(place(yard)).toEqual(remembered);
+    expect(layout(yard, remembered)).toEqual(layout(yard));
+  });
+
+  test("a slot in layout.json wins over the order of first sight", () => {
+    const flow = yard.flows.find((f) => f.depot === "yardr")!.flows[0]!;
+    const memory = { depots: { yardr: 7 }, flows: { yardr: { [flow.name]: 2 } }, stages: { [`yardr/${flow.name}`]: { review: 9 } }, peers: { airy: 4 } };
+    const at = positions(layout(yard, memory));
+    expect(at.get("board:yardr")!.z).toBe(7 * DEPOT_PITCH);
+    expect(at.get(`platform:yardr/${flow.name}/review`)!.x).toBe(9 * STAGE_PITCH);
+    expect(at.get(`track:yardr/${flow.name}`)!.z).toBe(7 * DEPOT_PITCH + FIRST_TRACK_Z + 2 * FLOW_PITCH);
+    expect(at.get("peer:peer/airy")!.z).toBe(PEER_Z - 4 * PEER_PITCH);
+    // What had no slot stands after what had one, not on it.
+    expect(at.get("board:aiquokka")!.z).toBe(8 * DEPOT_PITCH);
+    expect(at.get(`platform:yardr/${flow.name}/backlog`)!.x).toBe(10 * STAGE_PITCH);
+  });
+
+  test("a depot named before the others is a board below, not one that pushes them down", () => {
+    const grown = copy();
+    grown.depots.unshift({ name: "aardvark", kind: "git", base: "main" });
+    grown.flows.unshift({ depot: "aardvark", flows: [{ name: "default", stages: [{ stage: "backlog", human: true }, { stage: "merged", terminal: true }] }] });
+    const { is } = expectKept(yard, grown);
+    expect(is.get("board:aardvark")!.z).toBe(yard.depots.length * DEPOT_PITCH);
+    // On first sight, with nothing remembered, it is the first board.
+    expect(positions(layout(grown)).get("board:aardvark")!.z).toBe(0);
+  });
+
+  test("depots, flows, stages and peers listed the other way round, and a new transition", () => {
+    const turned = copy();
+    turned.depots.reverse();
+    turned.flows.reverse();
+    turned.peers.push({ name: "beyond" });
+    turned.peers.reverse();
+    for (const depot of turned.flows) {
+      depot.flows.reverse();
+      for (const flow of depot.flows) {
+        // The first stage stays: a flow starts where it starts.
+        flow.stages = [flow.stages[0]!, ...flow.stages.slice(1).reverse()];
+        // A way from the start straight to the end changes how stages follow.
+        flow.stages[0]!.next = [flow.stages.find((s) => s.terminal === true)!.stage, ...(flow.stages[0]!.next ?? [])];
+      }
+    }
+    expectKept(yard, turned);
+    // Without the slots, the same structure is another picture.
+    expect(positions(layout(turned)).get("board:yardr")).not.toEqual(positions(layout(yard)).get("board:yardr"));
+  });
+
+  test("a stage that left and came back stands where it stood", () => {
+    const without = copy();
+    const flow = without.flows.find((f) => f.depot === "yardr")!.flows[0]!;
+    flow.stages = flow.stages.filter((s) => s.stage !== "review");
+    const memory = place(without, place(yard));
+    expect(memory).toEqual(place(yard));
+    without.flows.find((f) => f.depot === "yardr")!.flows[0]!.stages.push({ stage: "audit" });
+    const key = `yardr/${flow.name}`;
+    expect(place(without, memory).stages[key]!.audit).toBe(Math.max(...Object.values(memory.stages[key]!)) + 1);
+  });
+});
+
+describe("a flow's stages in the order a bead travels them", () => {
+  const train = yard.flows.find((f) => f.depot === "yardr")!.flows.find((f) => f.name === "yardr.train")!;
+
+  test("flow show lists yardr.train's merged before land; the track does not", () => {
+    expect(train.stages.map((s) => s.stage)).toEqual(["backlog", "open", "review", "merge", "approved", "decide", "in-pr", "merged", "land"]);
+    expect(travelOrder(train)).toEqual(["backlog", "open", "review", "merge", "approved", "decide", "in-pr", "land", "merged"]);
+  });
+
+  test("yardr.train's main line ends at merged, the buffer behind it, decide off the line", () => {
+    const l = layout(yard);
+    const platforms = l.platforms.filter((p) => p.key.startsWith("yardr/yardr.train/")).sort((a, b) => a.at.x - b.at.x);
+    expect(platforms.filter((p) => !p.siding).map((p) => p.stage)).toEqual(["backlog", "open", "review", "merge", "approved", "in-pr", "land", "merged"]);
+    expect(platforms.filter((p) => p.siding).map((p) => p.stage)).toEqual(["decide"]);
+    // The buffer stop is drawn at the track's right end.
+    const track = l.tracks.find((t) => t.key === "yardr/yardr.train")!;
+    const merged = platforms.at(-1)!;
+    expect(merged.terminal).toBe(true);
+    expect(track.at.x + track.length).toBe(merged.at.x + STAGE_PITCH / 2);
+  });
+
+  test("terminal stages last, what no transition reaches before them, unknown names skipped", () => {
+    const flow: Flow = {
+      name: "f",
+      stages: [
+        { stage: "a", next: ["end", "c", "nowhere", "a"] },
+        { stage: "end", terminal: true },
+        { stage: "lost" },
+        { stage: "b", next: ["end"] },
+        { stage: "c", next: ["b", "a"] },
+      ],
+    };
+    expect(travelOrder(flow)).toEqual(["a", "c", "b", "lost", "end"]);
+    expect(travelOrder({ name: "empty", stages: [] })).toEqual([]);
+    // A snapshot from before stages had next: the listed order, the end last.
+    expect(travelOrder({ name: "old", stages: [{ stage: "a" }, { stage: "end", terminal: true }, { stage: "b" }] })).toEqual(["a", "b", "end"]);
   });
 });
 

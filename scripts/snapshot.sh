@@ -1,5 +1,6 @@
 #!/bin/sh
-# Write public/yard.json: the structure of a yardr yard, as the page draws it.
+# Write public/yard.json: the structure of a yardr yard, as the page draws it,
+# and bring layout.json beside it up to date: the slots its elements stand in.
 # Everything comes from the yard's own commands (yardr ... --json), never from
 # its store or socket. src/yard.ts holds the shape of the file as types.
 #
@@ -49,7 +50,7 @@ jq -n \
       flows: [.flows[] | {
         name: .flow.name,
         type,
-        stages: [.stages[] | {stage, group, human, terminal} | tidy]
+        stages: [.stages[] | {stage, group, next, human, terminal} | tidy]
       } | tidy]
     }],
     groups: [$groups[0][] | {name, runner, limit, members} | tidy],
@@ -60,3 +61,7 @@ jq -n \
   }' >"$tmp/yard.json"
 
 mv "$tmp/yard.json" "$out"
+
+# The layout's memory: written when it is missing, and given what is new in
+# this snapshot otherwise. What it holds already is never changed.
+node "$(dirname "$0")/slots.mjs" "$out" "$(dirname "$out")/layout.json"

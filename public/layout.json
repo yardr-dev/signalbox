@@ -1,0 +1,85 @@
+{
+  "depots": {
+    "aiquokka": 0,
+    "signalbox": 1,
+    "yardr": 2,
+    "yardr.dev": 3
+  },
+  "flows": {
+    "aiquokka": {
+      "aiquokka": 0,
+      "pr-review": 1
+    },
+    "signalbox": {
+      "default": 0
+    },
+    "yardr": {
+      "default": 0,
+      "yardr.train": 1,
+      "type/wagon": 2
+    },
+    "yardr.dev": {
+      "default": 0
+    }
+  },
+  "stages": {
+    "aiquokka/aiquokka": {
+      "backlog": 0,
+      "new": 1,
+      "decide": 2,
+      "review": 3,
+      "approved": 4,
+      "merged": 5
+    },
+    "aiquokka/pr-review": {
+      "review": 0,
+      "decide": 1,
+      "done": 2
+    },
+    "signalbox/default": {
+      "backlog": 0,
+      "new": 1,
+      "decide": 2,
+      "review": 3,
+      "approved": 4,
+      "merged": 5
+    },
+    "yardr/default": {
+      "backlog": 0,
+      "new": 1,
+      "decide": 2,
+      "review": 3,
+      "approved": 4,
+      "merged": 5
+    },
+    "yardr/yardr.train": {
+      "backlog": 0,
+      "open": 1,
+      "review": 2,
+      "merge": 3,
+      "approved": 4,
+      "decide": 5,
+      "in-pr": 6,
+      "land": 7,
+      "merged": 8
+    },
+    "yardr/type/wagon": {
+      "backlog": 0,
+      "new": 1,
+      "approved": 2,
+      "decide": 3,
+      "merged": 4
+    },
+    "yardr.dev/default": {
+      "backlog": 0,
+      "new": 1,
+      "decide": 2,
+      "review": 3,
+      "approved": 4,
+      "merged": 5
+    }
+  },
+  "peers": {
+    "airy": 0
+  }
+}
