@@ -1,12 +1,13 @@
 // The serve script's routes (scripts/serve.mjs), over a real socket on a free
 // loopback port, with a yard that is a list in this file.
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
 import { BATCH, routes } from "../scripts/serve.mjs";
+import { bead, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
 const root = join(dir, "dist");
@@ -207,6 +208,79 @@ describe("the snapshot", () => {
     const response = await fetch(`${s.url}/api/snapshot`);
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "the yard did not answer" });
+  });
+});
+
+describe("a bead", () => {
+  const detail = { bead: { id: "signalbox-a", title: "a", body: "the body" }, notes: [{ author: "signalbox-a-new", at: "2099-01-01T00:00:00Z", text: "built" }] };
+  // A yard of one bead, and what it was asked for.
+  const one = () => {
+    const asked = [];
+    const of = { ...yard([]), bead: async (id) => (asked.push(id), id === "signalbox-a" ? detail : undefined) };
+    return { asked, of };
+  };
+
+  test("the bead with its body and notes", async () => {
+    const { of } = one();
+    const s = await start(of);
+    const response = await fetch(`${s.url}/api/bead/signalbox-a`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toMatch(/^application\/json/);
+    expect(await response.json()).toEqual(detail);
+  });
+
+  test("an id the yard does not know is not found, and no error", async () => {
+    const { of, asked } = one();
+    const s = await start(of);
+    const response = await fetch(`${s.url}/api/bead/signalbox-zzzz`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not found" });
+    expect(asked).toEqual(["signalbox-zzzz"]);
+  });
+
+  test("what is no id is refused before the yard is asked", async () => {
+    const { of, asked } = one();
+    const s = await start(of);
+    // A flag, a path, another command's words, upper case, nothing at all.
+    for (const id of ["--help", "-a", ".x", "a/b", "a%2Fb", "a%20--all", "a;ls", "Signalbox-a", "a$(id)", ""]) {
+      const response = await fetch(`${s.url}/api/bead/${id}`);
+      expect(response.status, id).toBe(400);
+      expect(await response.json(), id).toEqual({ error: "not a bead id" });
+    }
+    expect(asked).toEqual([]);
+    expect((await fetch(`${s.url}/api/bead/signalbox-a`, { method: "POST" })).status).toBe(405);
+  });
+
+  test("a yard that does not answer is an error, without what it said", async () => {
+    const s = await start({ ...yard([]), bead: async () => Promise.reject(new Error("/Users/someone/.yardr: no yard")) });
+    const response = await fetch(`${s.url}/api/bead/signalbox-a`);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "the yard did not answer" });
+  });
+
+  // The yard's command, as a stand-in: it prints what yardr prints.
+  function standIn(script) {
+    const bin = join(dir, `yardr-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(bin, `#!/bin/sh\n${script}\n`);
+    chmodSync(bin, 0o755);
+    return yardr(bin);
+  }
+
+  test("asked of the yard: prime's bead and notes, cut down", async () => {
+    const run = standIn(`echo "$*" > "${dir}/args"; echo '{"bead":{"id":"signalbox-a","title":"a","body":"the body","session":"4wbdbdwypgzzjr5vgfwr","uuid":"u"},"notes":[{"author":"signalbox-a-new","at":"2099-01-01T00:00:00Z","text":"built","seq":3}],"next":{"source":{"path":"/a/path"}}}'`);
+    expect(await bead(run, "signalbox-a")).toEqual({
+      bead: { id: "signalbox-a", title: "a", working: true, body: "the body" },
+      notes: [{ author: "signalbox-a-new", at: "2099-01-01T00:00:00Z", text: "built" }],
+    });
+    expect(readFileSync(join(dir, "args"), "utf8").trim()).toBe("prime --bead signalbox-a --json");
+  });
+
+  test("asked of the yard: a bead it does not have is nothing, any other failure an error", async () => {
+    // yardr says so on stdout, with nothing on stderr.
+    const gone = standIn(`echo '{"error":"bead signalbox-zzzz: not found"}'; exit 3`);
+    expect(await bead(gone, "signalbox-zzzz")).toBeUndefined();
+    const down = standIn(`echo '{"error":"mkdir /nowhere: read-only file system"}'; exit 1`);
+    await expect(bead(down, "signalbox-a")).rejects.toThrow("read-only file system");
   });
 });
 

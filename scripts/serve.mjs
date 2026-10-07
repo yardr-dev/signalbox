@@ -5,7 +5,7 @@
 //   YARDR=/path/to/yardr names the binary, YARDR_HOME the yard, as for the
 //   snapshot (scripts/snapshot.sh).
 //
-// Beside the built page (dist/) it answers two routes, both from the yard's
+// Beside the built page (dist/) it answers three routes, all from the yard's
 // own commands (scripts/yard.mjs) and cut down by src/project.ts:
 //
 //   GET /api/snapshot           the yard now, its slots and the window of its
@@ -14,6 +14,9 @@
 //   GET /api/feed?after=<seq>   server-sent events: every event of the yard
 //                               after seq, each one message with its seq as
 //                               the id, for as long as the page listens
+//   GET /api/bead/<id>          one bead for its card (src/card.ts): {bead,
+//                               notes}, with the bead's body and its notes;
+//                               404 when the yard has no bead of that id
 //
 // The feed is polled: yardr has no push feed yet. Every interval the newest
 // events are asked for once, for all who listen, and each gets what is after
@@ -29,11 +32,15 @@ import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { place } from "../src/layout.ts";
-import { recent, snapshot, yardr } from "./yard.mjs";
+import { bead, recent, snapshot, yardr } from "./yard.mjs";
 
 // How many events one poll asks for. More than that in one interval and a
 // listener is told to start again from a snapshot.
 export const BATCH = 200;
+
+// A bead's id, as the route takes it: it becomes an argument of a command.
+// It starts with a letter or a figure, so it is never read as a flag.
+const ID = /^[a-z0-9][a-z0-9.-]*$/;
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -46,7 +53,8 @@ const TYPES = {
 };
 
 // The routes as one request handler, and close to end what it holds open.
-//   yard      {snapshot(), recent(n)}: the yard's answers (scripts/yard.mjs)
+//   yard      {snapshot(), recent(n), bead(id)}: the yard's answers
+//             (scripts/yard.mjs)
 //   root      the directory of the built page
 //   interval  milliseconds between two polls of the feed
 //   memory    the slots given so far (layout.json); what a snapshot adds is
@@ -72,6 +80,19 @@ export function routes({ yard, root, interval = 3000, memory = {} }) {
       json(res, 200, { yard: now, layout: slots, log });
     } catch (err) {
       failed("snapshot", err);
+      json(res, 502, { error: "the yard did not answer" });
+    }
+  }
+
+  async function answerBead(res, id) {
+    // Before anything is run.
+    if (!ID.test(id)) return json(res, 400, { error: "not a bead id" });
+    try {
+      const found = await yard.bead(id);
+      if (found === undefined) return json(res, 404, { error: "not found" });
+      json(res, 200, found);
+    } catch (err) {
+      failed(`bead ${id}`, err);
       json(res, 502, { error: "the yard did not answer" });
     }
   }
@@ -153,6 +174,7 @@ export function routes({ yard, root, interval = 3000, memory = {} }) {
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "GET only" });
     if (url.pathname === "/api/snapshot") return void answerSnapshot(res);
     if (url.pathname === "/api/feed") return answerFeed(req, res, url);
+    if (url.pathname.startsWith("/api/bead/")) return void answerBead(res, url.pathname.slice("/api/bead/".length));
     if (url.pathname.startsWith("/api/")) return json(res, 404, { error: "not found" });
     return answerFile(req, res, url);
   }
@@ -191,7 +213,7 @@ async function main() {
   const remembered = join(root, "layout.json");
   const memory = existsSync(remembered) ? JSON.parse(readFileSync(remembered, "utf8")) : {};
   const run = yardr();
-  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n) }, root, interval, memory });
+  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n), bead: (id) => bead(run, id) }, root, interval, memory });
 
   const server = createServer(handle);
   server.listen(port, values.host, () => {
@@ -199,7 +221,7 @@ async function main() {
     const name = at.family === "IPv6" ? `[${at.address}]` : at.address;
     console.log(`signalbox: the yard, live, at http://${name}:${at.port}/`);
     const local = ["127.0.0.1", "::1", "localhost"].includes(values.host);
-    if (!local) console.log("signalbox: no login: whoever reaches that address reads the yard's beads, groups and events");
+    if (!local) console.log("signalbox: no login: whoever reaches that address reads the yard's beads, their bodies and notes, its groups and events");
   });
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => {

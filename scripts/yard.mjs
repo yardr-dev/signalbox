@@ -6,7 +6,7 @@
 // node runs the page's TypeScript as it is: it has only types to strip.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { eventOf, logOf, yardOf } from "../src/project.ts";
+import { cardOf, eventOf, logOf, yardOf } from "../src/project.ts";
 
 // The window the page replays. yardr events has no --since, so it is a count
 // and not a day: the newest 2000, oldest first.
@@ -25,7 +25,7 @@ export function yardr(bin = process.env.YARDR || "yardr") {
   return (...args) =>
     new Promise((resolve, reject) => {
       execFile(bin, [...args, "--json"], { maxBuffer: 256 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (err) return reject(new Error(`${bin} ${args.join(" ")}: ${stderr.trim() || err.message}`));
+        if (err) return reject(new Error(`${bin} ${args.join(" ")}: ${stderr.trim() || said(stdout) || err.message}`));
         try {
           resolve(JSON.parse(stdout));
         } catch (cause) {
@@ -33,6 +33,17 @@ export function yardr(bin = process.env.YARDR || "yardr") {
         }
       });
     });
+}
+
+// What a command that failed printed: with --json its error is an object on
+// stdout, and stderr is empty.
+function said(stdout) {
+  try {
+    const { error } = JSON.parse(stdout);
+    return typeof error === "string" ? error : "";
+  } catch {
+    return "";
+  }
 }
 
 const now = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
@@ -67,4 +78,16 @@ export async function recent(run, n) {
 
 function bySeq(events) {
   return [...events].sort((a, b) => a.seq - b.seq);
+}
+
+// One bead for its card, or nothing when the yard has no bead of that id.
+// From prime, not bead show: bead show prints the bead without its notes.
+// prime only reads.
+export async function bead(run, id) {
+  try {
+    return cardOf(await run("prime", "--bead", id));
+  } catch (err) {
+    if (err instanceof Error && err.message.endsWith(": not found")) return undefined;
+    throw err;
+  }
 }

@@ -7,12 +7,14 @@
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import { ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
 import { describe, draw, house, Stock } from "./scene";
 import "./style.css";
+import type { Card, Detail } from "./card";
 import type { Shed, Slots } from "./layout";
 import type { Log, YardEvent } from "./replay";
 import type { Bead, Yard } from "./yard";
@@ -24,10 +26,13 @@ const ELEVATION = THREE.MathUtils.degToRad(40);
 const DISTANCE = 400;
 // Pixels per unit of ground below which the sheds' names are hidden.
 const FAR = 14;
+// Pixels a pointer may move between down and up and still have clicked.
+const SLOP = 5;
 
 const base = import.meta.env.BASE_URL;
 const host = document.getElementById("yard")!;
 const tip = document.getElementById("tip")!;
+const side = document.getElementById("card")!;
 const note = document.getElementById("note")!;
 const bar = document.getElementById("bar")!;
 const play = document.getElementById("play")!;
@@ -81,6 +86,29 @@ function shape(yard: Yard, slots: Partial<Slots>): string {
 
 // The yard's clock, in the reader's own time.
 const time = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+// A day and a time of the yard, in the reader's own: a bead may be weeks old.
+const dated = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+const when = (iso: string) => (Number.isNaN(Date.parse(iso)) ? iso : dated.format(Date.parse(iso)));
+
+// Put a card on the page. All of it is text of the yard: none is markup.
+function show(c: Card) {
+  const el = (tag: string, name: string, text: string) => {
+    const e = document.createElement(tag);
+    e.className = name;
+    e.textContent = text;
+    return e;
+  };
+  const facts = document.createElement("dl");
+  for (const [what, value] of c.facts) facts.append(el("dt", "", what), el("dd", "", value));
+  side.replaceChildren(el("div", "id", c.id), el("h2", "", c.title));
+  if (c.facts.length > 0) side.append(facts);
+  if (c.body !== "") side.append(el("p", "body", c.body));
+  for (const n of c.notes) side.append(el("h3", "", n.head), el("p", "", n.text));
+  if (c.remark !== "") side.append(el("p", "remark", c.remark));
+  side.scrollTop = 0;
+  side.hidden = false;
+}
 
 async function start() {
   const api = await snapshot();
@@ -193,7 +221,7 @@ async function start() {
   // A wagon, or the figure at work on it, says under the pointer which bead
   // it is; a building which group's it is.
   const ray = new THREE.Raycaster();
-  const point = (e: PointerEvent) => {
+  const under = (e: PointerEvent) => {
     const box = host.getBoundingClientRect();
     ray.setFromCamera(
       new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1),
@@ -201,6 +229,10 @@ async function start() {
     );
     let hit: THREE.Object3D | null = ray.intersectObjects([...stock.beads, ...picture.sheds], true)[0]?.object ?? null;
     while (hit && !hit.userData.bead && !hit.userData.shed) hit = hit.parent;
+    return hit;
+  };
+  const point = (e: PointerEvent) => {
+    const hit = under(e);
     if (!hit) {
       tip.style.display = "none";
       return;
@@ -213,6 +245,50 @@ async function start() {
   host.addEventListener("pointermove", point);
   host.addEventListener("pointerdown", point);
   host.addEventListener("pointerleave", () => (tip.style.display = "none"));
+
+  // A click on a wagon, or on the figure at work on it, opens the bead's
+  // card; a click on anything else of the yard, or Escape, closes it. The
+  // camera stays where it is.
+  // Counts the cards opened and closed: an answer of the yard that comes
+  // when its card was replaced or closed is dropped.
+  let turn = 0;
+  const open = async (bead: Bead) => {
+    const mine = ++turn;
+    // No serve script, no yard to ask: the card is the snapshot's bead.
+    if (!api) return show(brief(bead, when, NEEDS_LIVE));
+    show(brief(bead, when, ASKING));
+    let next: Card;
+    try {
+      const response = await fetch(`${base}api/bead/${encodeURIComponent(bead.id)}`);
+      if (response.status === 404) next = missing(bead.id);
+      else if (!response.ok) throw new Error(`api/bead: ${response.status}`);
+      else next = card((await response.json()) as Detail, when);
+    } catch {
+      next = brief(bead, when, NO_ANSWER);
+    }
+    if (mine === turn) show(next);
+  };
+  const shut = () => {
+    turn++;
+    side.hidden = true;
+  };
+  // A click, not the end of a drag or a pinch: one pointer, up where it
+  // went down.
+  let pressed: { x: number; y: number } | undefined;
+  host.addEventListener("pointerdown", (e) => {
+    pressed = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY } : undefined;
+  });
+  host.addEventListener("pointerup", (e) => {
+    const from = pressed;
+    pressed = undefined;
+    if (!from || Math.hypot(e.clientX - from.x, e.clientY - from.y) > SLOP) return;
+    const bead = under(e)?.userData.bead as Bead | undefined;
+    if (bead) void open(bead);
+    else shut();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") shut();
+  });
 
   // Drawn again on the next frame, and on every frame while anything moves.
   let stale = true;

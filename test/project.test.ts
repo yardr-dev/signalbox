@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { eventOf, logOf, yardOf, type Raw } from "../src/project";
+import { cardOf, eventOf, logOf, yardOf, type Raw } from "../src/project";
 
 // What the yard's commands print, with what must not leave the machine.
 const SECRET = "/Users/someone/.yardr/secret";
@@ -82,5 +82,36 @@ describe("the projection", () => {
     expect(log.beads).toEqual([{ id: "signalbox-c", title: "c", type: "task", stage: "merged", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" }]);
     expect(log.events.map((e) => e.seq)).toEqual([1, 2]);
     expect(JSON.stringify(log)).not.toMatch(/secret/);
+  });
+
+  test("a bead's card has its body and notes, and nothing else prime printed", () => {
+    const primed = {
+      bead: { ...lists.beads[0], uuid: "u", hold: true, labels: ["web"], updated_at: "2099-01-02T00:00:00Z", created_by: "yardmaster", revision: "r" },
+      notes: [{ bead: "signalbox-a", kind: "note", author: "signalbox-a-new", text: "what changed", at: "2099-01-01T01:00:00Z", seq: 7 }],
+      flow: { name: "default" },
+      next: { source: { kind: "repo", path: "/Users/someone/flows/default.flow" } },
+      deps: [{ id: "signalbox-b" }],
+    };
+    expect(cardOf(primed)).toEqual({
+      bead: {
+        id: "signalbox-a",
+        title: "a",
+        type: "task",
+        stage: "new",
+        depot: "signalbox",
+        // The session is there; its name stays in the yard.
+        working: true,
+        hold: true,
+        labels: ["web"],
+        priority: 2,
+        created_at: "2099-01-01T00:00:00Z",
+        status: "open",
+        updated_at: "2099-01-02T00:00:00Z",
+        body: SECRET,
+      },
+      notes: [{ author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "what changed" }],
+    });
+    // What is not a bead with notes is an empty card, not an error.
+    expect(cardOf({})).toEqual({ bead: { working: false }, notes: [] });
   });
 });

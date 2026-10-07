@@ -5,10 +5,12 @@
 // process handles. Each shape here is built from the fields it names, so a
 // field yardr adds tomorrow is not passed on. scripts/yard.mjs runs the
 // commands; the snapshot's files and the serve script's routes both carry
-// what these functions return, and nothing else.
+// what these functions return, and nothing else. A bead's body and notes
+// leave in one answer alone, the card's (cardOf): never in a file.
 //
 // No import but types: node runs this file as it is (scripts/).
 
+import type { Detail } from "./card";
 import type { Log, YardEvent } from "./replay";
 import type { Bead, Yard } from "./yard";
 
@@ -60,14 +62,30 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
     routes: lists.routes.map((r) => pick(r, ["stage", "type", "depot", "label", "group", "priority"])),
     crew: lists.crew.map((c) => pick(c, ["name"], { kind: record(c.config).kind, state: c.state, status: c.status })),
     peers: lists.peers.map((p) => pick(p, ["name", "send", "receive"])),
-    beads: lists.beads.map((b) =>
-      pick(b, ["id", "title", "type", "stage", "depot", "group"], {
-        working: b.session !== null && b.session !== undefined,
-        ...pick(b, ["hold", "train", "labels", "priority", "created_at"]),
-      }),
-    ),
+    beads: lists.beads.map(beadOf),
   };
   return yard as unknown as Yard;
+}
+
+// One bead of the snapshot. A session is said to be there, never named.
+function beadOf(b: Raw): Raw {
+  return pick(b, ["id", "title", "type", "stage", "depot", "group"], {
+    working: b.session !== null && b.session !== undefined,
+    ...pick(b, ["hold", "train", "labels", "priority", "created_at"]),
+  });
+}
+
+// One bead for its card (src/card.ts), from what prime --bead printed: the
+// snapshot's bead, whether it is closed, when it last changed, its body and
+// its notes. A note is its author, time and text; prime also prints the
+// flow, the bead's edges and where its flow file lies.
+export function cardOf(raw: Raw): Detail {
+  const bead = record(raw.bead);
+  const detail = {
+    bead: { ...beadOf(bead), ...pick(bead, ["status", "updated_at", "body"]) },
+    notes: list(raw.notes).map((n) => pick(n, ["author", "at", "text"])),
+  };
+  return detail as unknown as Detail;
 }
 
 // The names an event's data may carry, each only as a string. An advance

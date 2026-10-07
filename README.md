@@ -76,7 +76,15 @@ replay's, and says under the pointer which bead and group; when the session
 ends it walks back. A scrub puts everyone
 where they were then, at once. With `prefers-reduced-motion` the figures
 stand still where they are, a hand at the wagon. A building says under the
-pointer its group, runner and limit. The yard's crew members stand before
+pointer its group, runner and limit. A click on a wagon, or on the figure at
+work on it, opens the bead's card at the right of the page: its id and
+title, depot, type, stage, group and whether a session is on it, hold,
+priority, labels, when it was created and last changed, then its body and
+its notes, newest first, each as plain text. Another wagon replaces the
+card, a click anywhere else in the yard or Escape closes it, and the camera
+stays where it is. The body and the notes are asked of the yard at the
+click, so only the live page has them: the replay's card is what the
+snapshot holds, and says "notes need the live page". The yard's crew members stand before
 their signal boxes. A held bead stands in the siding. A peer's
 message is a goods wagon on the peer's line, named by its kind and its peer:
 out from the yard's end past the edge of the yard, or in from there, a few
@@ -106,7 +114,7 @@ not seen, the page takes a new snapshot and lays out again: what was placed
 stays where it was.
 
 The script asks the yard through its own commands and nothing else, the ones
-the snapshot uses, every interval while a page listens. It is two routes
+the snapshot uses, every interval while a page listens. It is three routes
 beside the files of `dist/`:
 
 - `GET /api/snapshot`: `yard.json`, `layout.json` and `events.json` in one
@@ -116,14 +124,22 @@ beside the files of `dist/`:
   line says where it was (`Last-Event-ID`) and misses nothing, also when the
   script was restarted in between. Restart it on the same `--port`: a free
   port is another one each time, and the open page looks for the old one.
+- `GET /api/bead/<id>`: one bead for its card, `{bead, notes}`, asked of the
+  yard at the click (`yardr prime --bead <id> --json`, which only reads:
+  `yardr bead show` prints no notes). An id is lower-case letters, figures,
+  dots and dashes, and starts with a letter or a figure; anything else is
+  refused before a command is run. A bead the yard does not have is a 404,
+  and the card says "not found".
 
 What it exposes: what the committed snapshot holds, for the yard as it is
 now. Depots, flows, stages, groups, routes, crew and peers by name; of each
 open bead its id, title, type, stage, labels and whether a session works it;
 of each event its number, time, kind, bead and a few names (group, depot,
-peer, stages of an advance). Never a bead's body, a path, a key or a
-session's own name: `src/project.ts` builds each answer from the fields it
-names. There is no login, as with `yardr web serve --unsafe`: whoever reaches
+peer, stages of an advance). And of the one bead a card asks for, live
+only and in no file: its body and its notes, each with its author and time,
+as they were written. Whoever writes a path or a key into a note has put it
+on the card. Never a path or a key the yard itself prints, nor a session's
+own name: `src/project.ts` builds each answer from the fields it names. There is no login, as with `yardr web serve --unsafe`: whoever reaches
 the port reads all of that. So it listens on this machine alone, and
 `--host` is for an address only your own devices reach, such as this
 machine's on a Tailscale net, for a phone on the same net.
@@ -186,4 +202,6 @@ of this is there, and the page is the committed snapshot and its replay.
 - `src/scene.ts` draws a layout: `draw` what stands still, `Stock` the wagons
   and figures, which it moves from one state to the next, each figure with a
   mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the
-  page: camera, pan and zoom, labels, the bead under the pointer, the bar.
+  page: camera, pan and zoom, labels, the bead under the pointer, the card
+  of the bead that was clicked, the bar. `src/card.ts` builds the card's
+  text, pure: from the yard's answer, or from the snapshot's bead alone.
