@@ -122,6 +122,9 @@ export function cardOf(raw: Raw): Detail {
 // alone keeps from and to: on other kinds they are people and builds.
 const NAMES = ["group", "depot", "type", "peer", "kind", "crew"];
 const OF_ADVANCE = ["from", "to", "outcome"];
+// A close's reason is what somebody wrote, but for the yard's own word for a
+// landing: that one is passed on, and no other.
+const LANDED = "merged";
 
 // One event, cut down to what the replay reads (src/replay.ts). A session is
 // named by the alias the caller gives it, never by the yard's own name: the
@@ -133,6 +136,7 @@ export function eventOf(raw: Raw, alias: (session: string) => string): YardEvent
     if (typeof from[key] === "string") data[key] = from[key];
   }
   if (typeof from.session === "string") data.session = alias(from.session);
+  if (raw.kind === "closed" && from.reason === LANDED) data.reason = LANDED;
   const event = pick(raw, ["seq", "at", "kind", "bead"], { data: Object.keys(data).length > 0 ? data : null });
   return event as unknown as YardEvent;
 }

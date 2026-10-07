@@ -88,6 +88,10 @@ describe("the projection", () => {
       to: "review",
       outcome: "done",
     });
+    // A close says that it was a landing, in the yard's word for one; what somebody wrote as the reason stays.
+    expect(eventOf({ seq: 8, at: "t", kind: "closed", bead: "signalbox-a", data: { reason: "merged", deliveries: [SECRET] } }, alias).data).toEqual({ reason: "merged" });
+    expect(eventOf({ seq: 8, at: "t", kind: "closed", bead: "signalbox-a", data: { reason: SECRET } }, alias)).toEqual({ seq: 8, at: "t", kind: "closed", bead: "signalbox-a" });
+    expect(eventOf({ seq: 8, at: "t", kind: "updated", bead: "signalbox-a", data: { reason: "merged" } }, alias).data).toBeUndefined();
     // A name that is no string is no name; no data, no key.
     expect(eventOf({ seq: 9, at: "t", kind: "hook", data: { type: { path: SECRET }, peer: 3 } }, alias)).toEqual({ seq: 9, at: "t", kind: "hook" });
     // A change of structure keeps its kind, by which the page takes a new snapshot, and its names.

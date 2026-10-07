@@ -39,6 +39,12 @@ sets the speed (60x makes an hour a minute), and scrubs over the window; it
 shows the yard's clock in your own time and the last event in one line.
 Without `events.json` the page is the still picture of `yard.json`.
 
+Sound on the bar turns the yard's sounds on, and the browser remembers it:
+a whistle when a bead lands (closed as merged), a bell when a session
+stalls or is given up, a clank when a shunter takes wagons on and when it
+lets go of them. They are off until then, and a scrub is silent: only what
+happens while the replay plays, or the yard runs, is heard.
+
 A wagon appears at the backlog when its bead is made. It does not move by
 itself. Every track has a shunter, the kit's diesel, parked on a headshunt
 before the first platform. When a bead advances the shunter runs to its
@@ -183,7 +189,8 @@ of this is there, and the page is the committed snapshot and its replay.
   binary). The committed files are the demo data and the tests' fixture: the
   tests name the yard's depots, groups and beads, so a new snapshot may need
   them brought along. Of an event the file keeps its number, time, kind and
-  bead, and a few names from its data; a session is an alias.
+  bead, and a few names from its data; a session is an alias, and a close
+  says only whether it was a landing.
 - `scripts/yard.mjs` runs those commands, for the snapshot and the serve
   script alike, and `src/project.ts` cuts what they print down to what the
   page reads: the one place that decides which fields are passed on.
@@ -220,6 +227,8 @@ of this is there, and the page is the committed snapshot and its replay.
   places, and how long it takes (a second at most, at any speed; a peer's goods four at
 1x and never under two), a figure's way between its place and its wagon, how
   long it takes at a speed of the replay, and what it does there.
+- `src/sound.ts`: which sound an event is (`cueOf`), and the three sounds,
+  made with the Web Audio API when they are asked for: no file is played.
 - `src/shunt.ts`: the shunters, pure as `motion.ts` is. An engine is
   transport and no part of the yard's state. An order is the wagons that go
   together, a job the shunter's ways for it (fetch, pull, release, return),

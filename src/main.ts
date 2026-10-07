@@ -13,6 +13,7 @@ import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
 import { describe, draw, house, Stock } from "./scene";
+import { cues, Sound } from "./sound";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots } from "./layout";
@@ -38,6 +39,7 @@ const bar = document.getElementById("bar")!;
 const play = document.getElementById("play")!;
 const live = document.getElementById("live")!;
 const speeds = document.getElementById("speeds")!;
+const mute = document.getElementById("sound")!;
 const scrub = document.getElementById("scrub") as HTMLInputElement;
 const clock = document.getElementById("clock")!;
 const current = document.getElementById("event")!;
@@ -323,7 +325,12 @@ async function start() {
     let fed = false;
     document.body.classList.add("replay");
     bar.hidden = false;
+    const sound = new Sound(
+      () => window.localStorage,
+      () => new AudioContext(),
+    );
     const told = () => {
+      mute.setAttribute("aria-pressed", String(sound.on));
       play.textContent = player.playing ? "Pause" : "Play";
       live.textContent = fed || !player.live ? "Live" : "Live · no feed";
       live.setAttribute("aria-pressed", String(player.live));
@@ -357,6 +364,13 @@ async function start() {
       }
       told();
     });
+    mute.addEventListener("click", () => {
+      sound.set(!sound.on);
+      told();
+    });
+    // Sound left on by an earlier visit starts with the first touch of this
+    // one: a browser lets no page sound before.
+    for (const touch of ["pointerup", "keydown"]) window.addEventListener(touch, () => sound.wake());
     // A scrub is a new state, not a move: everything stands where it was
     // then. It leaves the yard as it runs for the replay of the window.
     const seek = (clock: number) => {
@@ -375,6 +389,7 @@ async function start() {
       const passed = player.advance(dt);
       // Live, the yard's own pace, whatever speed the bar was left at.
       const speed = player.live ? 1 : player.speed;
+      for (const cue of cues(passed)) sound.play(cue);
       for (const e of passed) {
         if (e.kind === "hook") stock.flash();
         const peer = e.data?.peer;
@@ -498,7 +513,11 @@ async function start() {
       const dt = Math.min((now - before) / 1000, 0.1);
       before = now;
       run(dt);
-      if (stock.tick(dt) || stale) {
+      const moving = stock.tick(dt);
+      // A shunter took wagons on or let go of them in this frame.
+      if (stock.coupled > 0) sound.play("clank");
+      stock.coupled = 0;
+      if (moving || stale) {
         stale = false;
         render();
       }

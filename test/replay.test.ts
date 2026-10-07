@@ -328,7 +328,9 @@ describe("the committed day", () => {
     const keys = new Set(log.events.flatMap((e) => Object.keys(e)));
     expect([...keys].sort()).toEqual(["at", "bead", "data", "kind", "seq"]);
     const data = new Set(log.events.flatMap((e) => Object.keys(e.data ?? {})));
-    for (const key of data) expect(["from", "to", "outcome", "group", "session", "depot", "type", "peer", "kind", "crew"]).toContain(key);
+    for (const key of data) expect(["from", "to", "outcome", "group", "session", "depot", "type", "peer", "kind", "crew", "reason"]).toContain(key);
+    // A reason is the yard's word for a landing, never what somebody wrote.
+    for (const e of log.events) if (e.data?.reason !== undefined) expect(e).toMatchObject({ kind: "closed", data: { reason: "merged" } });
     // Sessions by alias, never by the yard's own name for them.
     for (const e of log.events) if (e.data?.session !== undefined) expect(e.data.session).toMatch(/^s[0-9a-f]+$/);
     expect(JSON.stringify(log)).not.toMatch(/\/Users\/|worktree/);

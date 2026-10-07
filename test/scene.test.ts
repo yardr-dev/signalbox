@@ -422,6 +422,26 @@ describe("the shunters of the stock", () => {
     expect(stock.tick(0.1)).toBe(false);
   });
 
+  test("a shunter's job is two couplings for the page to sound: the order taken, and its wagons let go; a scrub is none", () => {
+    const [from, to] = [at(bead("w", "new")), at(bead("w", "review"))];
+    const stock = new Stock(from, kit);
+    expect(stock.coupled).toBe(0);
+    stock.show(to, { tween: true });
+    expect(stock.coupled).toBe(1);
+    run(stock, () => undefined);
+    expect(stock.coupled).toBe(2);
+    stock.coupled = 0;
+    // Back by a scrub, and on again by one: nothing was seen to move.
+    stock.show(from, { tween: false });
+    stock.show(to, { tween: false });
+    // Given up half way: the wagons were never let go of.
+    stock.show(from, { tween: true });
+    stock.tick(0.6);
+    stock.show(to, { tween: false });
+    run(stock, () => undefined);
+    expect(stock.coupled).toBe(1);
+  });
+
   test("more moves than a shunter keeps up with are not transported: the picture is the state", () => {
     const stages = ["backlog", "new", "review", "approved", "decide"];
     const ids = ["a", "b", "c", "d"];

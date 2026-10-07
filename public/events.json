@@ -957,7 +957,10 @@
       "seq": 6976,
       "at": "2026-10-06T19:57:03.299763Z",
       "kind": "closed",
-      "bead": "yardr-cdmr"
+      "bead": "yardr-cdmr",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 6977,
@@ -1163,7 +1166,10 @@
       "seq": 7000,
       "at": "2026-10-06T20:00:32.697209Z",
       "kind": "closed",
-      "bead": "yardr-a3s2"
+      "bead": "yardr-a3s2",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7001,
@@ -1536,7 +1542,10 @@
       "seq": 7044,
       "at": "2026-10-06T20:07:21.345715Z",
       "kind": "closed",
-      "bead": "yardr-nrsr"
+      "bead": "yardr-nrsr",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7045,
@@ -1714,7 +1723,10 @@
       "seq": 7065,
       "at": "2026-10-06T20:09:37.305747Z",
       "kind": "closed",
-      "bead": "yardr-f7aw"
+      "bead": "yardr-f7aw",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7066,
@@ -2518,7 +2530,10 @@
       "seq": 7168,
       "at": "2026-10-06T20:32:07.074234Z",
       "kind": "closed",
-      "bead": "yardr-aqc4"
+      "bead": "yardr-aqc4",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7169,
@@ -3271,7 +3286,10 @@
       "seq": 7266,
       "at": "2026-10-06T21:07:59.854024Z",
       "kind": "closed",
-      "bead": "yardr-26a0"
+      "bead": "yardr-26a0",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7267,
@@ -3610,7 +3628,10 @@
       "seq": 7306,
       "at": "2026-10-06T21:16:26.22063Z",
       "kind": "closed",
-      "bead": "yardr-nrb6"
+      "bead": "yardr-nrb6",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7307,
@@ -3906,7 +3927,10 @@
       "seq": 7342,
       "at": "2026-10-06T21:32:04.130504Z",
       "kind": "closed",
-      "bead": "yardr-sfmd7"
+      "bead": "yardr-sfmd7",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7343,
@@ -4325,7 +4349,10 @@
       "seq": 7395,
       "at": "2026-10-06T22:08:33.408346Z",
       "kind": "closed",
-      "bead": "yardr-r9sh"
+      "bead": "yardr-r9sh",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7396,
@@ -4722,7 +4749,10 @@
       "seq": 7446,
       "at": "2026-10-06T22:14:17.525698Z",
       "kind": "closed",
-      "bead": "yardr-1my8"
+      "bead": "yardr-1my8",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7447,
@@ -5074,7 +5104,10 @@
       "seq": 7488,
       "at": "2026-10-06T22:22:30.34097Z",
       "kind": "closed",
-      "bead": "aiquokka-chrh"
+      "bead": "aiquokka-chrh",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7489,
@@ -5810,7 +5843,10 @@
       "seq": 7575,
       "at": "2026-10-06T22:54:20.16456Z",
       "kind": "closed",
-      "bead": "yardr-3b9h"
+      "bead": "yardr-3b9h",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7576,
@@ -6056,7 +6092,10 @@
       "seq": 7604,
       "at": "2026-10-06T22:58:10.480865Z",
       "kind": "closed",
-      "bead": "yardr-n1v5"
+      "bead": "yardr-n1v5",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7605,
@@ -6239,7 +6278,10 @@
       "seq": 7626,
       "at": "2026-10-06T23:01:19.343394Z",
       "kind": "closed",
-      "bead": "yardr-k4ky"
+      "bead": "yardr-k4ky",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7627,
@@ -6539,7 +6581,10 @@
       "seq": 7661,
       "at": "2026-10-06T23:14:12.830804Z",
       "kind": "closed",
-      "bead": "yardr-6avw"
+      "bead": "yardr-6avw",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7662,
@@ -6754,7 +6799,10 @@
       "seq": 7686,
       "at": "2026-10-06T23:20:13.580904Z",
       "kind": "closed",
-      "bead": "yardr-d0ps"
+      "bead": "yardr-d0ps",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7687,
@@ -6869,7 +6917,10 @@
       "seq": 7700,
       "at": "2026-10-06T23:22:49.566013Z",
       "kind": "closed",
-      "bead": "yardr-stsa"
+      "bead": "yardr-stsa",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7701,
@@ -7202,7 +7253,10 @@
       "seq": 7739,
       "at": "2026-10-06T23:51:07.385062Z",
       "kind": "closed",
-      "bead": "yardr-pze0"
+      "bead": "yardr-pze0",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7740,
@@ -7291,7 +7345,10 @@
       "seq": 7750,
       "at": "2026-10-06T23:53:37.668476Z",
       "kind": "closed",
-      "bead": "yardr-gmsr"
+      "bead": "yardr-gmsr",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7751,
@@ -7916,7 +7973,10 @@
       "seq": 7826,
       "at": "2026-10-07T00:08:04.266964Z",
       "kind": "closed",
-      "bead": "yardr-vsdf"
+      "bead": "yardr-vsdf",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7827,
@@ -8193,7 +8253,10 @@
       "seq": 7858,
       "at": "2026-10-07T00:12:18.602309Z",
       "kind": "closed",
-      "bead": "yardr-6p44"
+      "bead": "yardr-6p44",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7859,
@@ -8379,7 +8442,10 @@
       "seq": 7881,
       "at": "2026-10-07T00:35:21.040763Z",
       "kind": "closed",
-      "bead": "yardr-qq52"
+      "bead": "yardr-qq52",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7882,
@@ -8661,7 +8727,10 @@
       "seq": 7915,
       "at": "2026-10-07T00:58:49.156467Z",
       "kind": "closed",
-      "bead": "yardr-w41f"
+      "bead": "yardr-w41f",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7916,
@@ -8916,7 +8985,10 @@
       "seq": 7944,
       "at": "2026-10-07T01:18:23.456217Z",
       "kind": "closed",
-      "bead": "yardr-vpzj"
+      "bead": "yardr-vpzj",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 7945,
@@ -9381,7 +9453,10 @@
       "seq": 8000,
       "at": "2026-10-07T01:31:03.051654Z",
       "kind": "closed",
-      "bead": "yardr-vzb0"
+      "bead": "yardr-vzb0",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8001,
@@ -9697,7 +9772,10 @@
       "seq": 8038,
       "at": "2026-10-07T01:42:48.553761Z",
       "kind": "closed",
-      "bead": "yardr-h991"
+      "bead": "yardr-h991",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8039,
@@ -9865,7 +9943,10 @@
       "seq": 8058,
       "at": "2026-10-07T01:45:12.277952Z",
       "kind": "closed",
-      "bead": "yardr-4ktb"
+      "bead": "yardr-4ktb",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8059,
@@ -10231,7 +10312,10 @@
       "seq": 8102,
       "at": "2026-10-07T01:55:02.599097Z",
       "kind": "closed",
-      "bead": "yardr-c5px"
+      "bead": "yardr-c5px",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8103,
@@ -10334,7 +10418,10 @@
       "seq": 8115,
       "at": "2026-10-07T01:57:36.141581Z",
       "kind": "closed",
-      "bead": "yardr-wvcr"
+      "bead": "yardr-wvcr",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8116,
@@ -10758,7 +10845,10 @@
       "seq": 8165,
       "at": "2026-10-07T02:09:12.175762Z",
       "kind": "closed",
-      "bead": "yardr-ffjw"
+      "bead": "yardr-ffjw",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8166,
@@ -10847,7 +10937,10 @@
       "seq": 8176,
       "at": "2026-10-07T02:11:38.999293Z",
       "kind": "closed",
-      "bead": "yardr-mpxg"
+      "bead": "yardr-mpxg",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8177,
@@ -11327,7 +11420,10 @@
       "seq": 8233,
       "at": "2026-10-07T02:30:11.302509Z",
       "kind": "closed",
-      "bead": "yardr-sjxt"
+      "bead": "yardr-sjxt",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8234,
@@ -11442,7 +11538,10 @@
       "seq": 8247,
       "at": "2026-10-07T02:32:28.526289Z",
       "kind": "closed",
-      "bead": "yardr-k1r2"
+      "bead": "yardr-k1r2",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8248,
@@ -11575,7 +11674,10 @@
       "seq": 8263,
       "at": "2026-10-07T02:35:17.136064Z",
       "kind": "closed",
-      "bead": "yardr-03fj"
+      "bead": "yardr-03fj",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8264,
@@ -12156,7 +12258,10 @@
       "seq": 8332,
       "at": "2026-10-07T04:33:22.194637Z",
       "kind": "closed",
-      "bead": "yardr-bw2k"
+      "bead": "yardr-bw2k",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8333,
@@ -12418,7 +12523,10 @@
       "seq": 8363,
       "at": "2026-10-07T04:44:48.34558Z",
       "kind": "closed",
-      "bead": "yardr-q2g8"
+      "bead": "yardr-q2g8",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8364,
@@ -12722,7 +12830,10 @@
       "seq": 8399,
       "at": "2026-10-07T04:55:51.960466Z",
       "kind": "closed",
-      "bead": "yardr-qmy2"
+      "bead": "yardr-qmy2",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8400,
@@ -12902,7 +13013,10 @@
       "seq": 8422,
       "at": "2026-10-07T05:08:29.302425Z",
       "kind": "closed",
-      "bead": "yardr-me7y"
+      "bead": "yardr-me7y",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8423,
@@ -13145,7 +13259,10 @@
       "seq": 8451,
       "at": "2026-10-07T05:12:35.278075Z",
       "kind": "closed",
-      "bead": "yardr-qcm2"
+      "bead": "yardr-qcm2",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8452,
@@ -13287,7 +13404,10 @@
       "seq": 8468,
       "at": "2026-10-07T05:15:09.327997Z",
       "kind": "closed",
-      "bead": "yardr-ef04"
+      "bead": "yardr-ef04",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8469,
@@ -13560,7 +13680,10 @@
       "seq": 8500,
       "at": "2026-10-07T05:25:03.467452Z",
       "kind": "closed",
-      "bead": "yardr-03pr"
+      "bead": "yardr-03pr",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8501,
@@ -13946,7 +14069,10 @@
       "seq": 8547,
       "at": "2026-10-07T05:46:28.0072Z",
       "kind": "closed",
-      "bead": "yardr-a7s6"
+      "bead": "yardr-a7s6",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8548,
@@ -14433,7 +14559,10 @@
       "seq": 8605,
       "at": "2026-10-07T06:25:46.306627Z",
       "kind": "closed",
-      "bead": "yardr-be4j"
+      "bead": "yardr-be4j",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8606,
@@ -14747,7 +14876,10 @@
       "seq": 8642,
       "at": "2026-10-07T06:31:59.300357Z",
       "kind": "closed",
-      "bead": "yardr-xnhq"
+      "bead": "yardr-xnhq",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8643,
@@ -14911,7 +15043,10 @@
       "seq": 8662,
       "at": "2026-10-07T06:39:47.904149Z",
       "kind": "closed",
-      "bead": "yardr-wav4"
+      "bead": "yardr-wav4",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8663,
@@ -15129,7 +15264,10 @@
       "seq": 8688,
       "at": "2026-10-07T06:48:35.815177Z",
       "kind": "closed",
-      "bead": "yardr-bbyz"
+      "bead": "yardr-bbyz",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8689,
@@ -15356,7 +15494,10 @@
       "seq": 8715,
       "at": "2026-10-07T06:54:08.933147Z",
       "kind": "closed",
-      "bead": "yardr.dev-m95d"
+      "bead": "yardr.dev-m95d",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8716,
@@ -15976,7 +16117,10 @@
       "seq": 8792,
       "at": "2026-10-07T07:25:29.140061Z",
       "kind": "closed",
-      "bead": "yardr-5rs8"
+      "bead": "yardr-5rs8",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8793,
@@ -16458,7 +16602,10 @@
       "seq": 8850,
       "at": "2026-10-07T08:09:57.678042Z",
       "kind": "closed",
-      "bead": "yardr-nt12"
+      "bead": "yardr-nt12",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8851,
@@ -16803,7 +16950,10 @@
       "seq": 8891,
       "at": "2026-10-07T08:29:24.910473Z",
       "kind": "closed",
-      "bead": "signalbox-w7w5"
+      "bead": "signalbox-w7w5",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8892,
@@ -17106,7 +17256,10 @@
       "seq": 8925,
       "at": "2026-10-07T08:34:24.023092Z",
       "kind": "closed",
-      "bead": "yardr-bmp4"
+      "bead": "yardr-bmp4",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8926,
@@ -17154,7 +17307,10 @@
       "seq": 8931,
       "at": "2026-10-07T08:34:30.958343Z",
       "kind": "closed",
-      "bead": "signalbox-waax"
+      "bead": "signalbox-waax",
+      "data": {
+        "reason": "merged"
+      }
     },
     {
       "seq": 8932,

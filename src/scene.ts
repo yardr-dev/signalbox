@@ -415,6 +415,10 @@ export class Stock {
   readonly root = new THREE.Group();
   // What the pointer can ask about, each with userData.bead.
   beads: THREE.Object3D[] = [];
+  // How often a shunter coupled or uncoupled since the page last asked: an
+  // order it took, and one whose wagons it let go of. The page sounds them
+  // and sets it back.
+  coupled = 0;
 
   private readonly wagons = new Map<string, Wagon>();
   private readonly walkers = new Map<string, Walker>();
@@ -573,7 +577,7 @@ export class Stock {
         }
       }
       for (const { wagon, from } of rolls) this.send(wagon, route(from, wagon.stop), {}, true);
-      for (const order of orders) this.land(gave.has(track) ? [order] : queue.take(order));
+      for (const order of orders) this.land(gave.has(track) ? [order] : this.give(queue, order, how.tween));
     }
 
     // A scrub knows nothing of who stood where: the first at home goes out.
@@ -816,12 +820,22 @@ export class Stock {
     engine.object.visible = !engine.guest || engine.queue.busy;
   }
 
+  // Give a shunter an order. What comes back are the orders it gave up for
+  // it; with none it couples to the order's wagons, in its turn. seen is
+  // whether the picture moves there: a scrub's order is done at once.
+  private give(queue: Shunter, order: Order, seen: boolean): Order[] {
+    const back = queue.take(order);
+    if (seen && back.length === 0) this.coupled++;
+    return back;
+  }
+
   // A shunter let go of an order's wagons: each stands where it was taken,
   // unless a later order has it. One with no place there goes: small and
   // out of the picture, a peer's goods after their stand. One the state has
   // elsewhere at its platform by now rolls there, and so do the wagons that
   // waited to close up.
   private settle(engine: Engine, order: Order) {
+    this.coupled++;
     const close = (key: string) => {
       const wagon = this.wagons.get(key);
       if (!wagon || engine.queue.holds(key)) return;
@@ -879,7 +893,7 @@ export class Stock {
     const key = `goods/${this.sent++}`;
     this.parting.set(key, { mover: wagon, engine: `${line.key}/${way}`, stand: way === "in" ? GOODS_STAND : 0 });
     const at = engine.queue.park.at;
-    this.land(engine.queue.take({ key, wagons: [{ key, from: { at, line: at.z, end: Infinity } }], speed, close: [] }));
+    this.land(this.give(engine.queue, { key, wagons: [{ key, from: { at, line: at.z, end: Infinity } }], speed, close: [] }, true));
   }
 
   // A hook came in over the wire.

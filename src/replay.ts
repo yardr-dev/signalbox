@@ -33,6 +33,8 @@ export interface YardEvent {
     // Of a peer message: mail, ping.
     kind?: string;
     crew?: string;
+    // Of a close: merged, a landing. No other reason leaves the yard.
+    reason?: string;
   };
 }
 
