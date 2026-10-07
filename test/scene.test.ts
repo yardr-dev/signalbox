@@ -70,7 +70,8 @@ describe("the figures of the stock", () => {
   const work: Bead = { id: "signalbox-w", title: "w", type: "task", stage: "new", depot: "signalbox", group: "yardr-builders", working: true, priority: 2, created_at: "2000-01-01T00:00:00Z" };
   const quiet = layout({ ...yard, beads: [...idle, { ...work, working: false }] });
   const busy = layout({ ...yard, beads: [...idle, work] });
-  const place = people(quiet).find((p) => p.group === "yardr-builders")!;
+  // The wagon's board has a hut of its own: the figure comes from there.
+  const place = people(quiet).find((p) => p.key.startsWith("signalbox/default/new/yardr-builders#"))!;
   const post = busy.work.find((w) => w.key === work.id)!;
   // The figure of the first place of the builders' hut.
   const first = (stock: Stock) => {

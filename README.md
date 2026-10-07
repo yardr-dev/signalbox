@@ -57,14 +57,18 @@ wagons coupled. Wagons behind the one that left close up when it has been
 pulled away. A figure works on a wagon only once it stands. A
 group has a building beside a platform it is routed to: people a station, a
 group whose sessions are scripts a works, at each of their platforms. A
-group that runs sessions in panes is a crew, and has one building for all
-its platforms, at the first of them: builders a site hut and yellow hard
-hats, reviewers an office and white ones. Every building has its door to
+group that runs sessions in panes is a crew, and has one building on each
+board it is routed to, at the first of its platforms there: builders a site
+hut and yellow hard hats, reviewers an office and white ones. A figure
+walks from its own board's building and back, never from one board to
+another. Every building has its door to
 its platform; a crew stand idle in a row from the door's corner down the
 line, where the building does not hide them from the reader, a place for
 each session the group may run, and the sign
 counts who is out (`yardr-builders · 1 of 3 out`), so an empty place is a
-session at work. When a session starts, the first figure at home walks over
+session at work. The count is the group's in the whole yard, and each of
+its buildings shows it: with one of three out, two stand idle before every
+door of the group, and the third is at its wagon on its own board. When a session starts, the first figure at home walks over
 the ground to the platform its bead stands at (a second or two at 1x,
 however far; a faster replay walks as much faster, down to a wagon's least
 0.3 s), turns to the wagon and works on it at its own pace, whatever the

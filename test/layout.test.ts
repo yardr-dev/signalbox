@@ -282,12 +282,15 @@ describe("the mapping", () => {
     expect(plot("yardr/default/review/brakeman-reviews") - plot("yardr/default/backlog/backlog")).toBeCloseTo(SHED_PITCH);
   });
 
-  test("a crew has one building, at the first platform of its group, with a place for each session it may run", () => {
-    // yardr-builders (herdr, limit 3) is routed to new in every depot; aiquokka has the first board.
+  test("a crew has one building on each board, at the first platform of its group there, with a place for each session it may run", () => {
+    // yardr-builders (herdr, limit 3) is routed to new in every depot: a hut on every board.
     const builders = l.sheds.filter((s) => s.group === "yardr-builders");
-    expect(builders.map((s) => s.key)).toEqual(["aiquokka/aiquokka/new/yardr-builders"]);
-    expect(builders[0]).toMatchObject({ kind: "hut", limit: 3 });
-    expect(l.sheds.filter((s) => s.group === "yardr-reviewers").map((s) => [s.key, s.kind])).toEqual([["aiquokka/aiquokka/review/yardr-reviewers", "office"]]);
+    expect(builders.map((s) => s.key)).toEqual(["aiquokka/aiquokka/new/yardr-builders", "signalbox/default/new/yardr-builders", "yardr/default/new/yardr-builders", "yardr.dev/default/new/yardr-builders"]);
+    for (const hut of builders) expect(hut).toMatchObject({ kind: "hut", limit: 3 });
+    // yardr-reviewers is routed to review on both of aiquokka's tracks and on yardr's three: one office a board.
+    expect(l.sheds.filter((s) => s.group === "yardr-reviewers").map((s) => [s.key, s.kind])).toEqual(
+      ["aiquokka/aiquokka", "signalbox/default", "yardr/default", "yardr.dev/default"].map((track) => [`${track}/review/yardr-reviewers`, "office"]),
+    );
     // A station and a works stand at every platform routed to them.
     expect(l.sheds.filter((s) => s.group === "backlog").length).toBeGreaterThan(1);
 
@@ -309,11 +312,55 @@ describe("the mapping", () => {
     expect(wide.places[3]!.at.z).toBeCloseTo(hut.at.z - PLACE_Z + PLACE_PITCH);
     expect(wide.places[6]!.at.z).toBeCloseTo(hut.at.z - PLACE_Z + 2 * PLACE_PITCH);
     expect(new Set(wide.places.map((p) => `${p.at.x}/${p.at.z}`)).size).toBe(wide.limit);
-    // The first platform is the one of the lowest slots, not the first listed.
+    // The first platform of a board is the one of the lowest slots, not the first listed.
     const turned = copy();
     turned.depots.reverse();
     turned.flows.reverse();
-    expect(layout(turned, remembered).sheds.filter((s) => s.group === "yardr-builders").map((s) => s.key)).toEqual([hut.key]);
+    for (const { flows } of turned.flows) flows.reverse();
+    expect(layout(turned, remembered).sheds.filter((s) => s.group === "yardr-reviewers").map((s) => s.key).sort()).toEqual(l.sheds.filter((s) => s.group === "yardr-reviewers").map((s) => s.key).sort());
+  });
+
+  test("two boards routed to one group: a building on each, and a session's figure comes from its own board's", () => {
+    const two: Yard = {
+      ...copy(),
+      depots: [{ name: "a" }, { name: "b" }].map((d) => ({ ...yard.depots[0]!, ...d })),
+      flows: ["a", "b"].map((depot) => ({ depot, flows: [{ name: "default", stages: [{ stage: "backlog", human: true, next: ["new"] }, { stage: "new", next: ["review"] }, { stage: "review", next: ["merged"] }, { stage: "merged", terminal: true }] }] })),
+      groups: [{ ...yard.groups.find((g) => g.name === "yardr-builders")!, name: "fitters", limit: 3 }],
+      routes: [
+        { ...yard.routes[0]!, stage: "new", group: "fitters", depot: undefined, type: undefined },
+        { ...yard.routes[0]!, stage: "review", group: "fitters", depot: undefined, type: undefined },
+      ],
+      beads: [bead("b-1", { depot: "b", group: "fitters", working: true })],
+    };
+    const g = layout(two);
+    // One on each board, at new: review is routed to the group too, and has none.
+    expect(g.sheds.map((s) => s.key)).toEqual(["a/default/new/fitters", "b/default/new/fitters"]);
+    const [a, b] = g.sheds as [(typeof g.sheds)[number], (typeof g.sheds)[number]];
+    for (const shed of [a, b]) expect(shed.places.length).toBe(shed.limit);
+    expect(a.limit).toBe(3);
+    // Board b's wagon is worked from b's hut, by the first at home there.
+    const crew = people(g).filter((p) => p.group === "fitters");
+    const worker = crew.filter((p) => p.bead !== undefined);
+    expect(worker.map((p) => [p.key, p.bead!.id, p.platform])).toEqual([[b.places[0]!.key, "b-1", "b/default/new"]]);
+    // The pool is the yard's: 1 of 3 out on either sign, two idle before either door.
+    expect(atWork(g, "fitters")).toBe(1);
+    const idle = (shed: typeof a) => crew.filter((p) => p.bead === undefined && shed.places.some((place) => place.key === p.key)).map((p) => p.key);
+    expect(idle(a)).toEqual([a.places[0]!.key, a.places[1]!.key]);
+    expect(idle(b)).toEqual([b.places[1]!.key, b.places[2]!.key]);
+    for (const p of crew.filter((p) => p.bead === undefined)) expect(p.at).toEqual([...a.places, ...b.places].find((place) => place.key === p.key)!.at);
+
+    // A snapshot moves no one: a second session, on board a, takes a's first
+    // figure, and at b's door the last one idle is gone.
+    two.beads.push(bead("a-1", { depot: "a", group: "fitters", working: true }));
+    const next = layout(two);
+    const then = people(next, people(g)).filter((p) => p.group === "fitters");
+    expect(then.filter((p) => p.bead !== undefined).map((p) => [p.key, p.bead!.id]).sort()).toEqual([[a.places[0]!.key, "a-1"], [b.places[0]!.key, "b-1"]]);
+    expect(then.filter((p) => p.bead === undefined).map((p) => p.key).sort()).toEqual([a.places[1]!.key, b.places[1]!.key]);
+    // b's session ends: its figure is at b's door again, not at a's.
+    two.beads = two.beads.filter((x) => x.id !== "b-1");
+    const last = people(layout(two), then).filter((p) => p.group === "fitters");
+    expect(last.filter((p) => p.bead === undefined).map((p) => p.key).sort()).toEqual([a.places[1]!.key, a.places[2]!.key, b.places[0]!.key, b.places[1]!.key]);
+    expect(last.find((p) => p.key === b.places[0]!.key)!.at).toEqual(b.places[0]!.at);
   });
 
   test("a figure for every place: at work beside its wagon's slot while a session runs, else idle at its place", () => {
@@ -337,15 +384,18 @@ describe("the mapping", () => {
         reach: -1,
       },
     ]);
-    const hut = g.sheds.find((s) => s.group === "yardr-builders")!;
-    const crew = people(g).filter((p) => p.group === "yardr-builders");
+    // The wagon's board's hut: the session's figure is one of its own.
+    const hut = g.sheds.find((s) => s.key === "signalbox/default/new/yardr-builders")!;
+    const crew = people(g).filter((p) => p.key.startsWith(`${hut.key}#`));
     expect(crew.map((p) => p.key)).toEqual(hut.places.map((p) => p.key));
     // The first at home goes: it looks at its wagon. The others look down the page.
     expect(crew[0]).toEqual({ key: hut.places[0]!.key, outfit: "builder", group: "yardr-builders", at: g.work[0]!.at, gate: g.work[0]!.gate, faces: -1, platform: platform.key, bead: wagon.bead });
     for (const k of [1, 2]) {
       expect(crew[k]).toEqual({ key: hut.places[k]!.key, outfit: "builder", group: "yardr-builders", at: hut.places[k]!.at, gate: { x: hut.places[k]!.at.x, z: hut.at.z - GROUND_Z }, faces: 1 });
     }
-    expect(people(g).filter((p) => p.group === "yardr-reviewers").map((p) => p.outfit)).toEqual(["reviewer", "reviewer", "reviewer"]);
+    const reviewers = people(g).filter((p) => p.group === "yardr-reviewers");
+    expect(reviewers.length).toBe(3 * g.sheds.filter((s) => s.group === "yardr-reviewers").length);
+    expect(new Set(reviewers.map((p) => p.outfit))).toEqual(new Set(["reviewer"]));
 
     // Every session of this yard's crews: both of yardr-builders, each at its wagon.
     expect(l.work.map((w) => w.key).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
@@ -363,45 +413,52 @@ describe("the mapping", () => {
     };
     for (const sessions of [0, 1, 2, 3]) {
       const g = at(sessions);
-      const hut = g.sheds.find((s) => s.group === "yardr-builders")!;
       const crew = people(g).filter((p) => p.group === "yardr-builders");
-      const home = hut.places.filter((place) => crew.some((p) => p.at.x === place.at.x && p.at.z === place.at.z));
-      expect(home.length, `${sessions} sessions`).toBe(hut.limit - sessions);
+      // At every hut of the group, whatever board its sessions are on.
+      for (const hut of g.sheds.filter((s) => s.group === "yardr-builders")) {
+        const home = hut.places.filter((place) => crew.some((p) => p.at.x === place.at.x && p.at.z === place.at.z));
+        expect(home.length, `${sessions} sessions, ${hut.key}`).toBe(hut.limit - sessions);
+      }
       expect(atWork(g, "yardr-builders")).toBe(sessions);
       expect(atWork(g, "yardr-reviewers")).toBe(0);
       // Two sessions are two figures: no two of a crew stand in one spot.
       expect(new Set(crew.map((p) => `${p.at.x}/${p.at.z}`)).size).toBe(crew.length);
       expect(new Set(crew.filter((p) => p.bead).map((p) => p.key)).size).toBe(sessions);
     }
-    // A fourth session of a crew of three has no figure, and is counted.
-    const over = at(4);
-    expect(people(over).filter((p) => p.bead !== undefined).length).toBe(3);
-    expect(atWork(over, "yardr-builders")).toBe(4);
+    // A fourth session on a board has no figure there, a hut having three, and is counted.
+    const over = copy();
+    over.beads = over.beads.filter((b) => b.group !== "yardr-builders");
+    for (let n = 0; n < 4; n++) over.beads.push(bead(`w${n}`, { group: "yardr-builders", working: true, created_at: `2000-01-0${n + 1}T00:00:00Z` }));
+    expect(people(layout(over)).filter((p) => p.bead !== undefined).map((p) => p.key)).toEqual([0, 1, 2].map((p) => `yardr/default/new/yardr-builders#${p}`));
+    expect(atWork(layout(over), "yardr-builders")).toBe(4);
+    // No one stands idle anywhere for a group over its limit.
+    expect(people(layout(over)).filter((p) => p.group === "yardr-builders" && p.bead === undefined)).toEqual([]);
   });
 
   test("a session keeps its figure: the end of another sends that one home and no one else anywhere", () => {
     const grown = copy();
     grown.beads = grown.beads.filter((b) => b.group !== "yardr-builders");
-    const a = bead("signalbox-a", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2000-01-01T00:00:00Z" });
+    // Both on one board: they share its hut.
+    const a = bead("yardr-a", { depot: "yardr", group: "yardr-builders", working: true, created_at: "2000-01-01T00:00:00Z" });
     const b = bead("yardr-b", { depot: "yardr", group: "yardr-builders", working: true, created_at: "2000-01-02T00:00:00Z" });
     const both = layout({ ...grown, beads: [...grown.beads, a, b] });
     const before = people(both);
     const worker = (crew: ReturnType<typeof people>, id: string) => crew.find((p) => p.bead?.id === id)?.key;
-    expect(worker(before, "signalbox-a")).not.toBe(worker(before, "yardr-b"));
+    expect(worker(before, "yardr-a")).not.toBe(worker(before, "yardr-b"));
 
     // a's session ends: b's figure stays b's, and a's is at its place again.
     const one = layout({ ...grown, beads: [...grown.beads, { ...a, working: false }, b] });
     const after = people(one, before);
     expect(worker(after, "yardr-b")).toBe(worker(before, "yardr-b"));
-    const home = after.find((p) => p.key === worker(before, "signalbox-a"))!;
+    const home = after.find((p) => p.key === worker(before, "yardr-a"))!;
     expect(home.bead).toBeUndefined();
-    expect(home.at).toEqual(one.sheds.find((s) => s.group === "yardr-builders")!.places.find((p) => p.key === home.key)!.at);
+    expect(home.at).toEqual(one.sheds.find((s) => s.key === "yardr/default/new/yardr-builders")!.places.find((p) => p.key === home.key)!.at);
     // A scrub knows no before: the first at home is b's.
-    expect(worker(people(one), "yardr-b")).toBe(one.sheds.find((s) => s.group === "yardr-builders")!.places[0]!.key);
+    expect(worker(people(one), "yardr-b")).toBe(one.sheds.find((s) => s.key === "yardr/default/new/yardr-builders")!.places[0]!.key);
     // A new session takes the first figure at home, not b's.
     const again = people(both, after);
     expect(worker(again, "yardr-b")).toBe(worker(before, "yardr-b"));
-    expect(worker(again, "signalbox-a")).toBe(worker(before, "signalbox-a"));
+    expect(worker(again, "yardr-a")).toBe(worker(before, "yardr-a"));
   });
 
   test("a siding's platform lies beyond its stub: a figure there reaches the other way", () => {

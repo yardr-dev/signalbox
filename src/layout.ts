@@ -149,8 +149,9 @@ export interface Place {
 export type ShedKind = "station" | "hut" | "office" | "works";
 
 // A group's building, beside a platform it is routed to. A station and a
-// works stand at each of them; a crew has one building, at the first, and
-// walks from there to every platform of its group.
+// works stand at each of them; a crew has one building on every board it is
+// routed to, at the first of the board's platforms, and walks from there to
+// every platform of its group on that board.
 export interface Shed {
   key: string;
   group: string;
@@ -378,9 +379,9 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
   // A wagon whose train is open is coupled behind it, not at its own platform.
   const coupled = (b: Bead) => b.train !== undefined && open.has(b.train);
   const crewed = (b: Bead) => b.working === true && ["hut", "office"].includes(shedKind(groups.get(b.group ?? "")));
-  // Every building a route asks for, with the slots of its platform: a crew
-  // keeps only the first of its own, below.
-  const sheds: { shed: Shed; rank: number[] }[] = [];
+  // Every building a route asks for, with its board and the slots of its
+  // platform: a crew keeps only the first of its own on a board, below.
+  const sheds: { shed: Shed; depot: string; rank: number[] }[] = [];
   let right = 0;
 
   yard.depots.forEach((depot) => {
@@ -510,7 +511,8 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
           }
           sheds.push({
             shed: { key: `${key}/${name}`, group: name, platform: key, kind, at, away, runner: group?.runner ?? "", limit, places },
-            rank: [slots.depots[depot.name]!, track, platform(stage.stage), n],
+            depot: depot.name,
+            rank: [track, platform(stage.stage), n],
           });
         });
 
@@ -550,15 +552,17 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
     });
   });
 
-  // A crew has one building: at the platform of the lowest slots, so what is
-  // added to the yard later takes it nowhere else.
+  // A crew has one building on a board: at the platform of the lowest slots
+  // there, so what is added to the board later takes it nowhere else. A group
+  // is the yard's, but a board shows where its crews come from, and a walk
+  // stays on it.
   const before = (a: number[], b: number[]) => {
     const i = a.findIndex((v, k) => v !== b[k]);
     return i >= 0 && a[i]! < b[i]!;
   };
-  for (const { shed, rank } of sheds) {
+  for (const { shed, depot, rank } of sheds) {
     const crew = shed.kind === "hut" || shed.kind === "office";
-    const first = crew && !sheds.some((o) => o.shed.group === shed.group && o.shed !== shed && before(o.rank, rank));
+    const first = crew && !sheds.some((o) => o.shed.group === shed.group && o.depot === depot && o.shed !== shed && before(o.rank, rank));
     if (!crew || first) out.sheds.push(shed);
   }
 
@@ -599,16 +603,28 @@ export function positions(l: Layout): Map<string, Point> {
   return at;
 }
 
-// The figures of a layout: every crew's, each at its place before the door or
+// The figures of a layout: every crew's, each at its place before a door or
 // at work on a bead of its group, and the yard's crew members at their signal
-// boxes. before is the figures as they were: a session keeps the figure it
+// boxes. A building has the work of its own board only, so a figure walks
+// from its board's door to the wagon and back, never from one board to
+// another. before is the figures as they were: a session keeps the figure it
 // has, so the end of another sends that one home and no one else anywhere. A
 // new session takes the first figure at home; one more than the places drawn
 // has none.
+//
+// The group's sessions are one pool for the whole yard, and each of its
+// buildings shows that pool from where it stands: as many idle before the
+// door as the group may still start, the limit less all who are out, on
+// whatever board. So a group on several boards has more figures than its
+// limit, an idle crew at every door: the price of a board that shows by
+// itself where its crews come from. The places left empty for those out on
+// another board are the last ones free, so nobody steps aside for them.
 export function people(l: Layout, before: readonly Person[] = []): Person[] {
   const out: Person[] = [];
+  const board = new Map(l.platforms.map((p) => [p.key, p.depot]));
   for (const shed of l.sheds) {
-    const sessions = new Map(l.work.filter((w) => w.group === shed.group).map((w) => [w.key, w]));
+    const here = l.work.filter((w) => w.group === shed.group && board.get(w.platform) === board.get(shed.platform));
+    const sessions = new Map(here.map((w) => [w.key, w]));
     const kept = new Map<string, Work>();
     for (const p of before) {
       const work = p.bead && sessions.get(p.bead.id);
@@ -617,8 +633,10 @@ export function people(l: Layout, before: readonly Person[] = []): Person[] {
       sessions.delete(work.key);
     }
     const fresh = [...sessions.values()];
+    let idle = shed.limit - atWork(l, shed.group);
     for (const place of shed.places) {
       const work = kept.get(place.key) ?? fresh.shift();
+      if (!work && idle-- <= 0) continue;
       out.push({
         key: place.key,
         outfit: shed.kind === "office" ? "reviewer" : "builder",
@@ -638,7 +656,8 @@ export function people(l: Layout, before: readonly Person[] = []): Person[] {
   return out;
 }
 
-// How many of a group's sessions are at work: what its building's sign says.
+// How many of a group's sessions are at work, in the whole yard: what each of
+// its buildings' signs says.
 export function atWork(l: Layout, group: string): number {
   return l.work.filter((w) => w.group === group).length;
 }
