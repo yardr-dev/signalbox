@@ -1,10 +1,11 @@
-// From what the yard's commands print (yardr ... --json) to what the page
-// reads: the one place that decides which fields leave the machine.
+// From what the yard's web view answers (yardr web serve, as JSON) to what
+// the page reads: the one place that decides which fields leave the machine.
 //
-// The commands also print bead bodies, paths on the machine, secret files and
-// process handles. Each shape here is built from the fields it names, so a
-// field yardr adds tomorrow is not passed on. scripts/yard.mjs runs the
-// commands; the snapshot's files and the serve script's routes both carry
+// The view's lists are its commands' (yardr ... --json), field for field:
+// bead bodies, paths on the machine, secret files and process handles among
+// them. Each shape here is built from the fields it names, so a field yardr
+// adds tomorrow is not passed on. scripts/yard.mjs asks the view; the
+// snapshot's files and the serve script's routes both carry
 // what these functions return, and nothing else. A bead's body and notes
 // leave in one answer alone, the card's (cardOf): never in a file.
 //
@@ -14,28 +15,27 @@ import type { Detail } from "./card";
 import type { Log, YardEvent } from "./replay";
 import type { Allowance, Bead, Edge, Quota, Yard } from "./yard";
 
-// What a command printed: an object of fields nobody has checked yet.
+// What the view answered: an object of fields nobody has checked yet.
 export type Raw = Record<string, unknown>;
 
-// The lists of one yard, each as its command printed it.
+// The lists of one yard, each as its route of the view answered it.
 export interface Lists {
   depots: Raw[];
-  // One entry per depot, in the order of depots: what flow show printed.
-  flows: { depot: string; flows: Raw[] }[];
+  // One entry per depot (/flows): its name, and the flows that govern it.
+  flows: Raw[];
   groups: Raw[];
   routes: Raw[];
   crew: Raw[];
   peers: Raw[];
   // The open beads.
   beads: Raw[];
-  // The sessions, ended ones too (session list -a): none for a caller that
+  // The sessions, ended ones too (/sessions?all=1): none for a caller that
   // did not ask.
   sessions?: Raw[];
-  // The window of the log (events), in any order: none for a caller that did
-  // not ask.
+  // The window of the log (/events), in any order: none for a caller that
+  // did not ask.
   events?: Raw[];
-  // What dep list printed for every open bead, in one list: none for a
-  // caller that did not ask.
+  // Every edge of the yard (/deps): none for a caller that did not ask.
   edges?: Raw[];
 }
 
@@ -86,15 +86,30 @@ function moves(events: Raw[]): Map<unknown, string> {
   return out;
 }
 
-// The edges that are a wait: of kind blocks, each once. dep list prints an
-// edge for both of its ends, and a parent is the train's coupling, a
-// discovered-from history: neither is drawn from here.
-function blocks(edges: Raw[]): Edge[] {
+// The edges that are a wait: of kind blocks, each once, with an open bead at
+// one end at least. A parent is the train's coupling, a discovered-from
+// history, and an edge between two beads that have closed holds nobody up:
+// none of them is drawn from here.
+function blocks(edges: Raw[], open: Raw[]): Edge[] {
+  const ids = new Set<unknown>(open.map((b) => b.id));
   const out = new Map<string, Edge>();
   for (const { from, to, kind } of edges) {
-    if (kind === "blocks" && typeof from === "string" && typeof to === "string") out.set(`${from}>${to}`, { from, to });
+    if (kind !== "blocks" || typeof from !== "string" || typeof to !== "string") continue;
+    if (ids.has(from) || ids.has(to)) out.set(`${from}>${to}`, { from, to });
   }
   return [...out.values()];
+}
+
+// Beads as yardr bead list has them: by priority, then the oldest first. The
+// view lists them by their last change, so a bead that was noted would stand
+// elsewhere in the next snapshot.
+function inOrder(beads: Raw[]): Raw[] {
+  const key = (b: Raw) => [typeof b.priority === "number" ? b.priority : Infinity, String(b.created_at ?? ""), String(b.id ?? "")] as const;
+  return [...beads].sort((a, b) => {
+    const [pa, ca, ia] = key(a);
+    const [pb, cb, ib] = key(b);
+    return pa - pb || (ca < cb ? -1 : ca > cb ? 1 : 0) || (ia < ib ? -1 : ia > ib ? 1 : 0);
+  });
 }
 
 // yard.json: the structure of the yard, its open beads and what they wait for.
@@ -104,11 +119,11 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
   const yard = {
     taken_at,
     depots: lists.depots.map((d) => pick(d, ["name", "kind", "base"])),
-    flows: lists.flows.map(({ depot, flows }) => ({
-      depot,
-      flows: flows.map((f) =>
+    flows: lists.flows.map((d) => ({
+      depot: d.name,
+      flows: list(d.flows).map((f) =>
         pick({}, [], {
-          name: record(f.flow).name,
+          name: f.name,
           type: f.type,
           stages: list(f.stages).map((s) => pick(s, ["stage", "group", "next", "human", "terminal"])),
         }),
@@ -118,8 +133,8 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
     routes: lists.routes.map((r) => pick(r, ["stage", "type", "depot", "label", "group", "priority"])),
     crew: lists.crew.map((c) => pick(c, ["name"], { kind: record(c.config).kind, state: c.state, status: c.status })),
     peers: lists.peers.map((p) => pick(p, ["name", "send", "receive"])),
-    beads: lists.beads.map((b) => ({ ...beadOf(b, fault.get(b.id)), ...pick({}, [], { moved_at: moved.get(b.id) }) })),
-    edges: blocks(lists.edges ?? []),
+    beads: inOrder(lists.beads).map((b) => ({ ...beadOf(b, fault.get(b.id)), ...pick({}, [], { moved_at: moved.get(b.id) }) })),
+    edges: blocks(lists.edges ?? [], lists.beads),
   };
   return yard as unknown as Yard;
 }
@@ -136,10 +151,11 @@ function beadOf(b: Raw, left: Raw = {}): Raw {
   });
 }
 
-// One bead for its card (src/card.ts), from what prime --bead printed: the
-// snapshot's bead, whether it is closed, when it last changed, its body and
-// its notes. A note is its author, time and text; prime also prints the
-// flow, the bead's edges and where its flow file lies.
+// One bead for its card (src/card.ts), from what the view answers for the
+// bead's page (/beads/<id>): the snapshot's bead, whether it is closed, when
+// it last changed, its body and its notes. A note is its author, time and
+// text; the page also has the flow, the bead's edges, its sessions and where
+// its stage file lies.
 export function cardOf(raw: Raw): Detail {
   const bead = record(raw.bead);
   const detail = {
@@ -182,7 +198,7 @@ export function eventOf(raw: Raw, alias: (session: string) => string): YardEvent
 // the closed ones are in no other list.
 export function logOf(taken_at: string, window: Raw[], all: Raw[], alias: (session: string) => string): Log {
   const named = new Set<unknown>(window.map((e) => e.bead).filter((b) => typeof b === "string"));
-  const beads = all
+  const beads = inOrder(all)
     .filter((b) => b.status === "closed" && named.has(b.id))
     .map((b) => pick(b, ["id", "title", "type", "stage", "depot", "train", "labels", "priority", "created_at"]));
   return { taken_at, beads: beads as unknown as Bead[], events: window.map((e) => eventOf(e, alias)) };

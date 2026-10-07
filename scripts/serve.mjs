@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Serve the page and let it follow a yard as it runs.
 //
-//   node scripts/serve.mjs [--host 127.0.0.1] [--port 0] [--interval 3] [--dir dist] [--layout file]
-//   YARDR=/path/to/yardr names the binary, YARDR_HOME the yard, as for the
-//   snapshot (scripts/snapshot.sh); AIQUOKKA=/path/to/aiquokka the one that
-//   says what is left of the providers' quota.
+//   node scripts/serve.mjs [--host 127.0.0.1] [--port 0] [--dir dist] [--layout file]
+//   YARDR_WEB=http://127.0.0.1:8791 names the yard's web view (yardr web
+//   serve), as for the snapshot (scripts/snapshot.sh);
+//   AIQUOKKA=/path/to/aiquokka the binary that says what is left of the
+//   providers' quota.
 //
 // Beside the built page (dist/) it answers three routes, all from the yard's
-// own commands (scripts/yard.mjs) and cut down by src/project.ts:
+// web view (scripts/yard.mjs) and cut down by src/project.ts. It starts no
+// process of yardr's: it is one more reader of the view's JSON and stream.
 //
 //   GET /api/snapshot           the yard now, its slots, the window of its
 //                               log and the providers' quota: {yard, layout,
@@ -22,11 +24,12 @@
 //                               notes}, with the bead's body and its notes;
 //                               404 when the yard has no bead of that id
 //
-// The feed is polled: yardr has no push feed yet. Every interval the newest
-// events are asked for once, for all who listen, and each gets what is after
-// its own last. A page that reconnects says where it was (Last-Event-ID, as
-// server-sent events do by themselves), so nothing is missed, across a
-// restart of this script too: the script remembers nothing the page needs.
+// The feed is a relay of the view's stream (/events?format=json): one line
+// to the view for all who listen, and each gets what is after its own last.
+// A page that reconnects says where it was (Last-Event-ID, as server-sent
+// events do by themselves), so nothing is missed, across a restart of this
+// script too: the script remembers nothing the page needs. A view that goes
+// away is asked again, after the last event it sent, until it is back.
 //
 // The slots it gives are the yard's, not the built page's: it keeps them in
 // a file in the yard's home (layoutFile, below; --layout names another), which
@@ -47,11 +50,11 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { place } from "../src/layout.ts";
-import { bead, quota, recent, snapshot, yardr } from "./yard.mjs";
+import { bead, follow, head, quota, snapshot, yardr } from "./yard.mjs";
 
-// How many events one poll asks for. More than that in one interval and a
-// listener is told to start again from a snapshot.
-export const BATCH = 200;
+// The milliseconds before a line that ended is tried again: the page's to
+// this script, and this script's to the view.
+export const RETRY = 1000;
 
 // The milliseconds between two questions to aiquokka, at least; and how long
 // a snapshot waits for the answer before it goes without: the feed has it
@@ -59,8 +62,8 @@ export const BATCH = 200;
 export const QUOTA_EVERY = 60_000;
 export const QUOTA_WAIT = 3000;
 
-// A bead's id, as the route takes it: it becomes an argument of a command.
-// It starts with a letter or a figure, so it is never read as a flag.
+// A bead's id, as the route takes it: it becomes a part of the path the
+// view is asked for, so it has no slash and does not start with a dot.
 const ID = /^[a-z0-9][a-z0-9.-]*$/;
 
 const TYPES = {
@@ -74,7 +77,9 @@ const TYPES = {
 };
 
 // Where the slots given to a yard are kept: in its home, which YARDR_HOME
-// names as it does for yardr, else ~/.yardr.
+// names as it does for yardr, else ~/.yardr. The view does not say where its
+// yard's home is, so this is the one thing still read from YARDR_HOME:
+// nothing of the yard is asked through it.
 export function layoutFile(env = process.env) {
   return join(env.YARDR_HOME || join(homedir(), ".yardr"), "signalbox", "layout.json");
 }
@@ -94,10 +99,10 @@ export function remember(file, slots) {
 }
 
 // The routes as one request handler, and close to end what it holds open.
-//   yard      {snapshot(), recent(n), bead(id)}: the yard's answers
-//             (scripts/yard.mjs)
+//   yard      {snapshot(), bead(id), head(), follow(after, signal)}: the
+//             yard's answers (scripts/yard.mjs)
 //   root      the directory of the built page
-//   interval  milliseconds between two polls of the feed
+//   retry     milliseconds before a line that ended is tried again
 //   memory    the slots given so far (recall); what a snapshot adds is
 //             remembered while the script runs, so nothing placed moves
 //   remember  keeps the slots when a snapshot added to them, for the next
@@ -106,13 +111,17 @@ export function remember(file, slots) {
 //             without it nobody asks, and nobody knows
 //   clock     the time in milliseconds, to count QUOTA_EVERY by
 //   wait      milliseconds a snapshot waits for the quota
-export function routes({ yard, root, interval = 3000, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT }) {
+export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT }) {
   const listeners = new Set();
   let slots = memory;
   // What was kept last, as it is written.
   let kept = JSON.stringify(memory);
   let timer;
-  let asking = false;
+  // The line to the view, while someone listens: what ends it, the last
+  // sequence number it passed, and what went wrong last, said once.
+  let line;
+  let cursor;
+  let cut;
   // The last answer about the quota, null when there was none; when it was
   // asked for; the question on its way; and what went wrong last, said once.
   let fuel = null;
@@ -125,7 +134,7 @@ export function routes({ yard, root, interval = 3000, memory = {}, remember, quo
     res.end(JSON.stringify(body));
   };
 
-  // What the yard's command said goes to the terminal: it may name paths.
+  // What the view said goes to the terminal: it may name paths.
   const failed = (what, err) => console.error(`signalbox: ${what}: ${err instanceof Error ? err.message : err}`);
 
   // The quota, asked again when the last answer is old enough, and then sent
@@ -196,40 +205,67 @@ export function routes({ yard, root, interval = 3000, memory = {}, remember, quo
     }
   }
 
-  // Give one listener what is new to it, oldest first.
-  function deliver(listener, events) {
-    const newest = events.at(-1)?.seq ?? 0;
-    // No place to go on from: it follows from here.
-    if (listener.last === undefined) listener.last = newest;
-    const fresh = events.filter((e) => e.seq > listener.last);
-    // Everything asked for is new and does not join on to its last: events
-    // between the two were not seen. It takes a snapshot and goes on here.
-    if (events.length >= BATCH && fresh.length === events.length && events[0].seq > listener.last + 1) {
-      listener.last = newest;
-      listener.res.write(`event: reset\nid: ${newest}\ndata: {}\n\n`);
-      return;
-    }
-    for (const event of fresh) {
-      listener.res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
-      listener.last = event.seq;
+  // The line to the view: every event after the cursor, to each listener it
+  // is new to, for as long as someone listens. The view ends its stream when
+  // it is stopped, and refuses one while it is down: either way the line is
+  // opened again after the last event it passed, so what happened in between
+  // comes first and nothing is passed twice.
+  async function relay(signal) {
+    while (!signal.aborted) {
+      try {
+        // A listener that named no place follows from now: the yard's head.
+        if (cursor === undefined || [...listeners].some((l) => l.last === undefined)) {
+          const now = await yard.head();
+          if (signal.aborted) return;
+          for (const listener of listeners) listener.last ??= now;
+          cursor ??= now;
+        }
+        for await (const event of yard.follow(cursor, signal)) {
+          // Another line has taken over, from another place.
+          if (signal.aborted) return;
+          cut = undefined;
+          cursor = event.seq;
+          for (const listener of listeners) {
+            if (listener.last === undefined || event.seq <= listener.last) continue;
+            listener.res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
+            listener.last = event.seq;
+          }
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        const said = err instanceof Error ? err.message : String(err);
+        if (said !== cut) failed("feed", err);
+        cut = said;
+        // A comment: the line is alive, the yard did not answer this time.
+        for (const listener of listeners) listener.res.write(": the yard did not answer\n\n");
+      }
+      if (signal.aborted) return;
+      await new Promise((go) => {
+        const again = setTimeout(go, retry);
+        signal.addEventListener("abort", () => (clearTimeout(again), go()), { once: true });
+      });
     }
   }
 
-  async function poll() {
-    // On its own: the yard's events do not wait for the providers.
-    void refuel();
-    if (asking) return;
-    asking = true;
-    try {
-      const events = await yard.recent(BATCH);
-      for (const listener of listeners) deliver(listener, events);
-    } catch (err) {
-      failed("feed", err);
-      // A comment: the line is alive, the yard did not answer this time.
-      for (const listener of listeners) listener.res.write(": the yard did not answer\n\n");
-    } finally {
-      asking = false;
-    }
+  // Bring the line to where a new listener needs it. One that is at or past
+  // the cursor waits for what the line brings anyway. One that is behind it,
+  // or names no place, has the line opened again: from its place, which the
+  // others have passed and do not get twice.
+  function tune(listener) {
+    if (line !== undefined && listener.last !== undefined && cursor !== undefined && listener.last >= cursor) return;
+    if (listener.last !== undefined && (cursor === undefined || listener.last < cursor)) cursor = listener.last;
+    line?.abort();
+    line = new AbortController();
+    void relay(line.signal);
+  }
+
+  // Nobody listens: no line to the view, and no place to keep.
+  function hangUp() {
+    clearInterval(timer);
+    timer = undefined;
+    line?.abort();
+    line = undefined;
+    cursor = undefined;
   }
 
   function answerFeed(req, res, url) {
@@ -239,7 +275,7 @@ export function routes({ yard, root, interval = 3000, memory = {}, remember, quo
     const last = said === null || said === "" ? undefined : Number(said);
     if (last !== undefined && !(Number.isSafeInteger(last) && last >= 0)) return json(res, 400, { error: "after: not a sequence number" });
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
-    res.write(`retry: ${interval}\n\n`);
+    res.write(`retry: ${retry}\n\n`);
     const listener = { res, last };
     listeners.add(listener);
     // An answer that came after the page's snapshot went without it. One on
@@ -247,14 +283,12 @@ export function routes({ yard, root, interval = 3000, memory = {}, remember, quo
     if (fuelled !== undefined && fuelling === undefined) res.write(`event: quota\ndata: ${JSON.stringify(fuel)}\n\n`);
     req.on("close", () => {
       listeners.delete(listener);
-      if (listeners.size === 0) {
-        clearInterval(timer);
-        timer = undefined;
-      }
+      if (listeners.size === 0) hangUp();
     });
-    timer ??= setInterval(poll, interval);
-    // At once: a page that comes back has what it missed before the next poll.
-    void poll();
+    // On its own: the yard's events do not wait for the providers.
+    timer ??= setInterval(() => void refuel(), QUOTA_EVERY);
+    void refuel();
+    tune(listener);
   }
 
   function answerFile(req, res, url) {
@@ -284,13 +318,12 @@ export function routes({ yard, root, interval = 3000, memory = {}, remember, quo
   }
 
   function close() {
-    clearInterval(timer);
-    timer = undefined;
+    hangUp();
     for (const listener of listeners) listener.res.end();
     listeners.clear();
   }
 
-  return { handle, close, poll };
+  return { handle, close, refuel };
 }
 
 async function main() {
@@ -298,16 +331,14 @@ async function main() {
     options: {
       host: { type: "string", default: "127.0.0.1" },
       port: { type: "string", default: "0" },
-      interval: { type: "string", default: "3" },
       dir: { type: "string", default: fileURLToPath(new URL("../dist", import.meta.url)) },
       layout: { type: "string", default: layoutFile() },
     },
   });
-  const interval = Number(values.interval) * 1000;
   const port = Number(values.port);
   const root = resolve(values.dir);
-  if (!(interval >= 100) || !Number.isInteger(port) || port < 0) {
-    console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--interval seconds, 0.1 or more] [--dir dist] [--layout file]");
+  if (!Number.isInteger(port) || port < 0) {
+    console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--dir dist] [--layout file]");
     process.exit(2);
   }
   if (!existsSync(join(root, "index.html"))) {
@@ -325,7 +356,8 @@ async function main() {
     process.exit(1);
   }
   const run = yardr();
-  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n), bead: (id) => bead(run, id) }, root, interval, memory, remember: (slots) => remember(layout, slots), quota: () => quota() });
+  const yard = { snapshot: () => snapshot(run), bead: (id) => bead(run, id), head: () => head(run), follow: (after, signal) => follow(run, after, signal) };
+  const { handle, close } = routes({ yard, root, memory, remember: (slots) => remember(layout, slots), quota: () => quota() });
 
   const server = createServer(handle);
   server.listen(port, values.host, () => {

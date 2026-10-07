@@ -1,14 +1,16 @@
 import { describe, expect, test } from "vitest";
 import { cardOf, eventOf, logOf, quotaOf, yardOf, type Raw } from "../src/project";
 
-// What the yard's commands print, with what must not leave the machine.
+// What the yard's view answers, with what must not leave the machine.
 const SECRET = "/Users/someone/.yardr/secret";
 const lists = {
   depots: [{ name: "signalbox", kind: "git", base: "main", path: SECRET, env_file: SECRET }],
   flows: [
     {
-      depot: "signalbox",
-      flows: [{ flow: { name: "default", outcomes: {} }, type: null, stages: [{ stage: "new", group: "builders", next: ["review"], open: 1, stage_file: SECRET }] }],
+      name: "signalbox",
+      kind: "git",
+      flows: [{ name: "default", source: "repo@0f415ee", type: null, stages: [{ stage: "new", group: "builders", next: ["review"], stage_file: SECRET, beads: [{ id: "signalbox-a", title: SECRET }] }] }],
+      elsewhere: [{ id: "signalbox-b", title: SECRET }],
     },
   ],
   groups: [{ name: "builders", runner: "herdr", limit: 2, args: [SECRET], config: { kind: "claude", model: "a-model", env_file: SECRET } }],
@@ -88,15 +90,27 @@ describe("the projection", () => {
     expect(JSON.stringify(yard)).not.toMatch(/secret|4wbdbdwypgzzjr5vgfwr/);
   });
 
-  test("the edges are the blocks ones, each once, as its two ends", () => {
+  test("the open beads are listed by priority, then the oldest first, however the view lists them", () => {
+    const bead = (id: string, priority: number, created_at: string): Raw => ({ id, title: id, type: "task", stage: "new", status: "open", depot: "signalbox", priority, created_at });
+    // The view's order: the newest change first.
+    const beads = [bead("signalbox-d", 2, "2099-01-03T00:00:00Z"), bead("signalbox-b", 2, "2099-01-01T00:00:00Z"), bead("signalbox-a", 1, "2099-01-04T00:00:00Z"), bead("signalbox-c", 2, "2099-01-01T00:00:00Z")];
+    expect(yardOf({ ...lists, beads }, "2099-01-05T00:00:00Z").beads.map((b) => b.id)).toEqual(["signalbox-a", "signalbox-b", "signalbox-c", "signalbox-d"]);
+    const closed = beads.map((b): Raw => ({ ...b, status: "closed" }));
+    const window = closed.map((b, n) => ({ seq: n + 1, at: "t", kind: "closed", bead: b.id }));
+    expect(logOf("2099-01-05T00:00:00Z", window, closed, alias).beads.map((b) => b.id)).toEqual(["signalbox-a", "signalbox-b", "signalbox-c", "signalbox-d"]);
+  });
+
+  test("the edges are the blocks ones with an open bead at an end, each once, as its two ends", () => {
     const edge = (from: unknown, to: unknown, kind: string): Raw => ({ from, to, kind, created_at: "2099-01-01T00:00:00Z", actor: SECRET });
     const edges = [
       edge("signalbox-a", "signalbox-b", "blocks"),
-      // dep list prints an edge for both of its ends.
+      // The view lists an edge once; one listed twice is still one.
       edge("signalbox-a", "signalbox-b", "blocks"),
       edge("signalbox-b", "signalbox-a", "discovered-from"),
       edge("signalbox-t", "signalbox-a", "parent"),
       edge("yardr-x", "signalbox-a", "blocks"),
+      // Every edge of the yard is listed: these two beads have closed.
+      edge("signalbox-gone", "signalbox-done", "blocks"),
       edge({ path: SECRET }, "signalbox-a", "blocks"),
     ];
     const yard = yardOf({ ...lists, edges }, "2099-01-01T00:00:00Z");
@@ -167,13 +181,15 @@ describe("the projection", () => {
     expect(JSON.stringify(log)).not.toMatch(/secret/);
   });
 
-  test("a bead's card has its body and notes, and nothing else prime printed", () => {
+  test("a bead's card has its body and notes, and nothing else of the bead's page", () => {
     const primed = {
       bead: { ...lists.beads[0], uuid: "u", hold: true, labels: ["web"], updated_at: "2099-01-02T00:00:00Z", created_by: "yardmaster", revision: "r" },
       notes: [{ bead: "signalbox-a", kind: "note", author: "signalbox-a-new", text: "what changed", at: "2099-01-01T01:00:00Z", seq: 7 }],
-      flow: { name: "default" },
-      next: { source: { kind: "repo", path: "/Users/someone/flows/default.flow" } },
-      deps: [{ id: "signalbox-b" }],
+      flow: { name: "default", source: "repo@0f415ee" },
+      stage_file: { path: SECRET, text: SECRET },
+      deps: [{ from: "signalbox-b", to: "signalbox-a", kind: "blocks" }],
+      sessions: [{ id: "4wbdbdwypgzzjr5vgfwr", bead: "signalbox-a", state: "running", handle: { brief: SECRET } }],
+      head: 7,
     };
     expect(cardOf(primed)).toEqual({
       bead: {

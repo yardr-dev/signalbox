@@ -5,14 +5,14 @@
 # and quota.json: what is left of the providers' quota, from aiquokka --json
 # (AIQUOKKA=/path/to/aiquokka), for the coaling towers. Without aiquokka there
 # is no quota.json, and the page draws no tower.
-# Everything of the yard comes from its own commands (yardr ... --json), never
-# from its store or socket. src/yard.ts and src/replay.ts hold the shapes of
-# the files as types.
+# Everything of the yard comes from its web view (yardr web serve, which has
+# to run), never from its store or socket, and no command of yardr's is run.
+# src/yard.ts and src/replay.ts hold the shapes of the files as types.
 #
-#   scripts/snapshot.sh [out]     YARDR=/path/to/yardr to name the binary
+#   scripts/snapshot.sh [out]     YARDR_WEB=http://127.0.0.1:8791 names the view
 #
-# Each list is cut down to the fields the picture needs: the commands also
-# print bead bodies, paths on the machine, secret files and process handles,
+# Each list is cut down to the fields the picture needs: the view also
+# answers bead bodies, paths on the machine, secret files and process handles,
 # and the file is committed and served. src/project.ts does the cutting, for
 # these files and for the serve script (scripts/serve.mjs) alike.
 set -eu

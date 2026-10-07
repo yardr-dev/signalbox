@@ -1,5 +1,5 @@
 // The serve script's routes (scripts/serve.mjs), over a real socket on a free
-// loopback port, with a yard that is a list in this file.
+// loopback port, with a yard whose web view is a fetch in this file.
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -8,8 +8,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { BATCH, QUOTA_EVERY, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
-import { bead, quota, snapshot, yardr } from "../scripts/yard.mjs";
+import { QUOTA_EVERY, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
+import { bead, follow, head, quota, snapshot, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
 const root = join(dir, "dist");
@@ -21,22 +21,104 @@ afterAll(() => rmSync(dir, { recursive: true }));
 const event = (seq) => ({ seq, at: new Date(Date.UTC(2099, 0, 1, 0, 0, seq)).toISOString(), kind: "advanced", bead: "signalbox-a", data: { from: "new", to: "review" } });
 const span = (from, to) => Array.from({ length: to - from + 1 }, (_, k) => event(from + k));
 
-// A yard: its log, and the two questions the routes ask of it.
+// What the view sends with an event, and the page is not to get.
+const SECRET = "/Users/someone/.yardr/secret";
+
+// A yard, as its web view answers (yardr web serve): its lists as JSON, each
+// with the yard's head, and its log as a stream. fetch stands in for the
+// view; asked is every route it was asked for. push is the yard doing
+// something, stop the view going away under its open streams, and down a
+// view that is not there.
 function yard(events) {
-  const structure = { depots: [{ name: "signalbox", kind: "git" }], flows: [{ depot: "signalbox", flows: [{ name: "default", stages: [{ stage: "new" }, { stage: "review" }] }] }], groups: [], routes: [], crew: [], peers: [] };
-  return {
-    events,
-    structure,
-    snapshot: async () => ({ yard: { taken_at: "2099-01-01T00:00:00Z", ...structure, beads: [] }, log: { taken_at: "2099-01-01T00:00:00Z", beads: [], events: [...events] } }),
-    recent: async (n) => events.slice(-n),
+  const structure = { depots: [{ name: "signalbox", kind: "git" }], flows: [{ name: "signalbox", kind: "git", flows: [{ name: "default", stages: [{ stage: "new" }, { stage: "review" }] }] }] };
+  const y = { events, structure, asked: [], streams: new Set(), down: false, open: [], closed: [], deps: [], pages: {} };
+  const lists = {
+    "/depots": () => ({ depots: structure.depots }),
+    "/flows": () => ({ depots: structure.flows }),
+    "/groups": () => ({ groups: [] }),
+    "/routes": () => ({ routes: [] }),
+    "/crew": () => ({ crew: [] }),
+    "/peers": () => ({ peers: [] }),
+    "/beads": () => ({ beads: y.open }),
+    "/beads?all=1": () => ({ all: true, beads: [...y.open, ...y.closed] }),
+    "/sessions?all=1": () => ({ sessions: [], manual: [], list: [] }),
+    "/deps": () => ({ deps: y.deps }),
   };
+  const top = () => events.at(-1)?.seq ?? 0;
+  const text = new TextEncoder();
+  const sent = (e) => text.encode(`id: ${e.seq}\ndata: ${JSON.stringify({ ...e, id: String(e.seq), actor: SECRET })}\n\n`);
+  y.fetch = async (url, { headers = {}, signal } = {}) => {
+    const { pathname, search, searchParams } = new URL(url);
+    y.asked.push(pathname + search);
+    if (y.down) throw new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED 127.0.0.1:8791") });
+    if (pathname === "/events") {
+      const after = Number(searchParams.get("after"));
+      let stream;
+      const body = new ReadableStream({
+        start(controller) {
+          stream = controller;
+          y.streams.add(stream);
+          // As the view opens a stream: when to come back, and a comment.
+          controller.enqueue(text.encode("retry: 500\n\n: the yard\n\n"));
+          for (const e of events) if (e.seq > after) controller.enqueue(sent(e));
+          signal?.addEventListener("abort", () => {
+            if (y.streams.delete(stream)) controller.error(signal.reason);
+          });
+        },
+        cancel: () => void y.streams.delete(stream),
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    }
+    if (!String(headers.accept).includes("application/json")) return new Response("<!doctype html>", { headers: { "content-type": "text/html" } });
+    if (pathname.startsWith("/beads/")) {
+      const page = y.pages[pathname.slice("/beads/".length)];
+      if (page === undefined) return Response.json({ error: `bead ${pathname.slice("/beads/".length)}: not found` }, { status: 404 });
+      return Response.json({ ...page, head: top() });
+    }
+    const list = lists[pathname + search];
+    if (list === undefined) return Response.json({ error: "not found" }, { status: 404 });
+    return Response.json({ ...list(), head: top() });
+  };
+  y.push = (...more) => {
+    events.push(...more);
+    for (const stream of y.streams) for (const e of more) stream.enqueue(sent(e));
+  };
+  y.stop = () => {
+    for (const stream of y.streams) stream.close();
+    y.streams.clear();
+  };
+  // The questions the routes ask of it (scripts/yard.mjs), over that fetch.
+  const run = yardr("http://yard", y.fetch);
+  return Object.assign(y, { run, snapshot: () => snapshot(run), bead: (id) => bead(run, id), head: () => head(run), follow: (after, signal) => follow(run, after, signal) });
+}
+
+// Wait until something is so: the script's line to the view is its own.
+async function until(so) {
+  for (let n = 0; n < 500; n++) {
+    if (so()) return;
+    await new Promise((go) => setTimeout(go, 5));
+  }
+  throw new Error("it never was");
+}
+
+// What goes to the terminal while a test runs.
+async function terminal(during) {
+  const said = [];
+  const error = console.error;
+  console.error = (line) => said.push(line);
+  try {
+    await during(said);
+  } finally {
+    console.error = error;
+  }
+  return said;
 }
 
 const running = [];
 // The script, started: on 127.0.0.1 and a free port, never a fixed one.
 async function start(of, options = {}) {
-  // An hour: a test polls by hand, when it has changed the yard.
-  const served = routes({ yard: of, root, interval: 3600_000, ...options });
+  // A line that ended is tried again at once, as tests go.
+  const served = routes({ yard: of, root, retry: 10, ...options });
   const server = createServer(served.handle);
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
   const stop = async () => {
@@ -92,16 +174,16 @@ describe("the feed", () => {
     expect(page.response.headers.get("content-type")).toBe("text/event-stream");
     const got = await page.take(3);
     expect(got.map((m) => m.id)).toEqual([3, 4, 5]);
+    // Cut down: what the view sent beside is not passed on.
     expect(got.map((m) => m.data)).toEqual(span(3, 5));
-    // What the yard does next comes with the next poll, and nothing twice.
-    y.events.push(...span(6, 7));
-    await s.poll();
+    // What the yard does next comes as it happens, and nothing twice.
+    y.push(...span(6, 7));
     expect((await page.take(2)).map((m) => m.id)).toEqual([6, 7]);
-    await s.poll();
-    y.events.push(event(8));
-    await s.poll();
+    y.push(event(8));
     expect((await page.next()).id).toBe(8);
     expect(page.messages.map((m) => m.id)).toEqual([3, 4, 5, 6, 7, 8]);
+    // Asked of the view's stream, after the page's place, and of nothing else.
+    expect(y.asked).toEqual(["/events?format=json&after=2"]);
     page.close();
   });
 
@@ -109,10 +191,10 @@ describe("the feed", () => {
     const y = yard(span(1, 5));
     const s = await start(y);
     const page = await listen(`${s.url}/api/feed`);
-    y.events.push(event(6));
-    // The poll of its arrival may still be on its way: this one comes after.
-    await s.poll();
-    await s.poll();
+    await until(() => y.streams.size === 1);
+    // Now is the yard's head, and the stream is asked for what comes after.
+    expect(y.asked.at(-1)).toBe("/events?format=json&after=5");
+    y.push(event(6));
     expect((await page.next()).id).toBe(6);
     expect(page.messages).toHaveLength(1);
     page.close();
@@ -126,57 +208,112 @@ describe("the feed", () => {
     // The script goes down. The yard does not.
     await first.stop();
     await expect(before.next()).rejects.toThrow();
-    y.events.push(...span(6, 9));
+    y.push(...span(6, 9));
     // A new script knows nothing of the page: the page says where it was,
     // as server-sent events do, and that counts over the address it asks.
     const second = await start(y);
-    y.events.push(event(10));
+    y.push(event(10));
     const after = await listen(`${second.url}/api/feed?after=3`, { "last-event-id": String(before.messages.at(-1).id) });
     expect((await after.take(5)).map((m) => m.id)).toEqual([6, 7, 8, 9, 10]);
     expect([...before.messages, ...after.messages].map((m) => m.id)).toEqual([4, 5, 6, 7, 8, 9, 10]);
     after.close();
   });
 
-  test("each listener gets what is new to it", async () => {
+  test("each listener gets what is new to it, over one line to the view", async () => {
     const y = yard(span(1, 5));
     const s = await start(y);
-    const far = await listen(`${s.url}/api/feed?after=0`);
     const near = await listen(`${s.url}/api/feed?after=4`);
-    expect((await far.take(5)).map((m) => m.id)).toEqual([1, 2, 3, 4, 5]);
     expect((await near.next()).id).toBe(5);
-    y.events.push(event(6));
-    await s.poll();
-    expect((await far.next()).id).toBe(6);
-    expect((await near.next()).id).toBe(6);
+    // One that is behind the line: the line starts again from its place,
+    // and the one that was there gets nothing twice.
+    const far = await listen(`${s.url}/api/feed?after=0`);
+    expect((await far.take(5)).map((m) => m.id)).toEqual([1, 2, 3, 4, 5]);
+    // One that is ahead of it waits for its own.
+    const ahead = await listen(`${s.url}/api/feed?after=6`);
+    y.push(...span(6, 7));
+    expect((await far.take(2)).map((m) => m.id)).toEqual([6, 7]);
+    expect((await near.take(2)).map((m) => m.id)).toEqual([6, 7]);
+    expect((await ahead.next()).id).toBe(7);
+    expect(near.messages.map((m) => m.id)).toEqual([5, 6, 7]);
+    expect(ahead.messages).toHaveLength(1);
+    expect(y.streams.size).toBe(1);
+    expect(y.asked).toEqual(["/events?format=json&after=4", "/events?format=json&after=0"]);
+    // The last one leaves: no line is held open for nobody.
     far.close();
     near.close();
+    ahead.close();
+    await until(() => y.streams.size === 0);
   });
 
-  test("more than one poll can say: start again from a snapshot, and go on from here", async () => {
-    const y = yard(span(1, BATCH + 50));
+  test("a page far behind gets every event the view still has", async () => {
+    const y = yard(span(1, 450));
     const s = await start(y);
     const page = await listen(`${s.url}/api/feed?after=10`);
-    expect(await page.next()).toEqual({ id: BATCH + 50, event: "reset", data: {} });
-    y.events.push(event(BATCH + 51));
-    await s.poll();
-    expect(await page.next()).toMatchObject({ id: BATCH + 51, event: "message" });
-    // A full batch that joins on to the last one seen is no gap.
-    const joined = await listen(`${s.url}/api/feed?after=51`);
-    expect((await joined.take(BATCH)).map((m) => m.id)).toEqual(span(52, BATCH + 51).map((e) => e.seq));
+    expect((await page.take(440)).map((m) => m.id)).toEqual(span(11, 450).map((e) => e.seq));
+    expect(page.messages.every((m) => m.event === "message")).toBe(true);
     page.close();
-    joined.close();
   });
 
-  test("a yard that does not answer leaves the line open", async () => {
+  test("the view is stopped and started under an open page: no event is lost, and none comes twice", async () => {
     const y = yard(span(1, 2));
-    let down = true;
-    const s = await start({ ...y, recent: async (n) => (down ? Promise.reject(new Error("/a/path: no yard")) : y.events.slice(-n)) });
+    const s = await start(y);
     const page = await listen(`${s.url}/api/feed?after=1`);
-    await s.poll();
-    down = false;
-    await s.poll();
-    expect((await page.next()).id).toBe(2);
+    const said = await terminal(async () => {
+      expect((await page.next()).id).toBe(2);
+      // The view ends its streams and is gone; the yard goes on.
+      y.down = true;
+      y.stop();
+      y.events.push(...span(3, 4));
+      await until(() => y.asked.filter((a) => a === "/events?format=json&after=2").length >= 3);
+      // It is back: what happened while it was away comes first.
+      y.down = false;
+      expect((await page.take(2)).map((m) => m.id)).toEqual([3, 4]);
+      y.push(event(5));
+      expect((await page.next()).id).toBe(5);
+    });
+    // The page's own line never ended, and it was told nothing but events.
+    expect(page.messages.map((m) => m.id)).toEqual([2, 3, 4, 5]);
+    // Asked again after the last event passed on, each time.
+    expect(new Set(y.asked)).toEqual(new Set(["/events?format=json&after=1", "/events?format=json&after=2"]));
+    // Said once on the terminal, not at every try.
+    expect(said).toEqual(["signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791"]);
     page.close();
+  });
+
+  test("a view that is not there when the page comes leaves the line open", async () => {
+    const y = yard(span(1, 2));
+    y.down = true;
+    const s = await start(y);
+    await terminal(async () => {
+      const page = await listen(`${s.url}/api/feed?after=1`);
+      const nowhere = await listen(`${s.url}/api/feed`);
+      await until(() => y.asked.length >= 4);
+      y.down = false;
+      expect((await page.next()).id).toBe(2);
+      // The one that named no place follows from the head it then has.
+      await until(() => y.asked.includes("/peers") && y.streams.size === 1);
+      y.push(event(3));
+      expect((await nowhere.next()).id).toBe(3);
+      expect((await page.next()).id).toBe(3);
+      expect(nowhere.messages).toHaveLength(1);
+      page.close();
+      nowhere.close();
+    });
+  });
+
+  test("what answers on the view's port and is no stream is no feed", async () => {
+    const y = yard(span(1, 2));
+    const run = yardr("http://yard", async () => new Response("<!doctype html>", { headers: { "content-type": "text/html" } }));
+    await expect(follow(run, 0).next()).rejects.toThrow("http://yard/events?format=json&after=0: not a stream");
+    const limit = yardr("http://yard", async () => new Response("too many streams", { status: 503 }));
+    await expect(follow(limit, 0).next()).rejects.toThrow("http://yard/events?format=json&after=0: 503");
+    // And a stream in pieces, with the line ends a server may send.
+    const pieces = ["id: 1\r\nda", `ta: ${JSON.stringify(y.events[0])}\r\n`, "\r\n: quiet\n\nid: 2\ndata:", `${JSON.stringify(y.events[1])}\n\nid: 3\n\n`];
+    const text = new TextEncoder();
+    const broken = yardr("http://yard", async () => new Response(new ReadableStream({ start: (c) => (pieces.forEach((p) => c.enqueue(text.encode(p))), c.close()) }), { headers: { "content-type": "text/event-stream" } }));
+    const got = [];
+    for await (const e of follow(broken, 0)) got.push(e);
+    expect(got).toEqual(span(1, 2));
   });
 
   test("after is a sequence number", async () => {
@@ -197,6 +334,9 @@ describe("the snapshot", () => {
     expect(body.quota).toBeNull();
     expect(body.yard.depots).toEqual(y.structure.depots);
     expect(body.log.events).toEqual(span(1, 3));
+    // Every list of the view once, and its stream for the window alone.
+    expect([...y.asked].sort()).toEqual(["/beads", "/beads?all=1", "/crew", "/depots", "/deps", "/events?format=json&after=0", "/flows", "/groups", "/peers", "/routes", "/sessions?all=1"]);
+    expect(y.streams.size).toBe(0);
     // What was placed stays; what is new takes the next free slot, and keeps
     // it in the next answer.
     expect(body.layout.depots).toEqual({ gone: 0, signalbox: 4 });
@@ -275,19 +415,28 @@ describe("the snapshot", () => {
     }
   });
 
-  // The script itself, as npm run live starts it, against a yard that is a
-  // stand-in for yardr: one depot, and nothing else.
+  // The script itself, as npm run live starts it, against a yard whose view
+  // is a server in this file, on a free loopback port: one depot, and
+  // nothing else.
   async function served(home, args = []) {
-    const bin = join(dir, "yardr-one-depot");
-    writeFileSync(bin, `#!/bin/sh\ncase "$*" in "depot list --json") echo '[{"name":"papers","kind":"dir"}]';; *) echo '[]';; esac\n`);
-    chmodSync(bin, 0o755);
+    const lists = { "/depots": "depots", "/flows": "depots", "/groups": "groups", "/routes": "routes", "/crew": "crew", "/peers": "peers", "/beads": "beads", "/sessions": "list", "/deps": "deps" };
+    const view = createServer((req, res) => {
+      const { pathname } = new URL(req.url, "http://view");
+      const rows = pathname === "/depots" ? [{ name: "papers", kind: "dir" }] : pathname === "/flows" ? [{ name: "papers", kind: "dir", flows: [] }] : [];
+      res.writeHead(lists[pathname] === undefined ? 404 : 200, { "content-type": "application/json" });
+      res.end(JSON.stringify(lists[pathname] === undefined ? { error: "not found" } : { [lists[pathname]]: rows, head: 0 }));
+    });
+    await new Promise((done) => view.listen(0, "127.0.0.1", done));
+    running.push(() => new Promise((done) => view.close(done)));
     // The page it was built with holds another yard's slots.
     const built = join(dir, "built");
     mkdirSync(built, { recursive: true });
     writeFileSync(join(built, "index.html"), "<!doctype html><title>signalbox</title>");
     writeFileSync(join(built, "layout.json"), JSON.stringify({ depots: { aiquokka: 0, signalbox: 1, yardr: 2, "yardr.dev": 3 }, peers: { airy: 0 } }));
-    // Nothing of this session's: its yard, its yardr and aiquokka are not asked.
-    const env = { PATH: "/usr/bin:/bin", HOME: home, YARDR_HOME: home, YARDR: bin, AIQUOKKA: join(dir, "no-such-aiquokka") };
+    // Nothing of this session's: its yard's view and aiquokka are not asked,
+    // and there is no yardr to run: none is on the PATH, and YARDR names one
+    // that would say so.
+    const env = { PATH: "/usr/bin:/bin", HOME: home, YARDR_HOME: home, YARDR_WEB: `http://127.0.0.1:${view.address().port}`, YARDR: join(dir, "no-such-yardr"), AIQUOKKA: join(dir, "no-such-aiquokka") };
     const child = spawn(process.execPath, [fileURLToPath(new URL("../scripts/serve.mjs", import.meta.url)), "--port", "0", "--dir", built, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
     const ended = new Promise((done) => child.on("close", (code) => done(code)));
     running.push(async () => {
@@ -340,10 +489,43 @@ describe("the snapshot", () => {
   });
 
   test("a yard that does not answer is an error, without what it said", async () => {
-    const s = await start({ ...yard([]), snapshot: async () => Promise.reject(new Error("/Users/someone/.yardr: no yard")) });
-    const response = await fetch(`${s.url}/api/snapshot`);
+    const y = yard(span(1, 3));
+    y.down = true;
+    const s = await start(y);
+    let response;
+    const said = await terminal(async () => (response = await fetch(`${s.url}/api/snapshot`)));
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "the yard did not answer" });
+    // The terminal has which route it was, and why.
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/^signalbox: snapshot: http:\/\/yard\/\S+: connect ECONNREFUSED 127\.0\.0\.1:8791$/);
+  });
+
+  test("a view that ends its stream before the yard's head is no snapshot", async () => {
+    const y = yard(span(1, 3));
+    const whole = y.fetch;
+    // The log ends at 2, and the lists say 3.
+    y.fetch = async (url, init) => {
+      const response = await whole(url, init);
+      if (new URL(url).pathname === "/events") y.stop();
+      return response;
+    };
+    y.events.pop();
+    const run = yardr("http://yard", async (url, init) => (new URL(url).pathname === "/events" ? y.fetch(url, init) : Response.json({ ...(await (await whole(url, init)).json()), head: 3 })));
+    await expect(snapshot(run)).rejects.toThrow("the stream ended before the yard's head, 3");
+  });
+
+  test("the window is the events of the yard's newest sequence numbers, read off the stream until its head", async () => {
+    const y = yard(span(1, 30));
+    const { log } = await snapshot(y.run, 10);
+    expect(log.events).toEqual(span(21, 30));
+    expect(y.asked).toContain("/events?format=json&after=20");
+    // The stream goes on; the snapshot has hung up.
+    expect(y.streams.size).toBe(0);
+    // A yard nothing has happened in has no stream to read.
+    const empty = yard([]);
+    expect((await snapshot(empty.run)).log.events).toEqual([]);
+    expect(empty.asked.some((a) => a.startsWith("/events"))).toBe(false);
   });
 });
 
@@ -369,7 +551,7 @@ describe("the quota", () => {
     expect(p.asked).toBe(1);
     p.used = 20;
     p.now += QUOTA_EVERY - 1;
-    await s.poll();
+    await s.refuel();
     expect(await taken(s)).toEqual(fuel(10));
     expect(p.asked).toBe(1);
     p.now += 1;
@@ -383,13 +565,13 @@ describe("the quota", () => {
     const p = provider();
     const s = await start(y, { quota: p.quota, clock: p.clock });
     const page = await listen(`${s.url}/api/feed?after=2`);
-    // Asked at the first poll, the one a listener starts.
+    // Asked when a listener comes.
     expect(await page.next()).toEqual({ id: Number.NaN, event: "quota", data: fuel(10) });
     p.used = 30;
-    await s.poll();
+    await s.refuel();
     p.now += QUOTA_EVERY;
-    y.events.push(event(3));
-    await s.poll();
+    y.push(event(3));
+    await s.refuel();
     const got = await page.take(2);
     expect(got.find((m) => m.event === "quota")).toEqual({ id: Number.NaN, event: "quota", data: fuel(30) });
     // The yard's events keep their numbers: a page comes back after the last.
@@ -465,22 +647,16 @@ describe("the quota", () => {
 });
 
 describe("the yard's edges", () => {
-  test("asked of the yard: dep list for every open bead, and each blocks edge once", async () => {
-    const asked = [];
-    const open = Array.from({ length: 20 }, (_, n) => ({ id: `signalbox-${n}`, title: "t", type: "task", stage: "backlog", depot: "signalbox", priority: 2 }));
-    const edge = { from: "signalbox-0", to: "signalbox-1", kind: "blocks", created_at: "2099-01-01T00:00:00Z" };
-    const run = async (...args) => {
-      asked.push(args.join(" "));
-      if (args[0] === "bead") return open;
-      if (args[0] !== "dep") return [];
-      if (args[2] === "signalbox-0") return [edge];
-      if (args[2] === "signalbox-1") return [edge, { from: "signalbox-9", to: "signalbox-1", kind: "discovered-from" }];
-      // A bead with no edge.
-      return args[2] === "signalbox-2" ? null : [];
-    };
-    const { yard } = await snapshot(run);
-    expect(yard.edges).toEqual([{ from: "signalbox-0", to: "signalbox-1" }]);
-    expect(asked.filter((a) => a.startsWith("dep "))).toEqual(open.map((b) => `dep list ${b.id}`));
+  test("asked of the view once, whatever the number of beads: the blocks edges of the open ones", async () => {
+    const y = yard([]);
+    y.open = Array.from({ length: 20 }, (_, n) => ({ id: `signalbox-${n}`, title: "t", type: "task", stage: "backlog", status: "open", depot: "signalbox", priority: 2 }));
+    y.closed = [{ id: "signalbox-done", title: "t", type: "task", stage: "merged", status: "closed", depot: "signalbox", priority: 2 }];
+    const edge = (from, to, kind = "blocks") => ({ from, to, kind, created_at: "2099-01-01T00:00:00Z" });
+    y.deps = [edge("signalbox-0", "signalbox-1"), edge("signalbox-9", "signalbox-1", "discovered-from"), edge("signalbox-gone", "signalbox-done")];
+    const { yard: now } = await snapshot(y.run);
+    expect(now.edges).toEqual([{ from: "signalbox-0", to: "signalbox-1" }]);
+    expect(y.asked.filter((a) => a.startsWith("/deps"))).toEqual(["/deps"]);
+    expect(y.asked).toHaveLength(10);
   });
 });
 
@@ -531,29 +707,50 @@ describe("a bead", () => {
     expect(await response.json()).toEqual({ error: "the yard did not answer" });
   });
 
-  // The yard's command, as a stand-in: it prints what yardr prints.
-  function standIn(script) {
-    const bin = join(dir, `yardr-${Math.random().toString(36).slice(2)}`);
-    writeFileSync(bin, `#!/bin/sh\n${script}\n`);
-    chmodSync(bin, 0o755);
-    return yardr(bin);
-  }
-
-  test("asked of the yard: prime's bead and notes, cut down", async () => {
-    const run = standIn(`echo "$*" > "${dir}/args"; echo '{"bead":{"id":"signalbox-a","title":"a","body":"the body","session":"4wbdbdwypgzzjr5vgfwr","uuid":"u"},"notes":[{"author":"signalbox-a-new","at":"2099-01-01T00:00:00Z","text":"built","seq":3}],"next":{"source":{"path":"/a/path"}}}'`);
-    expect(await bead(run, "signalbox-a")).toEqual({
+  test("asked of the view: the page of the bead, its bead and notes cut down", async () => {
+    const y = yard([]);
+    y.pages["signalbox-a"] = {
+      bead: { id: "signalbox-a", title: "a", body: "the body", session: "4wbdbdwypgzzjr5vgfwr", uuid: "u" },
+      notes: [{ author: "signalbox-a-new", at: "2099-01-01T00:00:00Z", text: "built", seq: 3 }],
+      stage_file: { path: SECRET, text: "a stage" },
+      sessions: [{ id: "4wbdbdwypgzzjr5vgfwr", handle: { brief: SECRET } }],
+    };
+    expect(await bead(y.run, "signalbox-a")).toEqual({
       bead: { id: "signalbox-a", title: "a", working: true, body: "the body" },
       notes: [{ author: "signalbox-a-new", at: "2099-01-01T00:00:00Z", text: "built" }],
     });
-    expect(readFileSync(join(dir, "args"), "utf8").trim()).toBe("prime --bead signalbox-a --json");
+    expect(y.asked).toEqual(["/beads/signalbox-a"]);
   });
 
-  test("asked of the yard: a bead it does not have is nothing, any other failure an error", async () => {
-    // yardr says so on stdout, with nothing on stderr.
-    const gone = standIn(`echo '{"error":"bead signalbox-zzzz: not found"}'; exit 3`);
-    expect(await bead(gone, "signalbox-zzzz")).toBeUndefined();
-    const down = standIn(`echo '{"error":"mkdir /nowhere: read-only file system"}'; exit 1`);
-    await expect(bead(down, "signalbox-a")).rejects.toThrow("read-only file system");
+  test("asked of the view: a bead it does not have is nothing, any other failure an error", async () => {
+    const y = yard([]);
+    expect(await bead(y.run, "signalbox-zzzz")).toBeUndefined();
+    const broken = yardr("http://yard/", async () => Response.json({ error: "mkdir /nowhere: read-only file system" }, { status: 500 }));
+    await expect(bead(broken, "signalbox-a")).rejects.toThrow("http://yard/beads/signalbox-a: mkdir /nowhere: read-only file system");
+    // Another program on the view's port.
+    const other = yardr("http://yard", async () => new Response("<!doctype html>"));
+    await expect(bead(other, "signalbox-a")).rejects.toThrow("http://yard/beads/signalbox-a: not JSON");
+    const gone = yardr("http://yard", async () => new Response("no such page", { status: 404 }));
+    expect(await bead(gone, "signalbox-a")).toBeUndefined();
+  });
+
+  test("the view is the one YARDR_WEB names, else yardr web serve's own address, and is asked for JSON", async () => {
+    const asked = [];
+    const ask = async (url, { headers }) => (asked.push([url, headers.accept]), Response.json({ peers: [], head: 7 }));
+    const before = process.env.YARDR_WEB;
+    try {
+      delete process.env.YARDR_WEB;
+      expect(await head(yardr(undefined, ask))).toBe(7);
+      process.env.YARDR_WEB = "http://127.0.0.1:9000/";
+      await head(yardr(undefined, ask));
+    } finally {
+      if (before === undefined) delete process.env.YARDR_WEB;
+      else process.env.YARDR_WEB = before;
+    }
+    expect(asked).toEqual([
+      ["http://127.0.0.1:8791/peers", "application/json"],
+      ["http://127.0.0.1:9000/peers", "application/json"],
+    ]);
   });
 });
 

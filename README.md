@@ -4,8 +4,9 @@ Watch a yardr yard as a railway. A depot is a station yard, a flow its track,
 each stage a platform; a bead is a wagon that the track's shunter takes on
 when it advances, a train is a row of coupled wagons, a session is a figure who walks out of its group's
 hut to work on its wagon, a review is a signal, decide and held are sidings, a peer is a line to another yard with
-mail riding as goods. The picture is drawn from the yard's structure
-(`yardr --json`) and moves on its events (`yardr events --json`).
+mail riding as goods. The picture is drawn from the yard's structure and
+moves on its events, both read from the yard's web view (`yardr web serve`):
+its JSON and its stream.
 
 Built as a web page: TypeScript, Three.js, Vite, with Kenney's CC0 kits: the
 Train Kit, City Kit Industrial and Mini Characters.
@@ -93,12 +94,13 @@ Now, by day:
 
 ## Replaying a day
 
-    npm run snapshot   # YARDR=/path/to/yardr to name the binary
+    npm run snapshot   # YARDR_WEB=http://127.0.0.1:8791 names the yard's web view
     npm run dev
 
 The snapshot writes `public/yard.json` (the yard now) and, beside it,
-`public/events.json`: the yard's newest 2000 events (`yardr events` takes a
-count and no span of time), which is the window the page plays. The page
+`public/events.json`: the events of the yard's newest 2000 sequence numbers
+(the view's stream starts after a number, not at a time), which is the
+window the page plays. The page
 opens at the window's start, paused. The bar at the bottom plays and pauses,
 sets the speed (60x makes an hour a minute), and scrubs over the window; it
 shows the yard's clock in your own time and the last event in one line.
@@ -265,33 +267,49 @@ move together, and a wagon does not follow its blocker.
 Under the pointer the wagon says what it waits for ("waits for yardr-xyz
 (aiquokka · review)": the bead, the board it is on and its stage there), a
 line for each blocker. The snapshot has the edges as `edges` in
-`yard.json`. yardr lists edges one bead at a time, so the snapshot runs
-`yardr dep list` once for every open bead. The replay keeps them from
+`yard.json`: of every edge of the yard (the view's `/deps`) the ones with
+an open bead at an end. The replay keeps them from
 `dep_added` and `dep_removed`, and drops a bead's edges when it closes.
 
 ![Mid-replay, on yardr's board: a session at new has stalled, and its builder sits on the platform at its wagon, hat off, back to it, while the hut's sign says 0 of 3 out and three builders stand at its door; a reviewer is at work at review, and the bar names the event](docs/replay.png)
 
 ## Following a yard as it runs
 
-    npm run live                          # YARDR=/path/to/yardr, YARDR_HOME=/a/yard as for the snapshot
-    npm run live -- --interval 1          # seconds between two looks at the yard (3)
+    npm run live                          # the yard whose web view is at http://127.0.0.1:8791
+    YARDR_WEB=http://127.0.0.1:9000 npm run live   # a view at another address, as for the snapshot
     npm run live -- --port 8800           # a port of your choice (a free one)
     npm run live -- --host 100.64.0.7     # an address other than this machine's own
 
 `npm run live` builds the page and starts `scripts/serve.mjs`, which prints
 the page's address: on 127.0.0.1 and a free port unless told otherwise. The
-page opens at now, playing: the yard as it stands, and every few seconds what
-happened since, moved as the replay moves it. The bar shows `Live` and the
+page opens at now, playing: the yard as it stands, and what happens in it as
+it happens, moved as the replay moves it. The bar shows `Live` and the
 yard's clock. Scrub back and it is the replay of the window so far (the
-yard's newest 2000 events), at the speed you set; `Live` returns to now.
+events of the yard's newest 2000 sequence numbers), at the speed you set; `Live` returns to now.
 When the yard gets a new depot, flow, peer or crew, or a bead the page has
 not seen, the page takes a new snapshot and lays out again: what was placed
 stays where it was, also when the script is started again: it keeps the
 yard's slots in the yard's home (`$YARDR_HOME/signalbox/layout.json`).
 
-The script asks the yard through its own commands and nothing else, the ones
-the snapshot uses, every interval while a page listens. The silos' levels
-it asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquokka` names the
+The script follows the yard through its web view and nothing else: it is
+one more reader of `yardr web serve`, as a browser on the view is, and
+starts no process of yardr's. So the view has to run (`yardr web serve`, or
+`yardr web start` or `yardr web install` to keep it running; this yard's
+runs already, on 8791). A view on loopback is enough, also for a page
+served to another device with `--host`: the script is on the view's machine
+and is the one that asks. `YARDR_WEB` names a view at another address. What the yard
+is now the script reads as JSON, a route of the view for each list
+(`/depots`, `/flows`, `/groups`, `/routes`, `/crew`, `/peers`, `/beads`,
+`/sessions`, `/deps`); what happens in it comes on the view's stream
+(`/events?format=json`), which the script holds open once, for all pages,
+while one listens. A view that is stopped and started again loses a page
+nothing: the script asks again every second, after the last event it
+passed on, and what happened in between comes first. The same holds for a
+restart of the yardr server, which the view rides out inside the stream.
+The page's own line stays open all the while, and says `Live · no feed`
+only when the script itself is gone.
+
+The silos' levels the script asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquokka` names the
 binary), which is a call over the network for every provider: once a minute
 at most, however many pages are open, and not at all while none is. Without
 `aiquokka` the silos say "unknown" and the rest of the page is as ever. It
@@ -310,10 +328,9 @@ is three routes beside the files of `dist/`:
   The quota comes on the same line when it was asked again, and once to a
   page that starts to listen: a message of the event `quota`, with no id.
 - `GET /api/bead/<id>`: one bead for its card, `{bead, notes}`, asked of the
-  yard at the click (`yardr prime --bead <id> --json`, which only reads:
-  `yardr bead show` prints no notes). An id is lower-case letters, figures,
-  dots and dashes, and starts with a letter or a figure; anything else is
-  refused before a command is run. A bead the yard does not have is a 404,
+  yard at the click (the view's `/beads/<id>`). An id is lower-case letters,
+  figures, dots and dashes, and starts with a letter or a figure; anything
+  else is refused before the view is asked. A bead the yard does not have is a 404,
   and the card says "not found".
 
 What it exposes: what the committed snapshot holds, for the yard as it is
@@ -340,22 +357,25 @@ of this is there, and the page is the committed snapshot and its replay.
 ## Where things are
 
 - `scripts/snapshot.sh` writes `public/yard.json` and `public/events.json`
-  from the yard's own commands (`npm run snapshot`, with `YARDR=` to name the
-  binary), and `public/quota.json` beside them from `aiquokka --json`
+  from the yard's web view (`npm run snapshot`, with `YARDR_WEB=` to name a
+  view that is not at `http://127.0.0.1:8791`: it runs no command of yardr's
+  either, so `yardr web serve` has to run), and `public/quota.json` beside them from `aiquokka --json`
   (`AIQUOKKA=`): the silos' levels. Without `aiquokka` there is no
   `quota.json`, and one from an earlier snapshot is removed. The committed files are the demo data and the tests' fixture: the
   tests name the yard's depots, groups and beads, so a new snapshot may need
   them brought along. Of an event the file keeps its number, time, kind and
   bead, and a few names from its data; a session is an alias, and a close
   says only whether it was a landing.
-- `scripts/yard.mjs` runs those commands, and `aiquokka`, for the snapshot and
-  the serve script alike, and `src/project.ts` cuts what they print down to what the
+- `scripts/yard.mjs` asks the view, and runs `aiquokka`, for the snapshot and
+  the serve script alike, and `src/project.ts` cuts what they answer down to what the
   page reads: the one place that decides which fields are passed on.
 - `scripts/serve.mjs` serves `dist/` and the routes a page follows a
   yard by (`npm run live`). It keeps nothing but the slots it has given and
   the quota's last answer. The slots are the yard's own, in a file in its
   home: `$YARDR_HOME/signalbox/layout.json` (`~/.yardr/signalbox/layout.json`
-  without `YARDR_HOME`; `--layout <file>` names another). It is written at the
+  without `YARDR_HOME`; `--layout <file>` names another, as a yard needs
+  whose view `YARDR_WEB` names and whose home `YARDR_HOME` does not: the view
+  does not say where its yard's home is). It is written at the
   first snapshot of a yard, laid out from slot 0, and added to when the yard
   grows. The `layout.json` beside the built page is not read by the script.
   Delete the yard's file, with the script stopped, to have it laid out afresh.
