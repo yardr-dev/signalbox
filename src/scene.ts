@@ -1,8 +1,8 @@
 // Draws a layout: the kits' rails, wagons, locomotives, buildings and
 // figures, and boxes in the palette for the rest. Nothing here decides where
 // a thing is; layout.ts did. draw is what stands still: the structure, the
-// same through a replay. Stock is what moves: wagons, figures, counts and
-// the crews' signs, shown again for every state.
+// same through a replay. Stock is what moves: wagons, the shunters that move
+// them, figures, counts and the crews' signs, shown again for every state.
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
@@ -10,6 +10,7 @@ import { lamp, palette, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
+  HEADSHUNT,
   PEER_RAIL_Z,
   people,
   PLATFORM_LENGTH,
@@ -22,18 +23,14 @@ import {
 } from "./layout";
 import {
   along,
-  brake,
   continueWalk,
   doing,
   ease,
   exit,
   goods,
-  goodsSeconds,
   GOODS_STAND,
   heading,
-  headway,
   measure,
-  pull,
   route,
   seconds,
   stride,
@@ -43,6 +40,7 @@ import {
   walkSeconds,
   type Stop,
 } from "./motion";
+import { freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
 import type { Bead } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
@@ -210,7 +208,9 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   for (const t of l.tracks) {
-    rails.run(t.at, t.length);
+    // From the headshunt, where its shunter is parked, to the buffer.
+    rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z }, t.length + HEADSHUNT);
+    root.add(bufferStop(t.at.x - HEADSHUNT - 0.15, t.at.z));
     root.add(bufferStop(t.at.x + t.length + 0.15, t.at.z));
     // Above the track's left end, clear of what stands at its first platform.
     root.add(label(t.flow, "flow", BOARD_X + 1, 0, t.at.z - 3, [0, 0.5]));
@@ -304,6 +304,32 @@ interface Mover {
 
 interface Wagon extends Mover {
   stop: Stop;
+  // The platform it stands at, and the track of that: whose shunter moves it.
+  platform: string;
+  track: string;
+}
+
+// A shunter and the kit's model of it. made says what it was made for: a
+// track or a line laid another way has another.
+interface Engine {
+  queue: Shunter;
+  object: THREE.Object3D;
+  made: string;
+  // An engine of a peer's, come in with goods: seen only while it is here.
+  guest: boolean;
+}
+
+// A wagon the state has no more, which stands until a shunter has taken it
+// out: a bead's past the buffer, a peer's goods along their line. stand is
+// the seconds it stands at the end of that before it goes.
+interface Parting {
+  mover: Mover;
+  engine: string;
+  stand: number;
+}
+
+function same(a: Point, b: Point): boolean {
+  return a.x === b.x && a.z === b.z;
 }
 
 // A figure: it walks from where it stood to where its person stands now,
@@ -332,12 +358,15 @@ export interface Show {
   tween: boolean;
   // The beads that left for good: they roll out past the buffer.
   left?: ReadonlySet<string>;
-  // The replay's speed: a walk that starts now is that much faster.
+  // The replay's speed: a walk or a shunter's job that starts now is that
+  // much faster.
   speed?: number;
 }
 
 // The moving stock. show takes a layout and brings every wagon, figure and
-// count to where it has them; tick moves what is on its way or at work.
+// count to where it has them; tick moves what is on its way or at work. A
+// wagon whose bead went to another platform does not go by itself: its
+// track's shunter is given the order, and takes it there in its turn.
 export class Stock {
   readonly root = new THREE.Group();
   // What the pointer can ask about, each with userData.bead.
@@ -351,10 +380,11 @@ export class Stock {
   // in the middle of what it does, at work with its hand at the wagon.
   private calm = false;
   private readonly leaving = new Set<Mover>();
-  // The seconds ticked so far, and when the last goods started, by line and
-  // direction: the next keep their headway.
-  private clock = 0;
-  private readonly started = new Map<string, number>();
+  // The shunters: a track's by its key, a peer's line's by its key and way.
+  private readonly engines = new Map<string, Engine>();
+  private readonly parting = new Map<string, Parting>();
+  // The goods sent so far: each has a key of its own.
+  private sent = 0;
   private readonly counts = new THREE.Group();
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private layout: Layout;
@@ -382,11 +412,27 @@ export class Stock {
     this.layout = l;
     // Nothing is on its way any more: every move is at its end.
     if (!how.tween) this.tick(Infinity);
+    this.roster(l);
 
     const tracks = new Map(l.tracks.map((t) => [t.key, t]));
     const sidings = new Map(l.sidings.map((t) => [t.key, t]));
     const platforms = new Map(l.platforms.map((p) => [p.key, p]));
     const standing = new Set<string>();
+    // What the shunters are asked, by track: the wagons that go together,
+    // and the ones that only close up at their platform. A track whose
+    // shunter gave up its orders in this takes none of them.
+    const asked = new Map<string, Map<string, Haul[]>>();
+    const closing = new Map<string, { key: string; wagon: Wagon; from: Stop }[]>();
+    const gave = new Set<string>();
+    const ask = (track: string, consist: string, haul: Haul) => {
+      const consists = asked.get(track) ?? new Map<string, Haul[]>();
+      asked.set(track, consists);
+      consists.set(consist, [...(consists.get(consist) ?? []), haul]);
+    };
+    const giveUp = (track: string) => {
+      this.land(this.engines.get(track)?.queue.snap() ?? []);
+      gave.add(track);
+    };
     for (const v of l.vehicles) {
       standing.add(v.key);
       const platform = platforms.get(v.platform);
@@ -396,27 +442,85 @@ export class Stock {
         at: v.at,
         line: track?.at.z ?? v.at.z,
         end: track ? track.at.x + track.length : v.at.x,
+        ...(track ? { head: track.at.x - HEADSHUNT } : {}),
         ...(mouth !== undefined ? { mouth } : {}),
       };
+      const on = track?.key ?? "";
       let wagon = this.wagons.get(v.key);
       if (!wagon) {
+        // Its bead is back before a shunter took its last wagon out.
+        const old = this.parting.get(v.key);
+        if (old) giveUp(old.engine);
         const object = v.kind === "locomotive" ? this.kit.make("locomotive") : this.kit.make("wagon", hash(v.bead.id));
-        wagon = { object, size: 1, stop };
+        wagon = { object, size: 1, stop, platform: v.platform, track: on };
         this.wagons.set(v.key, wagon);
         this.root.add(object);
         // New to the picture: it grows where it stands.
         this.send(wagon, [v.at], { size: [0, 1], seconds: TWEEN_MIN }, how.tween);
-      } else if (wagon.stop.at.x !== v.at.x || wagon.stop.at.z !== v.at.z) {
-        this.send(wagon, route(wagon.stop, stop), {}, how.tween);
+      } else if (!same(wagon.stop.at, v.at)) {
+        const from = wagon.stop;
+        // Onto another track there is no rail: its old shunter lets it go.
+        if (wagon.track !== on && this.engines.get(wagon.track)?.queue.holds(v.key)) giveUp(wagon.track);
+        const engine = how.tween && wagon.track === on ? this.engines.get(on) : undefined;
+        if (engine && wagon.platform !== v.platform) {
+          // To another platform: an order, with its train or with the
+          // wagons of it that go the same way.
+          const consist = v.kind === "locomotive" ? v.key : (v.bead.train ?? v.key);
+          ask(on, `${wagon.platform}>${v.platform}>${v.at.x - from.at.x}>${consist}`, { key: v.key, from, to: stop });
+        } else if (engine) {
+          closing.set(on, [...(closing.get(on) ?? []), { key: v.key, wagon, from }]);
+        } else {
+          this.send(wagon, route(from, stop), {}, how.tween);
+        }
       }
       wagon.stop = stop;
+      wagon.platform = v.platform;
+      wagon.track = on;
       wagon.object.userData.bead = v.bead;
     }
     for (const [key, wagon] of this.wagons) {
       if (standing.has(key)) continue;
       this.wagons.delete(key);
-      const out = how.left?.has(key) === true;
-      this.send(wagon, out ? exit(wagon.stop) : [wagon.stop.at], { size: [1, 0], last: true, ...(out ? {} : { seconds: TWEEN_MIN }) }, how.tween);
+      const bead = wagon.object.userData.bead as Bead;
+      // A wagon of a train that left goes out with it.
+      const out = how.left?.has(key) === true || (bead.train !== undefined && how.left?.has(bead.train) === true);
+      const engine = how.tween ? this.engines.get(wagon.track) : undefined;
+      if (engine && out) {
+        this.parting.set(key, { mover: wagon, engine: wagon.track, stand: 0 });
+        ask(wagon.track, `${wagon.platform}>>${bead.type === "train" ? key : (bead.train ?? key)}`, { key, from: wagon.stop });
+        continue;
+      }
+      // Gone while its shunter had an order for it: there is nothing to move.
+      if (engine?.queue.holds(key)) giveUp(wagon.track);
+      const at = { x: wagon.object.position.x, z: wagon.object.position.z };
+      this.send(wagon, out ? exit(wagon.stop) : [at], { size: [1, 0], last: true, ...(out ? {} : { seconds: TWEEN_MIN }) }, how.tween);
+    }
+
+    for (const [key, engine] of this.engines) {
+      const here = [...this.wagons].filter(([, w]) => w.track === key);
+      engine.queue.stand(new Map(here.map(([k, w]) => [k, w.stop.at])));
+    }
+    for (const [track, queue] of [...this.engines].map(([key, e]) => [key, e.queue] as const)) {
+      // Those furthest up the line first: they make room for the ones behind.
+      const orders = [...(asked.get(track) ?? [])]
+        .map(([key, wagons]): Order => ({ key, wagons, speed: how.speed ?? 1, close: [] }))
+        .sort((a, b) => b.wagons[0]!.from.at.x - a.wagons[0]!.from.at.x);
+      // A wagon that closes up into the place of one that waits for the
+      // shunter waits with it, and so does the one behind it; any other
+      // rolls at once, as one that makes room for a wagon on its way in.
+      const rolls = new Set(closing.get(track) ?? []);
+      for (let found = true; found; ) {
+        found = false;
+        for (const roll of rolls) {
+          const order = keeps(orders, roll.wagon.stop.at) ?? queue.keeps(roll.wagon.stop.at);
+          if (!order) continue;
+          order.close.push({ key: roll.key, from: roll.from.at });
+          rolls.delete(roll);
+          found = true;
+        }
+      }
+      for (const { wagon, from } of rolls) this.send(wagon, route(from, wagon.stop), {}, true);
+      for (const order of orders) this.land(gave.has(track) ? [order] : queue.take(order));
     }
 
     // A scrub knows nothing of who stood where: the first at home goes out.
@@ -515,7 +619,7 @@ export class Stock {
 
     const mixer = w.mixer;
     if (!mixer) return;
-    const now = doing(w.person, moving);
+    const now = doing(w.person, moving, !this.hauled(w.person.bead?.id));
     const next = w.actions[now];
     const last = w.playing !== undefined ? w.actions[w.playing] : undefined;
     // Standing still, a figure stops in the middle of its clip: at work with
@@ -538,34 +642,135 @@ export class Stock {
     mixer.update(Number.isFinite(dt) && !frozen ? dt : 0);
   }
 
-  // Goods on a peer's line: out to the peer past the yard's edge, or in from
-  // there to the yard's end, where they stand a moment. kind is the
-  // message's (mail, ping, bead), speed the replay's.
+  // Whether a bead's wagon is not at its place yet: a shunter has an order
+  // for it.
+  private hauled(bead: string | undefined): boolean {
+    return bead !== undefined && [...this.engines.values()].some((e) => e.queue.holds(bead));
+  }
+
+  // A shunter for every track, and two for every peer's line: its own for
+  // goods out, and the peer's engine that brings goods in. One whose track
+  // or line is laid another way now starts again at its place there.
+  private roster(l: Layout) {
+    const wanted = new Map<string, { park: Stop; plan: Plan; guest: boolean; made: string }>();
+    for (const t of l.tracks) {
+      if (!t.park) continue;
+      const park = { at: t.park, line: t.at.z, end: t.at.x + t.length, head: t.at.x - HEADSHUNT };
+      wanted.set(t.key, { park, plan: shunting, guest: false, made: JSON.stringify(park) });
+    }
+    const edge = l.wire.at.x + l.wire.length;
+    for (const p of l.peers) {
+      for (const way of ["out", "in"] as const) {
+        const path = goods(p, edge, way);
+        const at = hauling(path)[0]!;
+        wanted.set(`${p.key}/${way}`, { park: { at, line: at.z, end: Infinity }, plan: freight(path, way), guest: way === "in", made: JSON.stringify(path) });
+      }
+    }
+    for (const [key, engine] of this.engines) {
+      if (wanted.get(key)?.made === engine.made) {
+        wanted.delete(key);
+        continue;
+      }
+      this.land(engine.queue.snap());
+      this.root.remove(engine.object);
+      this.engines.delete(key);
+    }
+    for (const [key, { park, plan, guest, made }] of wanted) {
+      const engine = { queue: new Shunter(park, plan), object: this.kit.make("shunter"), made, guest };
+      // Whose it is: no bead's, and the pointer has nothing to ask it.
+      engine.object.userData.shunter = key;
+      this.engines.set(key, engine);
+      this.root.add(engine.object);
+      this.drive(engine);
+    }
+  }
+
+  // Put a shunter and the wagons of its order where its queue has them. A
+  // shunter is not turned round: it runs back as it came. A peer's engine
+  // looks the way it comes in, down its line to the yard.
+  private drive(engine: Engine) {
+    const { engine: at, wagons } = engine.queue.pose();
+    for (const { key, pose } of wagons) {
+      const mover = this.parting.get(key)?.mover ?? this.wagons.get(key);
+      if (!mover) continue;
+      // Whatever it did by itself is over: it is pulled.
+      if (mover.move) {
+        mover.move.elapsed = Infinity;
+        this.pose(mover);
+      }
+      mover.object.visible = true;
+      mover.object.position.set(pose.x, mover.object.position.y, pose.z);
+      mover.object.rotation.y = pose.angle;
+    }
+    engine.object.position.set(at.x, 0, at.z);
+    engine.object.rotation.y = at.angle + (engine.guest ? Math.PI : 0);
+    engine.object.visible = !engine.guest || engine.queue.busy;
+  }
+
+  // A shunter let go of an order's wagons: each stands where it was taken,
+  // unless a later order has it. One with no place there goes: small and
+  // out of the picture, a peer's goods after their stand. One the state has
+  // elsewhere at its platform by now rolls there, and so do the wagons that
+  // waited to close up.
+  private settle(engine: Engine, order: Order) {
+    const close = (key: string) => {
+      const wagon = this.wagons.get(key);
+      if (!wagon || engine.queue.holds(key)) return;
+      const at = { x: wagon.object.position.x, z: wagon.object.position.z };
+      if (!same(at, wagon.stop.at)) this.send(wagon, [at, wagon.stop.at], {}, true);
+    };
+    for (const haul of order.wagons) {
+      const parting = this.parting.get(haul.key);
+      const mover = parting?.mover ?? this.wagons.get(haul.key);
+      if (!mover) continue;
+      if (haul.to) mover.object.position.set(haul.to.at.x, mover.object.position.y, haul.to.at.z);
+      mover.object.rotation.y = 0;
+      if (!parting) {
+        close(haul.key);
+        continue;
+      }
+      this.parting.delete(haul.key);
+      const at = { x: mover.object.position.x, z: mover.object.position.z };
+      const stands = parting.stand > 0;
+      this.send(mover, [at], { size: [1, stands ? 1 : 0], seconds: stands ? parting.stand : TWEEN_MIN, fade: stands ? TWEEN_MIN : 0, last: true }, true);
+    }
+    for (const c of order.close) close(c.key);
+  }
+
+  // Orders no shunter will carry out: their wagons stand at once where the
+  // state has them, and those it has no more are gone.
+  private land(orders: Order[]) {
+    for (const key of orders.flatMap((o) => [...o.wagons, ...o.close].map((w) => w.key))) {
+      const parting = this.parting.get(key);
+      const wagon = this.wagons.get(key);
+      if (parting) {
+        this.parting.delete(key);
+        this.drop(parting.mover);
+      } else if (wagon) {
+        this.send(wagon, [wagon.stop.at], {}, false);
+      }
+    }
+  }
+
+  // Goods on a peer's line: out to the peer past the yard's edge behind the
+  // line's shunter, or in from there behind an engine of the peer's to the
+  // yard's end, where they stand a moment. kind is the message's (mail,
+  // ping, bead), speed the replay's. They are an order like any: they wait
+  // their turn out of sight, and with too many before them are not seen.
   goods(peer: string, way: "out" | "in", kind: string | undefined, speed: number) {
     const line = this.layout.peers.find((p) => p.name === peer);
-    if (!line) return;
-    const wire = this.layout.wire;
+    const engine = line && this.engines.get(`${line.key}/${way}`);
+    if (!line || !engine) return;
     const [pick, size] = GOODS[kind ?? ""] ?? GOODS.mail!;
     const wagon: Mover = { object: this.kit.make("wagon", pick), size };
+    wagon.object.scale.setScalar(size);
     wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));
+    wagon.object.visible = false;
     this.root.add(wagon.object);
-    const key = `${peer}/${way}`;
-    const wait = headway(this.clock, this.started.get(key));
-    this.started.set(key, this.clock + wait);
-    this.send(
-      wagon,
-      goods(line, wire.at.x + wire.length, way),
-      {
-        size: [1, 1],
-        seconds: goodsSeconds(speed),
-        elapsed: -wait,
-        ease: way === "out" ? pull : brake,
-        stand: way === "out" ? 0 : GOODS_STAND,
-        fade: TWEEN_MIN,
-        last: true,
-      },
-      true,
-    );
+    const key = `goods/${this.sent++}`;
+    this.parting.set(key, { mover: wagon, engine: `${line.key}/${way}`, stand: way === "in" ? GOODS_STAND : 0 });
+    const at = engine.queue.park.at;
+    this.land(engine.queue.take({ key, wagons: [{ key, from: { at, line: at.z, end: Infinity } }], speed, close: [] }));
   }
 
   // A hook came in over the wire.
@@ -612,27 +817,35 @@ export class Stock {
     if (over < move.fade) return;
     delete m.move;
     if (move.turn === "way") m.object.rotation.y = 0;
-    if (move.last) {
-      this.leaving.delete(m);
-      // A label is an element of the page: it goes with its object.
-      m.object.traverse((o) => {
-        if (o instanceof CSS2DObject) o.element.remove();
-      });
-      this.root.remove(m.object);
-    }
+    if (move.last) this.drop(m);
+  }
+
+  // Out of the picture.
+  private drop(m: Mover) {
+    this.leaving.delete(m);
+    // A label is an element of the page: it goes with its object.
+    m.object.traverse((o) => {
+      if (o instanceof CSS2DObject) o.element.remove();
+    });
+    this.root.remove(m.object);
   }
 
   // Move everything on by a time in seconds. True while anything still moves.
   tick(dt: number): boolean {
-    // Everything put at its end: no goods are left to keep a headway from.
-    if (Number.isFinite(dt)) this.clock += dt;
-    else this.started.clear();
     let moving = false;
     for (const m of [...this.wagons.values(), ...this.leaving]) {
       if (!m.move) continue;
       m.move.elapsed += dt;
       this.pose(m);
       moving = true;
+    }
+    // The shunters, after what moves by itself: a wagon behind one is where
+    // the shunter has it. No time is every order done at once, unseen.
+    for (const engine of this.engines.values()) {
+      if (Number.isFinite(dt)) for (const order of engine.queue.tick(dt)) this.settle(engine, order);
+      else this.land(engine.queue.snap());
+      this.drive(engine);
+      if (engine.queue.busy) moving = true;
     }
     for (const walker of this.walkers.values()) {
       this.stand(walker, dt);

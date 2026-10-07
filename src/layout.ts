@@ -80,6 +80,11 @@ export const FIRST_TRACK_Z = BOARD_HEAD + 7.5;
 export const DEPOT_PITCH = BOARD_HEAD + FLOWS_PER_BOARD * FLOW_PITCH + 2.5;
 // Left of stage 0: the board's edge, with room for the flow's name.
 export const BOARD_X = -16;
+// The headshunt: the rail a track has before its first platform, with a
+// buffer of its own, and where on it the track's shunter is parked, from the
+// track's left end. No engine shed: the engine stands in the open, in sight.
+export const HEADSHUNT = 6;
+export const PARK_X = -4;
 
 // The strip above the depots.
 export const CREW_Z = -7;
@@ -112,6 +117,9 @@ export interface Track {
   // Its left end, on the centre line; it runs to the right.
   at: Point;
   length: number;
+  // Where its shunter stands idle: on the headshunt, left of that end. A
+  // siding's stub has none.
+  park?: Point;
 }
 
 export interface Platform {
@@ -407,6 +415,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         ...(flow.type !== undefined ? { type: flow.type } : {}),
         at: { x: -STAGE_PITCH / 2, z },
         length: (last + 1) * STAGE_PITCH,
+        park: { x: -STAGE_PITCH / 2 + PARK_X, z },
       });
 
       flow.stages.forEach((stage, k) => {

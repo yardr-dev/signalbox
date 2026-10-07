@@ -9,6 +9,8 @@ import {
   FIRST_TRACK_Z,
   FLOW_PITCH,
   GROUND_Z,
+  HEADSHUNT,
+  PARK_X,
   layout,
   PEER_PITCH,
   PEER_Z,
@@ -224,6 +226,13 @@ describe("the mapping", () => {
     expect(l.boxes.map((b) => b.name)).toEqual(["brakeman", "yardmaster"]);
     expect(l.peers.map((p) => p.name)).toEqual(["airy"]);
     expect(l.tracks.length).toBe(yard.flows.reduce((n, d) => n + d.flows.length, 0));
+    // A shunter's place: on the headshunt, clear of the first platform's wagons.
+    for (const t of l.tracks) {
+      expect(t.park).toEqual({ x: t.at.x + PARK_X, z: t.at.z });
+      expect(t.park!.x).toBeGreaterThan(t.at.x - HEADSHUNT + 1.2);
+      expect(t.park!.x + SLOT_PITCH).toBeLessThanOrEqual(-SLOT_PITCH - SLOT_PITCH);
+    }
+    for (const s of l.sidings) expect(s.park).toBeUndefined();
   });
 
   test("every open bead stands at a platform or is counted there", () => {

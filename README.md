@@ -1,8 +1,8 @@
 # signalbox
 
 Watch a yardr yard as a railway. A depot is a station yard, a flow its track,
-each stage a platform; a bead is a wagon that rolls on when it advances, a
-train pulls its wagons, a session is a figure who walks out of its group's
+each stage a platform; a bead is a wagon that the track's shunter takes on
+when it advances, a train is a row of coupled wagons, a session is a figure who walks out of its group's
 hut to work on its wagon, a review is a signal, decide and held are sidings, a peer is a line to another yard with
 mail riding as goods. The picture is drawn from the yard's structure
 (`yardr --json`) and moves on its events (`yardr events --json`).
@@ -19,7 +19,7 @@ Developed in a yardr yard; `.yardr/` holds its flow, roles and merge gate.
     npm run build      # the page as static files in dist/, for any static server
     npm run live       # the page following the yard this machine runs
     npm run check      # types
-    npm test           # the tests of the layout, the replay, the motion, the scene and the serve script
+    npm test           # the tests of the layout, the replay, the motion, the shunters, the scene and the serve script
 
 The page replays a day of one yard from its event log, and follows a yard as
 it runs when the serve script serves it.
@@ -39,9 +39,22 @@ sets the speed (60x makes an hour a minute), and scrubs over the window; it
 shows the yard's clock in your own time and the last event in one line.
 Without `events.json` the page is the still picture of `yard.json`.
 
-A wagon appears at the backlog when its bead is made, rolls to the next
-platform when it advances (into a siding over the points, back along the
-return line), and past the buffer when it reaches the flow's last stage. A
+A wagon appears at the backlog when its bead is made. It does not move by
+itself. Every track has a shunter, the kit's diesel, parked on a headshunt
+before the first platform. When a bead advances the shunter runs to its
+wagon, couples, and pulls it to the next platform, into a siding over the
+points, back along the return line, or out past the buffer when the bead
+reached the flow's last stage. Then it runs home, or straight to the next
+wagon if one waits. The shunter is always before the wagon the way they go.
+It is on the rail where that is free and beside it on the return line where
+a wagon stands or the rail ends, and where the way turns back (out of a
+siding and on up the line) it runs round the wagon. It is never turned
+round, and it is never drawn on a wagon. A job is about three seconds at
+1x, a second at 10x and more. A shunter takes three jobs in order. With
+more than three before it, and on a scrub, the wagons stand at once where
+the state has them and the shunter is parked. A train moves as one job, its
+wagons coupled. Wagons behind the one that left close up when it has been
+pulled away. A figure works on a wagon only once it stands. A
 group has a building beside a platform it is routed to: people a station, a
 group whose sessions are scripts a works, at each of their platforms. A
 group that runs sessions in panes is a crew, and has one building for all
@@ -63,9 +76,13 @@ pointer its group, runner and limit. The yard's crew members stand before
 their signal boxes. A held bead stands in the siding. A peer's
 message is a goods wagon on the peer's line, named by its kind and its peer:
 out from the yard's end past the edge of the yard, or in from there, a few
-seconds either way, each on its own rail. A hook is a flash of the wire.
+seconds either way, each on its own rail. Goods are pulled too. The line has
+a shunter of its own for goods out, parked at the yard's end, and goods in
+come behind an engine of the peer's, which goes home when they have gone.
+One train runs each way at a time, and the next waits out of sight. A hook
+is a flash of the wire.
 
-![Mid-replay: a wagon between new and review](docs/replay.png)
+![Mid-replay: the shunter of yardr's default track pulling a wagon from review to approved](docs/replay.png)
 
 ## Following a yard as it runs
 
@@ -144,8 +161,7 @@ of this is there, and the page is the committed snapshot and its replay.
   `character-male-c`; the clips `idle`, `walk` and, for work,
   `interact-right`). A hard hat is two boxes on the head bone. A model that
   does not load is a box, a figure two. Platforms, signals and signal boxes
-  are boxes in six colours. The kit's diesel is kept for engines to come and
-  not drawn.
+  are boxes in six colours. The kit's diesel is the shunter.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not
@@ -157,6 +173,12 @@ of this is there, and the page is the committed snapshot and its replay.
   places, and how long it takes (a second at most, at any speed; a peer's goods four at
 1x and never under two), a figure's way between its place and its wagon, how
   long it takes at a speed of the replay, and what it does there.
+- `src/shunt.ts`: the shunters, pure as `motion.ts` is. An engine is
+  transport and no part of the yard's state. An order is the wagons that go
+  together, a job the shunter's ways for it (fetch, pull, release, return),
+  `Shunter` the queue of one engine. The planner checks each way of the
+  shunter against the wagons that stand, and takes the return line where the
+  rail would put it on one.
 - `src/scene.ts` draws a layout: `draw` what stands still, `Stock` the wagons
   and figures, which it moves from one state to the next, each figure with a
   mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the

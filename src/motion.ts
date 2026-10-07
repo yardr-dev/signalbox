@@ -2,7 +2,7 @@
 // rails, or a figure's over the ground, as a line of points, and where on it
 // a thing is. Pure, like layout.ts; scene.ts moves the models along it.
 
-import { PEER_RAIL_Z, PLATFORM_LENGTH, RETURN_Z, SIDING_Z, type Person, type Point } from "./layout";
+import { PEER_RAIL_Z, PLATFORM_LENGTH, RETURN_Z, SIDING_Z, SLOT_PITCH, type Person, type Point } from "./layout";
 
 // Units of ground a second: a stage's pitch takes most of one.
 export const TRAIN_SPEED = 14;
@@ -20,18 +20,17 @@ export const WALK_MAX = 2 * TWEEN_MAX;
 export const STRIDE_MAX = 2.5;
 // How far past the end of its track a wagon rolls on its way out.
 export const RUN_OUT = 9;
+// Two places on a rail nearer than this are one place.
+const NEAR = 0.1;
 // A peer's goods are a journey, not a hop: the seconds their way takes at
 // 1x, and the least at any speed of the replay.
 export const GOODS_SECONDS = 4;
 export const GOODS_MIN = 2;
-// Where on a peer's line goods stand at the yard's end: on the rail, short
-// of the sign.
-export const GOODS_END = 1.5;
+// Where on a peer's line goods stand at the yard's end: on the rail, with
+// room before them for the engine that brought them in.
+export const GOODS_END = 4.5;
 // The seconds goods in stand at the yard's end before they fade.
 export const GOODS_STAND = 0.5;
-// The seconds between two goods wagons one way on one line: the one before
-// has stood and faded when the next comes in.
-export const GOODS_HEADWAY = 1;
 
 // A place a wagon stands at.
 export interface Stop {
@@ -39,6 +38,8 @@ export interface Stop {
   // The z of its track's main line, and where that line ends.
   line: number;
   end: number;
+  // Where the line's rail begins, when that is before its first platform.
+  head?: number;
   // On a siding: the left end of the stub, where the points lead in.
   mouth?: Point;
 }
@@ -49,27 +50,59 @@ function points(s: Stop): Point[] {
   return s.mouth ? [s.mouth, { x: s.mouth.x + SIDING_Z, z: s.line }] : [];
 }
 
+// Beside its line, on the return line: where a shunter stands clear of what
+// is on the rails. Nothing ever stands there for long.
+function beside(s: Stop): boolean {
+  return !s.mouth && s.at.z !== s.line;
+}
+
+// Whether a wagon stands on the main line between two places of it.
+function blocked(line: number, a: number, b: number, standing: readonly Point[]): boolean {
+  return standing.some((p) => p.z === line && p.x > Math.min(a, b) + NEAR && p.x < Math.max(a, b) - NEAR);
+}
+
 // The way from one stop to another: forward along the main line; into and
-// out of a siding over its points; back along the return line. Two stops on
+// out of a siding over its points; back along the return line. Round what
+// stands on the main line in between it is the return line too. A place
+// beside the line is there because of what stands on it: the way to it is
+// the line as far as that is free, off it a wagon's place before; the way
+// from it comes on at the far end. An engine alone leaves a siding's points
+// where they cross the return line, and comes onto them there: the foot of
+// the points is under the wagon that stands before them. Two stops on
 // different tracks have no rail between them and are joined straight.
-export function route(from: Stop, to: Stop): Point[] {
+export function route(from: Stop, to: Stop, standing: readonly Point[] = [], alone = false): Point[] {
   if (from.line !== to.line) return [from.at, to.at];
   if (from.mouth && to.mouth && from.mouth.x === to.mouth.x) return [from.at, to.at];
+  if (alone && (from.mouth || to.mouth)) {
+    const crossing = ({ mouth, ...line }: Stop): Stop => (mouth ? { ...line, at: { x: mouth.x + RETURN_Z, z: line.line + RETURN_Z } } : line);
+    const between = route(crossing(from), crossing(to), standing);
+    return [...(from.mouth ? [from.at, from.mouth] : []), ...between, ...(to.mouth ? [to.mouth, to.at] : [])];
+  }
   const out = points(from);
   const into = points(to).reverse();
   const leave = out.at(-1) ?? from.at;
   const join = into[0] ?? to.at;
+  const way = join.x < leave.x ? -1 : 1;
+  const far = Math.abs(join.x - leave.x);
+  const off = beside(from);
+  const on = beside(to);
   // Back to another platform, not to a place further back at its own: over
   // to the return line. A wagon coming out of a siding joins the main line
   // at the points before it runs back too.
-  const back =
-    !to.mouth && join.x < leave.x - PLATFORM_LENGTH
-      ? [
-          { x: leave.x + RETURN_Z, z: from.line + RETURN_Z },
-          { x: join.x - RETURN_Z, z: from.line + RETURN_Z },
-        ]
-      : [];
-  return [from.at, ...out, ...back, ...into, to.at];
+  const back = !to.mouth && join.x < leave.x - PLATFORM_LENGTH;
+  const round = !off && !on && far > -2 * RETURN_Z && (back || blocked(from.line, leave.x, join.x, standing));
+  const z = from.line + RETURN_Z;
+  const over: Point[] = [];
+  if (round) {
+    over.push({ x: leave.x - way * RETURN_Z, z }, { x: join.x + way * RETURN_Z, z });
+  } else if (on && !off && far > -RETURN_Z) {
+    const last = join.x - way * (SLOT_PITCH - RETURN_Z);
+    const free = way * (last - leave.x) > 0 && !blocked(from.line, leave.x, last + way * SLOT_PITCH, standing);
+    over.push(...(free ? [{ x: last, z: from.line }, { x: join.x - way * SLOT_PITCH, z }] : [{ x: leave.x - way * RETURN_Z, z }]));
+  } else if (off && !on && far > -RETURN_Z) {
+    over.push({ x: join.x + way * RETURN_Z, z });
+  }
+  return [from.at, ...out, ...over, ...into, to.at];
 }
 
 // Out of the picture: along the main line, past the buffer at its end.
@@ -92,12 +125,6 @@ export function goods(line: { at: Point; length: number }, edge: number, way: "o
 // one at any speed.
 export function goodsSeconds(speed: number): number {
   return Math.max(GOODS_MIN, GOODS_SECONDS / speed);
-}
-
-// The seconds goods sent now wait before they start: a headway after the
-// start of the last before them, one way on one line.
-export function headway(now: number, last: number | undefined): number {
-  return last === undefined ? 0 : Math.max(0, last + GOODS_HEADWAY - now);
 }
 
 export function measure(path: Point[]): number {
@@ -206,8 +233,9 @@ export function turn(from: number, to: number, step: number): number {
 }
 
 // What a figure does: it walks while it is on its way, works while it stands
-// at a bead, and is idle at home.
+// at a bead, and is idle at home; and at a bead whose wagon has not come to
+// a stand there yet, since no one works on a wagon that moves.
 export type Doing = "idle" | "walk" | "work";
-export function doing(person: Person, moving: boolean): Doing {
-  return moving ? "walk" : person.bead !== undefined ? "work" : "idle";
+export function doing(person: Person, moving: boolean, stands = true): Doing {
+  return moving ? "walk" : person.bead !== undefined && stands ? "work" : "idle";
 }

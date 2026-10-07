@@ -1,7 +1,7 @@
 // The models, all Kenney's and CC0, each pack with its licence beside it in
-// public/kit: the Train Kit for rails, wagons and locomotives, City Kit
-// Industrial (city/) for the groups' buildings, Mini Characters (people/) for
-// the figures. loadKit is the only way in; everything it hands out lies or
+// public/kit: the Train Kit for rails, wagons, locomotives and shunters,
+// City Kit Industrial (city/) for the groups' buildings, Mini Characters
+// (people/) for the figures. loadKit is the only way in; everything it hands out lies or
 // looks along +x (a building's door looks up the page, to -z), stands on the
 // ground and is centred, in the Train Kit's units, so another set of models
 // drops in here and nowhere else. A model that does not load is a box of the
@@ -27,7 +27,7 @@ export const palette = {
 export const lamp = { clear: 0x3fd46b, stop: 0xe0453a } as const;
 export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
 
-export type Part = "rail" | "wagon" | "locomotive" | "station" | "hut" | "office" | "works";
+export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works";
 export type Outfit = "builder" | "reviewer" | "crew";
 // What a figure can be seen doing: the pack's idle, walk and interact-right.
 export type Clip = "idle" | "walk" | "work";
@@ -60,8 +60,8 @@ const files: Record<Part, string[]> = {
     "train-carriage-wood",
   ],
   locomotive: ["train-locomotive-a"],
-  // train-diesel-a stays in public/kit for the engines to come; nothing
-  // draws it yet.
+  // The engine that moves the wagons: a track's, or a peer's line's.
+  shunter: ["train-diesel-a"],
   // The plainest long building, a small warehouse, a small office, a factory
   // with its chimneys.
   station: ["city/building-s"],
@@ -99,6 +99,7 @@ const boxes: Record<Part, [number, number, number, number]> = {
   rail: [1, 0.12, 0.8, palette.slate],
   wagon: [2.7, 1.3, 1.2, palette.brick],
   locomotive: [2.6, 1.6, 1.3, palette.slate],
+  shunter: [2.4, 1.6, 1.2, hat.builder],
   station: [3.2, 1.3, 1.4, palette.cream],
   hut: [2, 1.4, 2.4, palette.brick],
   office: [2.9, 1.2, 1.7, palette.cream],

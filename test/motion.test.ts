@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { PEER_LENGTH, PEER_RAIL_Z, RETURN_Z, SIDING_Z, type Person, type Point } from "../src/layout";
+import { PEER_LENGTH, RETURN_Z, SIDING_Z, SLOT_PITCH, type Person } from "../src/layout";
 import {
   along,
   brake,
@@ -7,13 +7,10 @@ import {
   exit,
   goods,
   GOODS_END,
-  GOODS_HEADWAY,
   GOODS_MIN,
   GOODS_SECONDS,
-  GOODS_STAND,
   goodsSeconds,
   heading,
-  headway,
   measure,
   pull,
   route,
@@ -54,6 +51,40 @@ describe("the way a wagon takes", () => {
     expect(way.slice(1, -1).map((p) => p.z)).toEqual([10 + RETURN_Z, 10 + RETURN_Z]);
     // A place further back at one platform is no journey.
     expect(route(main(15), main(12.05))).toEqual([{ x: 15, z: 10 }, { x: 12.05, z: 10 }]);
+  });
+
+  test("round a wagon that stands in the way: over the return line, forward too", () => {
+    const standing = [{ x: 15, z: 10 }];
+    expect(route(main(12), main(27), standing)).toEqual([
+      { x: 12, z: 10 },
+      { x: 12 - RETURN_Z, z: 10 + RETURN_Z },
+      { x: 27 + RETURN_Z, z: 10 + RETURN_Z },
+      { x: 27, z: 10 },
+    ]);
+    // What stands at its ends, beyond them or on another rail is not in the way.
+    for (const p of [{ x: 12, z: 10 }, { x: 27, z: 10 }, { x: 30, z: 10 }, { x: 15, z: 10 + SIDING_Z }]) {
+      expect(route(main(12), main(27), [p])).toEqual([{ x: 12, z: 10 }, { x: 27, z: 10 }]);
+    }
+  });
+
+  test("to a place beside the line: on the line while it is free, off it a wagon's place before; and from one", () => {
+    const beside = (x: number): Stop => ({ at: { x, z: 10 + RETURN_Z }, line: 10, end: 66 });
+    const off = 15 - SLOT_PITCH;
+    expect(route(main(3), beside(15))).toEqual([{ x: 3, z: 10 }, { x: off + RETURN_Z, z: 10 }, { x: off, z: 10 + RETURN_Z }, beside(15).at]);
+    // Off it at once when a wagon stands on the line before that.
+    for (const x of [6, off]) {
+      expect(route(main(3), beside(15), [{ x, z: 10 }])).toEqual([{ x: 3, z: 10 }, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, beside(15).at]);
+    }
+    expect(route(beside(15), main(3))).toEqual([beside(15).at, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, { x: 3, z: 10 }]);
+    expect(route(beside(3), beside(15))).toEqual([beside(3).at, beside(15).at]);
+  });
+
+  test("an engine alone meets a siding's points where they cross the return line", () => {
+    const crossing = { x: stub.mouth!.x + RETURN_Z, z: 10 + RETURN_Z };
+    expect(route(stub, main(3), [], true)).toEqual([stub.at, stub.mouth, crossing, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, { x: 3, z: 10 }]);
+    expect(route(main(3), stub, [{ x: 15, z: 10 }], true)).toEqual([{ x: 3, z: 10 }, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, crossing, stub.mouth, stub.at]);
+    // From further up the line it turns there, clear of the line.
+    expect(route(main(39), stub, [{ x: 30, z: 10 }], true).slice(1)).toEqual([{ x: 39 + RETURN_Z, z: 10 + RETURN_Z }, crossing, stub.mouth, stub.at]);
   });
 
   test("a wagon leaving a siding for an earlier platform uses the return line", () => {
@@ -97,16 +128,6 @@ describe("the way a wagon takes", () => {
 const peer = { at: { x: 0, z: -17 }, length: PEER_LENGTH };
 const EDGE = 66;
 
-// Where goods are, the seconds after their message, as scene.ts moves them:
-// nowhere while they wait for their headway and after they have faded.
-function seen(way: "out" | "in", speed: number, wait: number, after: number): Point | undefined {
-  const took = goodsSeconds(speed);
-  const elapsed = after - wait;
-  if (elapsed < 0 || elapsed >= took + (way === "in" ? GOODS_STAND : 0) + TWEEN_MIN) return undefined;
-  const { x, z } = along(goods(peer, EDGE, way), (way === "out" ? pull : brake)(Math.min(1, elapsed / took)));
-  return { x, z };
-}
-
 describe("a peer's goods", () => {
   test("the way spans the line the yard shows: from its yard's end out past the edge", () => {
     const out = goods(peer, EDGE, "out");
@@ -134,34 +155,6 @@ describe("a peer's goods", () => {
     expect(pull(0.1)).toBeLessThan(0.05);
     expect(brake(0.9)).toBeGreaterThan(0.95);
     expect(pull(0.5)).toBeLessThan(0.5);
-  });
-
-  test("two messages do not share a position", () => {
-    // Sent together one way: the second keeps its headway.
-    expect(headway(3, undefined)).toBe(0);
-    expect(headway(3, 3)).toBe(GOODS_HEADWAY);
-    expect(headway(3 + GOODS_HEADWAY, 3)).toBe(0);
-    // The one before has stood and faded when the next comes to a stand.
-    expect(GOODS_STAND + TWEEN_MIN).toBeLessThan(GOODS_HEADWAY);
-    for (const speed of [1, 600]) {
-      for (const way of ["out", "in"] as const) {
-        let both = 0;
-        for (let after = 0; after < 8; after += 0.05) {
-          const first = seen(way, speed, 0, after);
-          const second = seen(way, speed, headway(0, 0), after);
-          if (!first || !second) continue;
-          both++;
-          expect(Math.abs(first.x - second.x)).toBeGreaterThan(0);
-        }
-        expect(both).toBeGreaterThan(0);
-      }
-      // A reply that crosses a mail passes it: a rail each way.
-      for (let after = 0; after < 8; after += 0.05) {
-        const mail = seen("out", speed, 0, after);
-        const reply = seen("in", speed, 0, after);
-        if (mail && reply) expect(Math.abs(mail.z - reply.z)).toBe(2 * PEER_RAIL_Z);
-      }
-    }
   });
 });
 
@@ -232,5 +225,7 @@ describe("a figure's way", () => {
     expect(doing(at(15), true)).toBe("walk");
     expect(doing(idle, true)).toBe("walk");
     expect(doing(at(15), false)).toBe("work");
+    // No one works on a wagon that is not there yet.
+    expect(doing(at(15), false, false)).toBe("idle");
   });
 });
