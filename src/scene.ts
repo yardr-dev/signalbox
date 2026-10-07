@@ -11,13 +11,14 @@ import {
   BAY_DEPTH,
   BAY_WIDTH,
   BOARD_X,
+  PEER_RAIL_Z,
   PLATFORM_LENGTH,
   SIDING_Z,
   type Layout,
   type Point,
   type Shed,
 } from "./layout";
-import { along, ease, exit, measure, route, seconds, TWEEN_MIN, type Stop } from "./motion";
+import { along, brake, ease, exit, goods, goodsSeconds, GOODS_STAND, headway, measure, pull, route, seconds, TWEEN_MIN, type Stop } from "./motion";
 import type { Bead } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
@@ -29,10 +30,11 @@ const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
 const CREW_SCALE = 0.7;
 const BAY_Y = 0.08;
-// A peer's goods wagon: where on the line it comes into the picture and how
-// far it is seen running.
-const GOODS_FROM = 5;
-const GOODS_RUN = 16;
+// A peer's goods by the kind of the message: the kit's wagon and its size. A
+// ping is the lighter wagon: the kit has no empty flat, so it is the box van
+// small.
+const GOODS: Record<string, [pick: number, size: number]> = { mail: [0, 1], bead: [1, 1], ping: [0, 0.65] };
+const GOODS_LABEL_Y = 2.1;
 // The seconds the wire stays lit after a hook.
 const FLASH = 0.6;
 
@@ -224,11 +226,14 @@ export function draw(l: Layout, kit: Kit): Picture {
   grow(wire.at.x, wire.at.z);
 
   for (const p of l.peers) {
-    rails.run(p.at, p.length);
-    root.add(block(palette.ballast, p.length, -GROUND_Y - 0.02, 1.6, p.at.x + p.length / 2, GROUND_Y, p.at.z));
-    root.add(block(palette.cream, 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 1.2));
-    root.add(block(palette.slate, 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 1.2));
-    root.add(label(`to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 1.2, [0.5, 1]));
+    // A rail each way: out on the near one, in on the far one.
+    rails.run({ x: p.at.x, z: p.at.z + PEER_RAIL_Z }, p.length);
+    rails.run({ x: p.at.x, z: p.at.z - PEER_RAIL_Z }, p.length);
+    root.add(block(palette.ballast, p.length, -GROUND_Y - 0.02, 1.6 + 2 * PEER_RAIL_Z, p.at.x + p.length / 2, GROUND_Y, p.at.z));
+    // The sign, behind the far rail.
+    root.add(block(palette.cream, 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
+    root.add(block(palette.slate, 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 2));
+    root.add(label(`to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 2, [0.5, 1]));
     grow(p.at.x - 2, p.at.z - 3);
   }
 
@@ -244,7 +249,13 @@ interface Move {
   turn: [number, number] | "way";
   size: [number, number];
   seconds: number;
+  // Below 0 it has not started: it waits out of sight.
   elapsed: number;
+  ease: (t: number) => number;
+  // After the way: the seconds it stands at its end, and then the seconds
+  // it takes to grow small there.
+  stand: number;
+  fade: number;
   // Taken out of the picture at the end.
   last: boolean;
 }
@@ -283,6 +294,10 @@ export class Stock {
   private readonly wagons = new Map<string, Wagon>();
   private readonly crews = new Map<string, Engine>();
   private readonly leaving = new Set<Mover>();
+  // The seconds ticked so far, and when the last goods started, by line and
+  // direction: the next keep their headway.
+  private clock = 0;
+  private readonly started = new Map<string, number>();
   private readonly counts = new THREE.Group();
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private layout: Layout;
@@ -390,15 +405,34 @@ export class Stock {
     this.beads = [...this.wagons.values(), ...this.crews.values()].map((m) => m.object);
   }
 
-  // Goods on a peer's line: out to the peer, or in from it.
-  goods(peer: string, way: "out" | "in") {
+  // Goods on a peer's line: out to the peer past the yard's edge, or in from
+  // there to the yard's end, where they stand a moment. kind is the
+  // message's (mail, ping, bead), speed the replay's.
+  goods(peer: string, way: "out" | "in", kind: string | undefined, speed: number) {
     const line = this.layout.peers.find((p) => p.name === peer);
     if (!line) return;
-    const near = { x: line.at.x + GOODS_FROM, z: line.at.z };
-    const far = { x: near.x + GOODS_RUN, z: line.at.z };
-    const wagon: Mover = { object: this.kit.make("wagon"), size: 1 };
+    const wire = this.layout.wire;
+    const [pick, size] = GOODS[kind ?? ""] ?? GOODS.mail!;
+    const wagon: Mover = { object: this.kit.make("wagon", pick), size };
+    wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));
     this.root.add(wagon.object);
-    this.send(wagon, way === "out" ? [near, far] : [far, near], { size: [1, 0.4], last: true }, true);
+    const key = `${peer}/${way}`;
+    const wait = headway(this.clock, this.started.get(key));
+    this.started.set(key, this.clock + wait);
+    this.send(
+      wagon,
+      goods(line, wire.at.x + wire.length, way),
+      {
+        size: [1, 1],
+        seconds: goodsSeconds(speed),
+        elapsed: -wait,
+        ease: way === "out" ? pull : brake,
+        stand: way === "out" ? 0 : GOODS_STAND,
+        fade: TWEEN_MIN,
+        last: true,
+      },
+      true,
+    );
   }
 
   // A hook came in over the wire.
@@ -419,34 +453,47 @@ export class Stock {
       size: [m.object.scale.x / m.size || 1, 1],
       seconds: seconds(measure(from)),
       elapsed: 0,
+      ease,
+      stand: 0,
+      fade: 0,
       last: false,
       ...over,
     };
     m.move = move;
     if (move.last) this.leaving.add(m);
-    if (!tween) move.elapsed = move.seconds;
+    if (!tween) move.elapsed = move.seconds + move.stand + move.fade;
     this.pose(m);
   }
 
   private pose(m: Mover) {
     const move = m.move;
     if (!move) return;
-    const t = ease(Math.min(1, move.elapsed / move.seconds));
+    const t = move.ease(Math.min(1, Math.max(0, move.elapsed) / move.seconds));
     const pose = along(move.path, t);
+    const over = move.elapsed - move.seconds - move.stand;
+    const faded = move.fade > 0 ? Math.min(1, Math.max(0, over / move.fade)) : 0;
+    m.object.visible = move.elapsed >= 0;
     m.object.position.set(pose.x, move.y[0] + (move.y[1] - move.y[0]) * t, pose.z);
     m.object.rotation.y = move.turn === "way" ? pose.angle : move.turn[0] + (move.turn[1] - move.turn[0]) * t;
-    m.object.scale.setScalar(m.size * (move.size[0] + (move.size[1] - move.size[0]) * t));
-    if (move.elapsed < move.seconds) return;
+    m.object.scale.setScalar(m.size * (move.size[0] + (move.size[1] - move.size[0]) * t) * (1 - faded));
+    if (over < move.fade) return;
     delete m.move;
     if (move.turn === "way") m.object.rotation.y = 0;
     if (move.last) {
       this.leaving.delete(m);
+      // A label is an element of the page: it goes with its object.
+      m.object.traverse((o) => {
+        if (o instanceof CSS2DObject) o.element.remove();
+      });
       this.root.remove(m.object);
     }
   }
 
   // Move everything on by a time in seconds. True while anything still moves.
   tick(dt: number): boolean {
+    // Everything put at its end: no goods are left to keep a headway from.
+    if (Number.isFinite(dt)) this.clock += dt;
+    else this.started.clear();
     let moving = false;
     for (const m of [...this.wagons.values(), ...this.crews.values(), ...this.leaving]) {
       if (!m.move) continue;

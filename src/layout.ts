@@ -68,6 +68,9 @@ export const CREW_PITCH = 10;
 export const WIRE_Z = -12;
 export const PEER_Z = -17;
 export const PEER_PITCH = 4;
+// A peer's line has a rail each way, this far either side of its middle:
+// goods out and goods in pass each other.
+export const PEER_RAIL_Z = 0.75;
 // A peer's line runs on past any yard's right edge.
 export const PEER_LENGTH = 600;
 

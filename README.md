@@ -43,7 +43,9 @@ platform when it advances (into a siding over the points, back along the
 return line), and past the buffer when it reaches the flow's last stage. A
 session is a crew that leaves its bay for the platform beside its wagon and
 goes back when the session ends. A held bead stands in the siding. A peer's
-message is a goods wagon on the peer's line, a hook a flash of the wire.
+message is a goods wagon on the peer's line, named by its kind and its peer:
+out from the yard's end past the edge of the yard, or in from there, a few
+seconds either way, each on its own rail. A hook is a flash of the wire.
 
 ![Mid-replay: a wagon between new and review, two crews out](docs/replay.png)
 
@@ -126,7 +128,8 @@ of this is there, and the page is the committed snapshot and its replay.
   names what the snapshot does not hold, and the page takes a new one.
 - `src/player.ts`: the replay's clock and speed, and, live, a window that
   grows at its end. `src/motion.ts`: the way a wagon takes between two
-  places, and how long it takes (a second at most, at any speed).
+  places, and how long it takes (a second at most, at any speed; a peer's goods four at
+1x and never under two).
 - `src/scene.ts` draws a layout: `draw` what stands still, `Stock` the wagons
   and crews, which it moves from one state to the next. `src/main.ts` is the
   page: camera, pan and zoom, labels, the bead under the pointer, the bar.

@@ -69,6 +69,13 @@ body {
   background: #b4533c;
 }
 
+.label.goods {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgb(79 90 102 / 0.9);
+}
+
 .label.crew,
 .label.peer,
 .label.wire {

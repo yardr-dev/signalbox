@@ -286,8 +286,10 @@ async function start() {
       for (const e of passed) {
         if (e.kind === "hook") stock.flash();
         const peer = e.data?.peer;
-        if (peer !== undefined && e.kind === "peer_message_sent") stock.goods(peer, "out");
-        if (peer !== undefined && e.kind === "peer_message_received") stock.goods(peer, "in");
+        // Live, the yard's own pace, whatever speed the bar was left at.
+        const speed = player.live ? 1 : player.speed;
+        if (peer !== undefined && e.kind === "peer_message_sent") stock.goods(peer, "out", e.data?.kind, speed);
+        if (peer !== undefined && e.kind === "peer_message_received") stock.goods(peer, "in", e.data?.kind, speed);
       }
       if (passed.length > 0) {
         // A bead an advance took out of the state went past the buffer.

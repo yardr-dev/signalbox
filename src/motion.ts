@@ -2,7 +2,7 @@
 // rails as a line of points, and where on it a thing is. Pure, like
 // layout.ts; scene.ts moves the models along it.
 
-import { PLATFORM_LENGTH, RETURN_Z, SIDING_Z, type Point } from "./layout";
+import { PEER_RAIL_Z, PLATFORM_LENGTH, RETURN_Z, SIDING_Z, type Point } from "./layout";
 
 // Units of ground a second: a stage's pitch takes most of one.
 export const TRAIN_SPEED = 14;
@@ -12,6 +12,18 @@ export const TWEEN_MIN = 0.3;
 export const TWEEN_MAX = 1;
 // How far past the end of its track a wagon rolls on its way out.
 export const RUN_OUT = 9;
+// A peer's goods are a journey, not a hop: the seconds their way takes at
+// 1x, and the least at any speed of the replay.
+export const GOODS_SECONDS = 4;
+export const GOODS_MIN = 2;
+// Where on a peer's line goods stand at the yard's end: on the rail, short
+// of the sign.
+export const GOODS_END = 1.5;
+// The seconds goods in stand at the yard's end before they fade.
+export const GOODS_STAND = 0.5;
+// The seconds between two goods wagons one way on one line: the one before
+// has stood and faded when the next comes in.
+export const GOODS_HEADWAY = 1;
 
 // A place a wagon stands at.
 export interface Stop {
@@ -57,6 +69,29 @@ export function exit(from: Stop): Point[] {
   return [from.at, ...points(from), { x: Math.max(from.end, from.at.x) + RUN_OUT, z: from.line }];
 }
 
+// The way of a peer's goods: the line as the yard shows it, from its yard's
+// end out past the yard's right edge (the rail runs on, off the page), on
+// the rail of its direction. Goods in come the same way back.
+export function goods(line: { at: Point; length: number }, edge: number, way: "out" | "in"): Point[] {
+  const z = line.at.z + (way === "out" ? PEER_RAIL_Z : -PEER_RAIL_Z);
+  const near = { x: line.at.x + GOODS_END, z };
+  const far = { x: Math.min(line.at.x + line.length, Math.max(edge, near.x) + RUN_OUT), z };
+  return way === "out" ? [near, far] : [far, near];
+}
+
+// The seconds goods take over their way, at a speed of the replay. Not by
+// length, and with a cap of its own: the longest way of the yard reads as
+// one at any speed.
+export function goodsSeconds(speed: number): number {
+  return Math.max(GOODS_MIN, GOODS_SECONDS / speed);
+}
+
+// The seconds goods sent now wait before they start: a headway after the
+// start of the last before them, one way on one line.
+export function headway(now: number, last: number | undefined): number {
+  return last === undefined ? 0 : Math.max(0, last + GOODS_HEADWAY - now);
+}
+
 export function measure(path: Point[]): number {
   let length = 0;
   for (let i = 1; i < path.length; i++) length += Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z);
@@ -71,6 +106,16 @@ export function seconds(length: number): number {
 // Slow away, slow in.
 export function ease(t: number): number {
   return t * t * (3 - 2 * t);
+}
+
+// Slow away and gone at speed; in at speed and slow to a stand: the halves
+// of ease, for a way that starts or ends out of the picture.
+export function pull(t: number): number {
+  return 2 * ease(t / 2);
+}
+
+export function brake(t: number): number {
+  return 1 - pull(1 - t);
 }
 
 export interface Pose extends Point {
