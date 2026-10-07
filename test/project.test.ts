@@ -68,6 +68,22 @@ describe("the projection", () => {
       ["signalbox-e", true, "builders", undefined],
     ]);
     expect(Object.keys(yard.beads[0]!).sort()).toEqual(["created_at", "depot", "fault", "group", "id", "priority", "stage", "title", "type", "working"]);
+  });
+
+  test("a bead's last advance in the window is when it moved; one the window does not move has none", () => {
+    const events = [
+      { seq: 3, at: "2099-01-01T03:00:00Z", kind: "advanced", bead: "signalbox-a", data: { from: "backlog", to: "new" } },
+      { seq: 2, at: "2099-01-01T02:00:00Z", kind: "advanced", bead: "signalbox-a", data: { from: "new", to: "backlog" } },
+      // No move: a note, and an advance with no time.
+      { seq: 4, at: "2099-01-01T03:30:00Z", kind: "noted", bead: "signalbox-b" },
+      { seq: 5, kind: "advanced", bead: "signalbox-b" },
+    ];
+    const yard = yardOf({ ...lists, events }, "2099-01-01T04:00:00Z");
+    expect(yard.beads.map((b) => [b.id, b.moved_at])).toEqual([
+      ["signalbox-a", "2099-01-01T03:00:00Z"],
+      ["signalbox-b", undefined],
+    ]);
+    expect(Object.keys(yard.beads[1]!)).not.toContain("moved_at");
     expect(JSON.stringify(yard)).not.toMatch(/secret|4wbdbdwypgzzjr5vgfwr/);
   });
 

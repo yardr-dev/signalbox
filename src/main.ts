@@ -12,7 +12,7 @@ import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
-import { describe, draw, house, Stock } from "./scene";
+import { describe, draw, house, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
 import type { Card, Detail } from "./card";
@@ -112,6 +112,10 @@ function show(c: Card) {
   side.hidden = false;
 }
 
+// A wagon weathers by the day: this much of the yard's time, in milliseconds,
+// is soon enough to look at its age again when no event shows the yard anew.
+const WEATHERS = 60 * 60 * 1000;
+
 async function start() {
   const api = await snapshot();
   const files = async (): Promise<Snapshot> => {
@@ -130,14 +134,15 @@ async function start() {
   const kit = await loadKit(base);
   // The structure stands through a replay; only the beads change. Live, a
   // new snapshot may bring another structure: see adopt.
-  const plan = (beads: Bead[]) => layout({ ...yard, beads }, slots);
+  // now is where a replay stands: a wagon's age is as of then.
+  const plan = (beads: Bead[], now?: number) => layout({ ...yard, beads }, slots, now);
   let picture = draw(plan(yard.beads), kit);
   const log = api ? api.log : await events();
   // Live, the window ends when the snapshot was taken, and the page opens
   // there; a replay opens at its start.
   const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
   if (api) first?.follow();
-  const stock = new Stock(plan(first ? first.state.beads : yard.beads), kit, picture.sheds);
+  const stock = new Stock(plan(first ? first.state.beads : yard.beads, first?.clock), kit, picture.sheds);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.grass);
@@ -239,7 +244,7 @@ async function start() {
       tip.style.display = "none";
       return;
     }
-    tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true);
+    tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true, hit.userData.age as number | undefined);
     tip.style.display = "block";
     tip.style.left = `${Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
     tip.style.top = `${Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
@@ -323,6 +328,13 @@ async function start() {
     const now = () => Date.now() + skew;
     // Whether the feed's line is open.
     let fed = false;
+    // The yard at the replay's clock, shown: the wagons' ages are as of
+    // then, so the clock is kept to show them again as it runs on.
+    let aged = player.clock;
+    const present = (how: Show) => {
+      stock.show(plan(player.state.beads, player.clock), how);
+      aged = player.clock;
+    };
     document.body.classList.add("replay");
     bar.hidden = false;
     const sound = new Sound(
@@ -376,7 +388,7 @@ async function start() {
     const seek = (clock: number) => {
       player.live = false;
       player.seek(clock);
-      stock.show(plan(player.state.beads), { tween: false });
+      present({ tween: false });
       stale = true;
       told();
     };
@@ -399,7 +411,10 @@ async function start() {
       if (passed.length > 0) {
         // A bead an advance took out of the state went past the buffer.
         const left = new Set(passed.filter((e) => e.kind === "advanced").map((e) => e.bead ?? ""));
-        stock.show(plan(player.state.beads), { tween: true, left, speed });
+        present({ tween: true, left, speed });
+      } else if (player.clock - aged >= WEATHERS) {
+        // Nothing happened, and the wagons that wait are older.
+        present({ tween: true, speed });
       }
       // Played to the window's end, the replay is at now: it stays there.
       if (api && !player.live && player.clock >= player.to) player.follow();
@@ -421,7 +436,7 @@ async function start() {
       live.addEventListener("click", () => {
         player.extend(now());
         player.follow();
-        stock.show(plan(player.state.beads), { tween: false });
+        present({ tween: false });
         stale = true;
         told();
       });
@@ -454,7 +469,7 @@ async function start() {
           scene.add(picture.root);
           stock.house(picture.sheds);
         }
-        stock.show(plan(player.state.beads), { tween: before.live });
+        present({ tween: before.live });
         stale = true;
         noted();
         told();

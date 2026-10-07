@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import remembered from "../public/layout.json";
 import snapshot from "../public/yard.json";
 import {
+  age,
   atWork,
   BOX_FRONT_Z,
   CREW_Z,
@@ -37,6 +38,7 @@ import {
   TAIL_PITCH,
   TAIL_X,
   travelOrder,
+  weather,
   WORK_Z,
 } from "../src/layout";
 import type { Bead, Flow, Yard } from "../src/yard";
@@ -595,5 +597,67 @@ describe("the mapping", () => {
     expect(g.counts.find((c) => c.platform === open)).toMatchObject({ more: 2, of: "wagons" });
     // None of them stands at the wagon flow's own platform.
     expect(g.vehicles.filter((v) => v.platform.startsWith("yardr/type/wagon/"))).toEqual([]);
+  });
+});
+
+describe("a wagon that waits on a person weathers", () => {
+  const now = Date.parse("2099-01-20T00:00:00Z");
+  const ago = (days: number, hours = 0) => new Date(now - (days * 24 + hours) * 60 * 60 * 1000).toISOString();
+  const waiting = (id: string, over: Partial<Bead>) => bead(id, { depot: "signalbox", ...over });
+  const stood = (beads: Bead[], at = now) => {
+    const picture = layout({ ...copy(), beads }, {}, at);
+    return (id: string) => picture.vehicles.find((v) => v.key === id)!;
+  };
+
+  test("the steps: fresh, dull at three days, rusted at a week, moss at two", () => {
+    expect([0, 0.9, 2.99].map(weather)).toEqual([undefined, undefined, undefined]);
+    expect([3, 6.99].map(weather)).toEqual(["dull", "dull"]);
+    expect([7, 13.99].map(weather)).toEqual(["rusted", "rusted"]);
+    expect([14, 400].map(weather)).toEqual(["mossy", "mossy"]);
+  });
+
+  test("its age is the days since it last moved, or since it was made", () => {
+    expect(age(waiting("signalbox-a", { created_at: ago(10) }), now)).toBe(10);
+    expect(age(waiting("signalbox-a", { created_at: ago(10), moved_at: ago(0, 12) }), now)).toBe(0.5);
+    // A clock behind the bead's: it is no younger than new.
+    expect(age(waiting("signalbox-a", { created_at: ago(-2) }), now)).toBe(0);
+    expect(age(waiting("signalbox-a", { created_at: "" }), now)).toBeUndefined();
+  });
+
+  test("ten days in backlog is rust, an hour in decide is fresh, and review stays clean however long", () => {
+    const at = stood([
+      waiting("signalbox-old", { stage: "backlog", created_at: ago(10) }),
+      waiting("signalbox-asked", { stage: "decide", created_at: ago(10), moved_at: ago(0, 1) }),
+      waiting("signalbox-read", { stage: "review", created_at: ago(10) }),
+      waiting("signalbox-built", { stage: "new", created_at: ago(30) }),
+      waiting("signalbox-moss", { stage: "decide", created_at: ago(40), moved_at: ago(15) }),
+    ]);
+    expect(at("signalbox-old")).toMatchObject({ age: 10, weather: "rusted" });
+    expect(at("signalbox-asked").age).toBeCloseTo(1 / 24);
+    expect(at("signalbox-asked").weather).toBeUndefined();
+    // Waiting on the yard, not on a person: no age at all.
+    for (const id of ["signalbox-read", "signalbox-built"]) {
+      expect(at(id).age, id).toBeUndefined();
+      expect(at(id).weather, id).toBeUndefined();
+    }
+    expect(at("signalbox-moss")).toMatchObject({ age: 15, weather: "mossy" });
+  });
+
+  test("the age is as of the time the picture is of: the snapshot's, or the one given", () => {
+    const beads = [waiting("signalbox-old", { stage: "backlog", created_at: ago(10) })];
+    expect(stood(beads, now - 8 * 24 * 60 * 60 * 1000)("signalbox-old")).toMatchObject({ age: 2 });
+    expect(stood(beads, now - 6 * 24 * 60 * 60 * 1000)("signalbox-old").weather).toBe("dull");
+    const taken = layout({ ...copy(), beads, taken_at: ago(0) }).vehicles.find((v) => v.key === "signalbox-old")!;
+    expect(taken.weather).toBe("rusted");
+  });
+
+  test("a held wagon weathers by its own stage, not by the siding it stands in", () => {
+    const at = stood([
+      waiting("signalbox-held", { stage: "new", hold: true, created_at: ago(10) }),
+      waiting("signalbox-kept", { stage: "backlog", hold: true, created_at: ago(10) }),
+    ]);
+    expect(at("signalbox-held")).toMatchObject({ platform: "signalbox/default/decide", chocked: true });
+    expect(at("signalbox-held").weather).toBeUndefined();
+    expect(at("signalbox-kept")).toMatchObject({ platform: "signalbox/default/decide", weather: "rusted" });
   });
 });

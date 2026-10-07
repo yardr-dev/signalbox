@@ -93,6 +93,9 @@ export interface Bead {
   labels?: string[];
   priority: number;
   created_at: string;
+  // When it last moved to another stage, where that is known: a bead that
+  // never moved, or moved before the window of the log, has none.
+  moved_at?: string;
 }
 
 // A fault on a bead. Its kind is how the bead's session ended when that was

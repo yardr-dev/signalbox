@@ -126,6 +126,16 @@ snapshot itself knows only how a bead's last session ended (died, failed,
 aborted), since a stalled or blocked session is still running to the yard.
 So a fault older than the window is seen only if it is of that kind.
 
+A wagon that waits on a person weathers. At a stage only a person moves a
+bead on from (backlog, decide: the flow's `human` stages) its paint is dull
+after three days, rusted after a week, and moss grows on its top after two;
+under the pointer it says how long ("in backlog 9 days"). A wagon at any
+other stage waits on the yard and stays clean, however old. The age counts
+from the bead's last advance, and is as of the replay's clock, so a wagon
+weathers as the bar is scrubbed forward and is fresh again when it moves.
+The snapshot knows a bead's last advance (`moved_at`) only from the window
+of the log: a bead that moved before it counts from when it was created.
+
 ![Mid-replay, on yardr's board: a session at new has stalled, and its builder sits on the platform at its wagon, hat off, back to it, while the hut's sign says 0 of 3 out and three builders stand at its door; a reviewer is at work at review, and the bar names the event](docs/replay.png)
 
 ## Following a yard as it runs

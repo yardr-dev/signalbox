@@ -29,6 +29,10 @@ export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
 // A lamp that flashes is dark between, and a wheel chock is its own orange.
 export const fault = { dark: 0x4a1512, chock: 0xf28c1d } as const;
 
+// What weather does to a wagon that waits: its paint is this much of what it
+// was, and moss is a green of its own.
+export const weathering = { dull: 0xa6a6a0, rusted: 0xb9744a, moss: 0x5d8a3a } as const;
+
 export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works";
 export type Outfit = "builder" | "reviewer" | "crew";
 // What a figure can be seen doing: the pack's idle, walk, interact-right and

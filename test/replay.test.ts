@@ -54,6 +54,16 @@ describe("the reducer", () => {
     expect(platform(back, "signalbox-a")).toBe("signalbox/default/new");
   });
 
+  test("an advance is when the bead last moved; a bead made in the window has not moved yet", () => {
+    const e = event("advanced", "signalbox-a", { from: "new", to: "decide", outcome: "question" });
+    expect(at(run([e]), "signalbox-a")!.moved_at).toBe(e.at);
+    // The cast has it as it is at the window's end, after its moves.
+    const later = world(one, { ...cast, beads: [bead("signalbox-b", { stage: "merged", moved_at: "2099-01-02T00:00:00Z" })] });
+    const made = step(start, event("created", "signalbox-b"), later);
+    expect(at(made, "signalbox-b")).toMatchObject({ stage: "backlog" });
+    expect(at(made, "signalbox-b")!.moved_at).toBeUndefined();
+  });
+
   test("after a terminal stage it is gone, and its close changes nothing more", () => {
     const s = run([event("advanced", "signalbox-a", { from: "approved", to: "merged" })]);
     expect(s.beads).toEqual([]);
@@ -285,6 +295,29 @@ describe("the window's start, read off the window", () => {
     const s = opening(end, day);
     expect(at(s, "signalbox-b")).toBeUndefined();
     expect(at(s, "signalbox-idle")).toEqual(end.beads[1]);
+  });
+
+  test("a bead the window moves counts from when it was made until it does; a scrub forward weathers what waits", () => {
+    const made = "2099-01-01T00:00:00Z";
+    const asked: YardEvent = { seq: 9001, at: "2099-01-09T00:00:00Z", kind: "advanced", bead: "signalbox-a", data: { from: "backlog", to: "decide" } };
+    const last: YardEvent = { seq: 9002, at: "2099-01-13T00:00:00Z", kind: "hook" };
+    const window: Log = { ...cast, events: [{ seq: 9000, at: "2099-01-04T00:00:00Z", kind: "hook" }, asked, last] };
+    const now: Yard = { ...yard, beads: [bead("signalbox-a", { stage: "decide", created_at: made, moved_at: asked.at })] };
+    expect(at(opening(now, window), "signalbox-a")).toEqual(bead("signalbox-a", { stage: "backlog", created_at: made }));
+    expect(state(now, window)).toEqual({ beads: now.beads, sessions: {} });
+
+    const player = new Player(now, window);
+    const wagon = () => layout({ ...now, beads: player.state.beads }, {}, player.clock).vehicles.find((v) => v.key === "signalbox-a")!;
+    const day = 24 * 60 * 60 * 1000;
+    expect(wagon()).toMatchObject({ platform: "signalbox/default/backlog", age: 3, weather: "dull" });
+    player.seek(player.from + 4.5 * day);
+    expect(wagon()).toMatchObject({ platform: "signalbox/default/backlog", weather: "rusted" });
+    // Moved to decide: fresh again, and older from there.
+    player.seek(Date.parse(asked.at));
+    expect(wagon()).toMatchObject({ platform: "signalbox/default/decide", age: 0 });
+    expect(wagon().weather).toBeUndefined();
+    player.seek(player.to);
+    expect(wagon()).toMatchObject({ platform: "signalbox/default/decide", age: 4, weather: "dull" });
   });
 
   test("state(snapshot, events[0..n]) walks the window to the snapshot", () => {

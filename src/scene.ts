@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { fault, HAT, lamp, palette, type Clip, type Kit } from "./kit";
+import { fault, HAT, lamp, palette, weathering, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -22,6 +22,7 @@ import {
   type Point,
   type Shed,
   type Vehicle,
+  type Weather,
 } from "./layout";
 import {
   along,
@@ -196,6 +197,46 @@ function signAt(s: Shed, n: number): [number, number, number] {
   return [x, 0, s.at.z + s.away * (SIGN_Z + (n % 2) * 1.3)];
 }
 
+// A wagon's paint under the weather: the kit's own material with a tint, one
+// for every material and step, shared by the wagons that wear it. Moss lies
+// on rust: a mossy wagon has the rusted paint.
+const weathered = new Map<string, THREE.Material>();
+function tinted(paint: THREE.Material, step: Weather): THREE.Material {
+  const key = `${paint.uuid}/${step === "dull" ? "dull" : "rusted"}`;
+  let m = weathered.get(key);
+  if (!m) {
+    m = paint.clone();
+    const { color } = m as THREE.MeshStandardMaterial;
+    if (color) color.multiply(new THREE.Color(step === "dull" ? weathering.dull : weathering.rusted));
+    weathered.set(key, m);
+  }
+  return m;
+}
+
+// The paint each part of a wagon came with, to tint and to give back.
+const paints = new WeakMap<THREE.Mesh, THREE.Material | THREE.Material[]>();
+function repaint(wagon: THREE.Object3D, step: Weather | undefined) {
+  wagon.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    const paint = paints.get(part) ?? (part.material as THREE.Material | THREE.Material[]);
+    paints.set(part, paint);
+    if (step === undefined) part.material = paint;
+    else part.material = Array.isArray(paint) ? paint.map((p) => tinted(p, step)) : tinted(paint, step);
+  });
+}
+
+// Patches of moss on a wagon's top, which is this high.
+function moss(top: number): THREE.Object3D {
+  const g = new THREE.Group();
+  const patches: [length: number, width: number, x: number, z: number][] = [
+    [0.7, 0.45, -0.6, 0.12],
+    [0.5, 0.35, 0.55, -0.15],
+    [0.3, 0.3, 0.05, 0.2],
+  ];
+  for (const [length, width, x, z] of patches) g.add(block(weathering.moss, length, 0.08, width, x, top - 0.03, z));
+  return g;
+}
+
 // Wheel chocks on the rail at both ends of a wagon, as its own part: they
 // lie there only while it stands.
 function chocks(): THREE.Object3D {
@@ -345,7 +386,10 @@ interface Wagon extends Mover {
   // The platform it stands at, and the track of that: whose shunter moves it.
   platform: string;
   track: string;
-  // What it wears for its bead's faults, and which of them that is.
+  // How high its top is: where moss grows.
+  top: number;
+  // What it wears for its bead's faults and its wait, and which of them
+  // that is.
   marks?: THREE.Object3D;
   marked?: string;
   chocks?: THREE.Object3D;
@@ -506,7 +550,9 @@ export class Stock {
         const old = this.parting.get(v.key);
         if (old) giveUp(old.engine);
         const object = v.kind === "locomotive" ? this.kit.make("locomotive") : this.kit.make("wagon", hash(v.bead.id));
-        wagon = { object, size: 1, stop, platform: v.platform, track: on };
+        // Measured before it is anywhere, at its full size.
+        const top = new THREE.Box3().setFromObject(object).max.y;
+        wagon = { object, size: 1, stop, platform: v.platform, track: on, top };
         this.wagons.set(v.key, wagon);
         this.root.add(object);
         // New to the picture: it grows where it stands.
@@ -531,6 +577,7 @@ export class Stock {
       wagon.platform = v.platform;
       wagon.track = on;
       wagon.object.userData.bead = v.bead;
+      wagon.object.userData.age = v.age;
       this.mark(wagon, v);
     }
     for (const [key, wagon] of this.wagons) {
@@ -658,14 +705,18 @@ export class Stock {
   }
 
   // What a wagon wears for what is wrong with its bead: chocks and a flag
-  // for a hold, a lamp for a fault; nothing for a wagon that is well.
-  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp">) {
-    const marked = `${v.chocked === true}/${v.lamp === true}`;
-    if ((wagon.marked ?? "false/false") === marked) return;
+  // for a hold, a lamp for a fault; and for a long wait on a person: dull
+  // paint, rust, then moss on top. Nothing for a wagon that is well.
+  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp" | "weather">) {
+    const marked = `${v.chocked === true}/${v.lamp === true}/${v.weather ?? ""}`;
+    if ((wagon.marked ?? "false/false/") === marked) return;
     wagon.marked = marked;
     if (wagon.marks) wagon.object.remove(wagon.marks);
     delete wagon.chocks;
+    // The paint is the wagon's own: what it wears is off while it is done.
+    repaint(wagon.object, v.weather);
     wagon.marks = new THREE.Group();
+    if (v.weather === "mossy") wagon.marks.add(moss(wagon.top));
     if (v.chocked) {
       wagon.chocks = chocks();
       wagon.marks.add(wagon.chocks, flag());
@@ -1010,9 +1061,18 @@ export function wrong(bead: Bead): string | undefined {
   return said.length > 0 ? said.join(" · ") : undefined;
 }
 
-// The tip of a wagon, or of the figure that works it or sits by it.
-export function describe(bead: Bead, crew: boolean): string {
+// How long a wagon has waited on a person at its stage, in words: "in
+// backlog 9 days".
+export function waited(stage: string, days: number): string {
+  const whole = Math.floor(days);
+  return `in ${stage} ${whole < 1 ? "under a day" : whole === 1 ? "1 day" : `${whole} days`}`;
+}
+
+// The tip of a wagon, or of the figure that works it or sits by it. age is
+// the days the wagon has waited on a person, where it does.
+export function describe(bead: Bead, crew: boolean, age?: number): string {
   const faults = wrong(bead);
-  const where = `${bead.depot} · ${bead.type} · ${bead.stage}${faults !== undefined ? ` · ${faults}` : ""}`;
+  const stands = `${bead.depot} · ${bead.type} · ${bead.stage}${faults !== undefined ? ` · ${faults}` : ""}`;
+  const where = age !== undefined ? `${stands}\n${waited(bead.stage, age)}` : stands;
   return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
 }

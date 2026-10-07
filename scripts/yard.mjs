@@ -69,7 +69,7 @@ export async function snapshot(run, window = WINDOW) {
   const flows = await Promise.all(depots.map(async ({ name }) => ({ depot: name, flows: await run("flow", "show", name) })));
   const taken_at = now();
   return {
-    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads, sessions }, taken_at),
+    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads, sessions, events }, taken_at),
     log: logOf(taken_at, bySeq(events), all, alias),
   };
 }

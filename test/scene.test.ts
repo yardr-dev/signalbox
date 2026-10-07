@@ -2,11 +2,11 @@
 import * as THREE from "three";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
-import { fault as tint, lamp, loadKit, type Kit } from "../src/kit";
+import { fault as tint, lamp, loadKit, weathering, type Kit } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH } from "../src/layout";
 import { GOODS_END, goodsSeconds, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { BACKLOG, COUPLING } from "../src/shunt";
-import { describe as tip, draw, house, sign, Stock, wrong } from "../src/scene";
+import { describe as tip, draw, house, sign, Stock, waited, wrong } from "../src/scene";
 import type { Bead, Yard } from "../src/yard";
 
 // No file of the kit is there: every model is its box. And no page: a label
@@ -353,6 +353,87 @@ describe("the faults of the stock", () => {
     expect(wrong(bead("signalbox-a", { fault: { kind: "unrouted", at: when } }))).toBe(`unrouted ${clock(when)}`);
     expect(wrong(bead("signalbox-a", { hold: true, fault: { kind: "move_refused", at: "" } }))).toBe("held · move refused");
     expect(tip(bead("signalbox-a", { fault: { kind: "move_refused", at: when } }), false)).toBe(`signalbox-a\nsignalbox-a\nsignalbox · task · new · move refused ${clock(when)}`);
+  });
+});
+
+describe("the weather of the stock", () => {
+  const now = Date.parse("2099-01-20T00:00:00Z");
+  const day = 24 * 60 * 60 * 1000;
+  const bead = (id: string, days: number, over: Partial<Bead> = {}): Bead => ({
+    id,
+    title: id,
+    type: "task",
+    stage: "backlog",
+    depot: "signalbox",
+    priority: 2,
+    created_at: new Date(now - days * day).toISOString(),
+    ...over,
+  });
+  // The yard a time later: every wagon that much older.
+  const at = (beads: Bead[], later = 0) => layout({ ...yard, beads }, {}, now + later * day);
+  const wagon = (stock: Stock, id: string) => stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!;
+  const paint = (o: THREE.Object3D) => {
+    const seen: THREE.MeshStandardMaterial[] = [];
+    o.traverse((part) => {
+      if (part instanceof THREE.Mesh) seen.push(part.material as THREE.MeshStandardMaterial);
+    });
+    return seen;
+  };
+
+  test("the paint dulls, rusts, and moss grows on top; a wagon that moves on is fresh again", () => {
+    const beads = [bead("signalbox-a", 0), bead("signalbox-b", 0)];
+    const stock = new Stock(at(beads), kit);
+    const a = wagon(stock, "signalbox-a");
+    const [fresh] = paint(a);
+    const tinted = (colour: number) => fresh!.color.clone().multiply(new THREE.Color(colour)).getHex();
+
+    stock.show(at(beads, 3), { tween: true });
+    expect(paint(a).map((m) => m.color.getHex())).toEqual([tinted(weathering.dull)]);
+    stock.show(at(beads, 7), { tween: true });
+    expect(paint(a).map((m) => m.color.getHex())).toEqual([tinted(weathering.rusted)]);
+    expect(fresh!.color.getHex()).not.toBe(tinted(weathering.rusted));
+
+    // Moss lies on the rust, on the wagon's top.
+    stock.show(at(beads, 14), { tween: true });
+    const mossy = paint(a);
+    expect(mossy[0]!.color.getHex()).toBe(tinted(weathering.rusted));
+    const moss = mossy.filter((m) => m.color.getHex() === weathering.moss);
+    expect(moss.length).toBe(mossy.length - 1);
+    expect(moss.length).toBeGreaterThan(0);
+    const top = new THREE.Box3().setFromObject(a).max.y;
+    expect(top).toBeGreaterThan(1.3);
+    expect(top).toBeLessThan(1.4);
+    expect((a.userData.age as number)).toBe(14);
+
+    // Built now: it waits on the yard, and its own paint is back.
+    stock.show(at(beads.map((b) => ({ ...b, stage: "new" })), 14), { tween: true });
+    expect(paint(a)).toEqual([fresh]);
+    expect(a.userData.age).toBeUndefined();
+  });
+
+  test("a step's paint is one material, whatever wears it", () => {
+    // Two copies of one model have one material, as the kit's files do.
+    const shared = new THREE.MeshStandardMaterial({ color: 0x808080 });
+    const twins: Kit = {
+      ...kit,
+      make: (part, pick) => (part === "wagon" ? new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(2.7, 1.3, 1.2), shared)) : kit.make(part, pick)),
+    };
+    const stock = new Stock(at([bead("signalbox-a", 8), bead("signalbox-b", 9), bead("signalbox-c", 4)]), twins);
+    const [a, b, c] = ["signalbox-a", "signalbox-b", "signalbox-c"].map((id) => paint(wagon(stock, id))[0]!);
+    expect(a).toBe(b);
+    expect(a).not.toBe(shared);
+    expect(c).not.toBe(a);
+    // The kit's own is as it was.
+    expect(shared.color.getHex()).toBe(0x808080);
+  });
+
+  test("the tip says how long it has waited, in days", () => {
+    expect(waited("backlog", 9.7)).toBe("in backlog 9 days");
+    expect(waited("decide", 1.2)).toBe("in decide 1 day");
+    expect(waited("decide", 0.04)).toBe("in decide under a day");
+    const old = bead("signalbox-a", 9);
+    expect(tip(old, false, 9.2)).toBe("signalbox-a\nsignalbox-a\nsignalbox · task · backlog\nin backlog 9 days");
+    expect(tip(old, false)).toBe("signalbox-a\nsignalbox-a\nsignalbox · task · backlog");
   });
 });
 

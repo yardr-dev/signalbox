@@ -159,6 +159,13 @@ function fresh(bead: Bead): Bead {
   return rest;
 }
 
+// A bead before its first move of the window: when it came to stand there is
+// not known, so it counts from when it was made.
+function unmoved(bead: Bead): Bead {
+  const { moved_at: _moved, ...rest } = bead;
+  return rest;
+}
+
 function without<V>(record: Record<string, V>, key: string): Record<string, V> {
   const { [key]: _gone, ...rest } = record;
   return rest;
@@ -184,7 +191,8 @@ export function step(state: State, event: YardEvent, w: World): State {
       const known = w.cast.get(id);
       const first = known && w.first(known);
       if (here || !known || first === undefined) return state;
-      return put(idle(known, first));
+      // The cast has it as it is at the window's end: it has not moved yet.
+      return put(idle(unmoved(known), first));
     }
     case "advanced": {
       // A bead the state lost sight of comes back where it arrives.
@@ -192,7 +200,7 @@ export function step(state: State, event: YardEvent, w: World): State {
       if (!bead || data.to === undefined) return state;
       // Past the buffer: it is out of the picture before it is closed.
       if (w.terminal(bead, data.to)) return gone();
-      const at = idle(bead, data.to);
+      const at = { ...idle(bead, data.to), moved_at: event.at };
       // Sent on with another outcome than done: the session did not end
       // well, and the bead says so where it arrives, with the group it left.
       if (data.outcome === undefined || data.outcome === "done") return put(at);
@@ -247,8 +255,9 @@ export function opening(yard: Yard, log: Log, w: World = world(yard, log)): Stat
     of.set(e.bead, [...(of.get(e.bead) ?? []), e]);
   }
   const beads: Bead[] = [];
-  for (const bead of w.cast.values()) {
-    const events = of.get(bead.id) ?? [];
+  for (const known of w.cast.values()) {
+    const events = of.get(known.id) ?? [];
+    const bead = events.some((e) => e.kind === "advanced") ? unmoved(known) : known;
     if (events.some((e) => e.kind === "created")) continue;
     // A bead closed since was there only if the window saw it close.
     if (!open.has(bead.id) && !events.some((e) => e.kind === "closed")) continue;

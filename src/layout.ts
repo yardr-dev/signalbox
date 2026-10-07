@@ -177,6 +177,29 @@ export function seats(fault: Fault | undefined): fault is Fault {
   return fault !== undefined && !OF_BEAD.includes(fault.kind);
 }
 
+// How a wagon looks that has waited on a person: its paint dull from this
+// many days at its stage, rusted, then moss on top. Under the first it is
+// fresh.
+export type Weather = "dull" | "rusted" | "mossy";
+export const WEATHER: [days: number, step: Weather][] = [
+  [14, "mossy"],
+  [7, "rusted"],
+  [3, "dull"],
+];
+const DAY = 24 * 60 * 60 * 1000;
+
+// The step of an age in days: none for a wagon that is fresh.
+export function weather(days: number): Weather | undefined {
+  return WEATHER.find(([from]) => days >= from)?.[1];
+}
+
+// The days a bead has stood at its stage by a time (in milliseconds): since
+// it last moved, or was made. None for a bead whose times do not read.
+export function age(bead: Bead, now: number): number | undefined {
+  const days = (now - Date.parse(bead.moved_at ?? bead.created_at)) / DAY;
+  return Number.isNaN(days) ? undefined : Math.max(0, days);
+}
+
 // A session at work on a bead: where its figure stands. Or one that ended
 // badly: where its figure sits.
 export interface Work {
@@ -227,6 +250,10 @@ export interface Vehicle {
   chocked?: true;
   // A fault with no figure to show it: a lamp on it, flashing red.
   lamp?: true;
+  // At a stage where it waits on a person: the days it has stood there, and
+  // what they did to it. A wagon that waits on the yard has neither.
+  age?: number;
+  weather?: Weather;
 }
 
 // A lamp on a platform, flashing red: a bead that sits there has no route.
@@ -386,7 +413,9 @@ function byAge(a: Bead, b: Bead): number {
   return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
+// now is the time the picture is of, for the wagons' ages: when the snapshot
+// was taken, or where a replay stands.
+export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Date.parse(yard.taken_at)): Layout {
   const slots = place(yard, memory);
   const out: Layout = {
     boards: [],
@@ -490,10 +519,21 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         const drawn: Bead[] = [];
         // A fault is seen at the wagon unless a figure sits there for it, or
         // it is the platform's: no route from here.
+        // It weathers by its own stage, wherever it stands: a wagon coupled
+        // to a train, or held in the siding, is not at its stage's platform.
         const stand = (v: Vehicle) => {
           const b = v.bead;
           const lamp = b.fault !== undefined && b.fault.kind !== "unrouted" && !(sat(b) && crewed(b));
-          out.vehicles.push({ ...v, ...(b.hold === true ? { chocked: true } : {}), ...(lamp ? { lamp: true } : {}) });
+          const waits = flows[flowIndex(flows, b.type)]?.stages.find((s) => s.stage === b.stage)?.human === true;
+          const days = waits ? age(b, now) : undefined;
+          const step = days !== undefined ? weather(days) : undefined;
+          out.vehicles.push({
+            ...v,
+            ...(b.hold === true ? { chocked: true } : {}),
+            ...(lamp ? { lamp: true } : {}),
+            ...(days !== undefined ? { age: days } : {}),
+            ...(step !== undefined ? { weather: step } : {}),
+          });
           drawn.push(b);
         };
         if (train !== undefined) {

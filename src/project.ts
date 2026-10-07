@@ -31,6 +31,9 @@ export interface Lists {
   // The sessions, ended ones too (session list -a): none for a caller that
   // did not ask.
   sessions?: Raw[];
+  // The window of the log (events), in any order: none for a caller that did
+  // not ask.
+  events?: Raw[];
 }
 
 // The named fields of a record that are set: yardr leaves out what is unset,
@@ -68,9 +71,22 @@ function faults(sessions: Raw[]): Map<unknown, Raw> {
   return out;
 }
 
+// By bead, when it last moved to another stage, as far as the window says:
+// the time of its last advance there.
+function moves(events: Raw[]): Map<unknown, string> {
+  const out = new Map<unknown, string>();
+  for (const e of events) {
+    if (e.kind !== "advanced" || typeof e.at !== "string") continue;
+    const before = out.get(e.bead);
+    if (before === undefined || before < e.at) out.set(e.bead, e.at);
+  }
+  return out;
+}
+
 // yard.json: the structure of the yard and its open beads.
 export function yardOf(lists: Lists, taken_at: string): Yard {
   const fault = faults(lists.sessions ?? []);
+  const moved = moves(lists.events ?? []);
   const yard = {
     taken_at,
     depots: lists.depots.map((d) => pick(d, ["name", "kind", "base"])),
@@ -88,7 +104,7 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
     routes: lists.routes.map((r) => pick(r, ["stage", "type", "depot", "label", "group", "priority"])),
     crew: lists.crew.map((c) => pick(c, ["name"], { kind: record(c.config).kind, state: c.state, status: c.status })),
     peers: lists.peers.map((p) => pick(p, ["name", "send", "receive"])),
-    beads: lists.beads.map((b) => beadOf(b, fault.get(b.id))),
+    beads: lists.beads.map((b) => ({ ...beadOf(b, fault.get(b.id)), ...pick({}, [], { moved_at: moved.get(b.id) }) })),
   };
   return yard as unknown as Yard;
 }
