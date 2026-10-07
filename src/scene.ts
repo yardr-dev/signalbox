@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { CHIMNEY, fault, HAT, iron, lamp, palette, smoke, weathering, type Clip, type Kit } from "./kit";
+import { CHIMNEY, fault, HAT, iron, lamp, liveried, palette, SILO_HEIGHT, smoke, TINT, weathering, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -66,15 +66,19 @@ const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
 // A signal box's sign, over its roof.
 const BOX_HEIGHT = 3.4;
-// A coaling tower: its bunker stands this high on its legs and is this high
-// itself; its sign for the provider is over it. The gauge of the short window
-// stands this far to its right, as high as this.
-const BUNKER_Y = 1.4;
-const BUNKER = 2.4;
-const TOWER_HEIGHT = 4.3;
-const GAUGE_X = 2;
+// A provider's silo: its sign for the provider is this high, over it and its
+// indicators. They stand to its right on feet this high, the week's this far
+// out and this high, the five hours' beyond it and lower. A silo's middle is
+// this far from its wall.
+const TOWER_HEIGHT = SILO_HEIGHT + 0.6;
+const SILO_WALL = 2;
 const GAUGE_Y = 0.4;
-const GAUGE = 1.8;
+const WEEK_X = 2.9;
+const WEEK = 2.2;
+const SHORT_X = 4.2;
+const SHORT = 1.6;
+// The height of the note that the silos are of now, beside the first.
+const NOW_Y = 1.4;
 // The coal by how much is left: its own dark, amber when it runs low, red for
 // the last of it.
 const COAL: Record<Coal, number> = { plenty: iron, low: lamp.wait, last: lamp.stop, out: lamp.stop };
@@ -119,8 +123,8 @@ export interface Picture {
   bounds: THREE.Box3;
   // The buildings, each with userData.shed: what the pointer can ask about.
   sheds: THREE.Object3D[];
-  // The coaling towers, each with userData.tower: refuel fills them, and the
-  // pointer can ask about them too.
+  // The providers' silos, each with userData.tower: refuel fills their
+  // indicators, and the pointer can ask about them too.
   towers: THREE.Object3D[];
 }
 
@@ -364,42 +368,52 @@ function fill(width: number, depth: number, x: number, y: number, z: number): TH
   return mesh;
 }
 
-// What refuel changes of a tower.
-interface Bunker {
-  coal: THREE.Mesh;
-  gauge: THREE.Mesh;
+// What refuel changes of a silo.
+interface Silo {
+  week: THREE.Mesh;
+  short: THREE.Mesh;
   name: CSS2DObject;
   plan: CSS2DObject;
   sign: CSS2DObject;
 }
 
-// A coaling tower: a bunker on four legs, open at the top and to the reader
-// at the front and the right, pale boards at its back and its left: the coal
-// in it is seen from above, and how much is not there. A roof would hide it.
-// Beside it a gauge of the same make for the short window. It stands empty
-// until refuel fills it.
-function tower(t: Tower): THREE.Object3D {
+// An indicator: a foot, and on it pale boards at the back and the left, open
+// at the top and to the reader at the front and the right, so what is in it
+// is seen from above, and how much is not there.
+function gauge(g: THREE.Group, x: number, height: number): THREE.Mesh {
+  g.add(block(palette.slate, 1.1, GAUGE_Y, 0.9, x, 0, 0));
+  g.add(block(palette.cream, 0.95, height, 0.12, x, GAUGE_Y, -0.32));
+  g.add(block(palette.cream, 0.12, height, 0.64, x - 0.415, GAUGE_Y, 0.06));
+  return fill(0.7, 0.55, x, GAUGE_Y, 0.06);
+}
+
+// A provider's silo: the kit's tank, its band in the provider's colour, so
+// from far out the colour says whose it is. What is left is not in it but
+// beside it, as the pack sets gauges by its tanks: an indicator for the week
+// and a lower one for the five hours. They stand empty until refuel fills
+// them.
+function tower(t: Tower, kit: Kit): THREE.Object3D {
   const g = new THREE.Group();
   g.position.set(t.at.x, 0, t.at.z);
-  for (const x of [-1.15, 1.15]) for (const z of [-1, 1]) g.add(block(palette.slate, 0.2, BUNKER_Y + BUNKER, 0.2, x, 0, z));
-  g.add(block(palette.slate, 2.5, 0.2, 2.2, 0, BUNKER_Y - 0.2, 0));
-  g.add(block(palette.cream, 2.3, BUNKER, 0.12, 0, BUNKER_Y, -1));
-  g.add(block(palette.cream, 0.12, BUNKER, 2, -1.15, BUNKER_Y, 0));
-  const bunker: Bunker = {
-    coal: fill(2.1, 1.84, 0, BUNKER_Y, 0.02),
-    gauge: fill(0.4, 0.3, GAUGE_X, GAUGE_Y, 0.05),
+  const tank = kit.make("silo");
+  const paint = material(liveried(t.provider));
+  tank.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    const own = part.material as THREE.Material | THREE.Material[];
+    part.material = Array.isArray(own) ? own.map((m) => (m.name === TINT ? paint : m)) : own.name === TINT ? paint : own;
+  });
+  const silo: Silo = {
+    week: gauge(g, WEEK_X, WEEK),
+    short: gauge(g, SHORT_X, SHORT),
     // The provider a line over its plan, both over the roof: from far out
     // the page shows the provider alone.
     name: label(t.provider, "tower", 0, TOWER_HEIGHT, 0, [0.5, 2]),
     plan: label("", "plan", 0, TOWER_HEIGHT, 0, [0.5, 1]),
-    sign: label(UNKNOWN, "fuel", 0, 0, 1.7, [0.5, 0]),
+    sign: label(UNKNOWN, "fuel", 0, 0, SILO_WALL + 0.3, [0.5, 0]),
   };
-  g.add(block(palette.slate, 0.7, GAUGE_Y, 0.6, GAUGE_X, 0, 0));
-  g.add(block(palette.cream, 0.6, GAUGE, 0.1, GAUGE_X, GAUGE_Y, -0.2));
-  g.add(block(palette.cream, 0.1, GAUGE, 0.4, GAUGE_X - 0.25, GAUGE_Y, 0.05));
-  g.add(bunker.coal, bunker.gauge, bunker.name, bunker.plan, bunker.sign);
+  g.add(tank, silo.week, silo.short, silo.name, silo.plan, silo.sign);
   g.userData.tower = t;
-  g.userData.bunker = bunker;
+  g.userData.silo = silo;
   return g;
 }
 
@@ -412,24 +426,25 @@ function pour(into: THREE.Mesh, height: number, percent: number | undefined) {
   (into.material as THREE.MeshStandardMaterial).color.setHex(COAL[coal(percent)]);
 }
 
-// Fill the towers with what a quota says is left: the week in the bunker, the
-// five hours in the gauge, the provider and its plan over the roof, the next
-// delivery on the sign. A tower whose provider the quota does not have, and
-// every tower when there is no quota, stands empty and says so.
+// Fill the silos' indicators with what a quota says is left: the week in the
+// first, the five hours in the second, the provider and its plan over the
+// roof, the next delivery on the sign. A silo whose provider the quota does
+// not have, and every silo when there is no quota, has them empty and says
+// so.
 export function refuel(towers: THREE.Object3D[], quota: Quota | undefined) {
   for (const object of towers) {
     const t = object.userData.tower as Tower;
-    const bunker = object.userData.bunker as Bunker;
+    const silo = object.userData.silo as Silo;
     const provider = quota?.providers.find((p) => p.key === t.provider);
-    pour(bunker.coal, BUNKER, left(provider?.weekly));
-    pour(bunker.gauge, GAUGE, left(provider?.short));
-    bunker.name.element.textContent = provider?.name ?? t.provider;
-    bunker.plan.element.textContent = provider?.plan ?? "";
-    bunker.sign.element.textContent = delivery(provider);
+    pour(silo.week, WEEK, left(provider?.weekly));
+    pour(silo.short, SHORT, left(provider?.short));
+    silo.name.element.textContent = provider?.name ?? t.provider;
+    silo.plan.element.textContent = provider?.plan ?? "";
+    silo.sign.element.textContent = delivery(provider);
     // A sign that only says when is small print, and the page hides it from
     // far out; one that says out or unknown is read from anywhere.
     const level = left(provider?.weekly);
-    bunker.sign.element.className = level !== undefined && level > 0 ? "label fuel plain" : "label fuel";
+    silo.sign.element.className = level !== undefined && level > 0 ? "label fuel plain" : "label fuel";
     object.userData.provider = provider;
   }
 }
@@ -494,16 +509,16 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   for (const t of l.towers) {
-    const object = tower(t);
+    const object = tower(t, kit);
     root.add(object);
     towers.push(object);
-    grow(t.at.x - 2, t.at.z - 2, TOWER_HEIGHT);
-    grow(t.at.x + GAUGE_X + 0.5, t.at.z + 2.5);
+    grow(t.at.x - SILO_WALL, t.at.z - SILO_WALL - 0.4, TOWER_HEIGHT);
+    grow(t.at.x + SHORT_X + 0.7, t.at.z + SILO_WALL + 0.5);
   }
-  // The towers show the quota as it is, wherever a replay stands: the page
+  // The silos show the quota as it is, wherever a replay stands: the page
   // lets this be seen while the picture is of another time.
   const first = l.towers.find((t) => !l.towers.some((o) => o.at.x < t.at.x));
-  if (first) root.add(label("now", "now", first.at.x - 1.6, BUNKER_Y, first.at.z, [1, 0.5]));
+  if (first) root.add(label("now", "now", first.at.x - SILO_WALL - 0.2, NOW_Y, first.at.z, [1, 0.5]));
 
   // The telegraph wire, on poles.
   const wire = l.wire;

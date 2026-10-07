@@ -1,7 +1,7 @@
 // The models, all Kenney's and CC0, each pack with its licence beside it in
 // public/kit: the Train Kit for rails, wagons, locomotives and shunters,
-// City Kit Industrial (city/) for the groups' buildings, Mini Characters
-// (people/) for the figures. loadKit is the only way in; everything it hands out lies or
+// City Kit Industrial (city/) for the groups' buildings and the providers'
+// silos, Mini Characters (people/) for the figures. loadKit is the only way in; everything it hands out lies or
 // looks along +x (a building's door looks up the page, to -z), stands on the
 // ground and is centred, in the Train Kit's units, so another set of models
 // drops in here and nowhere else. A model that does not load is a box of the
@@ -29,8 +29,15 @@ export const palette = {
 export const lamp = { clear: 0x3fd46b, stop: 0xe0453a, wait: 0xffb020, out: 0x343b43 } as const;
 // The grey of a works' smoke.
 export const smoke = 0x6c7278;
-// The iron of the coal in a tower.
+// The iron of the coal in a silo's indicators.
 export const iron = 0x2a2d31;
+// A silo's band by the provider whose quota it holds, the key as the yard
+// has it (a group's kind): Claude's orange, OpenAI's green for codex, a blue
+// for kimi, and slate for any other.
+export const livery: Record<string, number> = { claude: 0xd97757, codex: 0x10a37f, kimi: 0x2f6fde };
+export function liveried(provider: string): number {
+  return Object.hasOwn(livery, provider) ? livery[provider]! : palette.slate;
+}
 export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
 // A lamp that flashes is dark between, and a wheel chock is its own orange.
 export const fault = { dark: 0x4a1512, chock: 0xf28c1d } as const;
@@ -39,7 +46,7 @@ export const fault = { dark: 0x4a1512, chock: 0xf28c1d } as const;
 // was, and moss is a green of its own.
 export const weathering = { dull: 0xa6a6a0, rusted: 0xb9744a, moss: 0x5d8a3a } as const;
 
-export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works";
+export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
 export type Outfit = "builder" | "reviewer" | "crew";
 // What a figure can be seen doing: the pack's idle, walk, interact-right and
 // sit.
@@ -81,7 +88,15 @@ const files: Record<Part, string[]> = {
   hut: ["city/building-i"],
   office: ["city/building-p"],
   works: ["city/building-m"],
+  // The pack's large tank: a drum with a band round it.
+  silo: ["city/detail-tank-large"],
 };
+
+// The tank is 0.96 of the pack's units high: a silo a little lower than a
+// signal box, and as wide as one.
+const SILO_SIZE = 2.6;
+// The height a silo stands to, model or box.
+export const SILO_HEIGHT = 0.96 * SILO_SIZE;
 
 // A building as its file has it: the turn that brings its door to -z, and
 // the size that sets it beside a wagon.
@@ -90,6 +105,7 @@ const buildings: Partial<Record<Part, [turn: number, size: number]>> = {
   hut: [0, 1.9],
   office: [0, 1.7],
   works: [0, 1.5],
+  silo: [0, SILO_SIZE],
 };
 
 // The pack's figures by outfit: for a crew the ones a hard hat sits on, with
@@ -117,6 +133,7 @@ const boxes: Record<Part, [number, number, number, number]> = {
   hut: [2, 1.4, 2.4, palette.brick],
   office: [2.9, 1.2, 1.7, palette.cream],
   works: [2, 2.2, 2.5, palette.slate],
+  silo: [3.6, SILO_HEIGHT, 3.6, palette.cream],
 };
 
 function box(part: Part): THREE.Object3D {
@@ -127,6 +144,12 @@ function box(part: Part): THREE.Object3D {
   );
   mesh.position.y = height / 2;
   const group = new THREE.Group().add(mesh);
+  if (part === "silo") {
+    // A silo's box has the band its provider's colour goes on.
+    const band = block(palette.slate, length + 0.1, height / 4, width + 0.1, height / 4);
+    band.material = accent();
+    return group.add(band);
+  }
   if (part !== "works") return group;
   // A works smokes: its box has a stub of a chimney on the roof.
   const stub = block(palette.brick, STUB, STUB, STUB, height);
@@ -160,6 +183,42 @@ function chimney(model: THREE.Object3D): [number, number, number] | undefined {
   // A stack is narrow beside its building: a tenth of its height across.
   const mouth = mean(top.filter((v) => v.distanceTo(nearest) < height / 10));
   return [mouth.x, mouth.y, mouth.z];
+}
+
+// The pack's models have one material, a palette texture, and a part's
+// colour is where its corners lie on it. The accent, the orange of a tank's
+// band, is this column of it, above the middle. A tint cannot go on the
+// texture, which every model shares: the faces that lie there become a
+// second material of the mesh, by the name of TINT, for the scene to replace
+// with a colour of its own.
+export const TINT = "tint";
+const ACCENT_U = 0.719;
+function accent(): THREE.MeshStandardMaterial {
+  const tint = new THREE.MeshStandardMaterial({ color: 0xff9f38, roughness: 0.95 });
+  tint.name = TINT;
+  return tint;
+}
+export function banded(model: THREE.Object3D) {
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh) || Array.isArray(part.material)) return;
+    const geometry = part.geometry as THREE.BufferGeometry;
+    const uv = geometry.getAttribute("uv");
+    const index = geometry.getIndex();
+    if (!uv || !index) return;
+    const own: number[] = [];
+    const band: number[] = [];
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      const corners = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+      const lies = corners.every((c) => Math.abs(uv.getX(c) - ACCENT_U) < 0.05 && uv.getY(c) < 0.5);
+      (lies ? band : own).push(...corners);
+    }
+    if (band.length === 0) return;
+    geometry.setIndex([...own, ...band]);
+    geometry.clearGroups();
+    geometry.addGroup(0, own.length, 0);
+    geometry.addGroup(own.length, band.length, 1);
+    part.material = [part.material, accent()];
+  });
 }
 
 function block(colour: number, width: number, height: number, depth: number, y: number): THREE.Mesh {
@@ -214,6 +273,7 @@ export async function loadKit(base: string): Promise<Kit> {
     model.rotation.y = turn;
     model.scale.setScalar(size);
     const group = new THREE.Group().add(model);
+    if (part === "silo") banded(model);
     const mouth = part === "works" ? chimney(group) : undefined;
     if (mouth) group.userData[CHIMNEY] = mouth;
     return group;

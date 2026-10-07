@@ -94,9 +94,9 @@ export const CREW_Z = -7;
 // Where a crew member stands, from the middle of its signal box.
 export const BOX_FRONT_Z = 1.7;
 export const CREW_PITCH = 10;
-// A provider's coaling tower stands in the signal boxes' row, at their pitch,
-// to the left of the first box: the boxes run on to the right as the crew
-// grows, and move no tower.
+// A provider's tower, the silo of its quota, stands in the signal boxes' row,
+// at their pitch, to the left of the first box: the boxes run on to the right
+// as the crew grows, and move no tower.
 export const TOWER_X = -CREW_PITCH;
 export const WIRE_Z = -12;
 export const PEER_Z = -17;
@@ -313,7 +313,8 @@ export interface SignalBox {
   at: Point;
 }
 
-// A provider's coaling tower: the quota its agents burn is the coal in it.
+// A provider's tower: the silo of the quota its agents burn, drawn as coal
+// in the indicators beside it.
 export interface Tower {
   key: string;
   // The provider, as a group's kind names it.

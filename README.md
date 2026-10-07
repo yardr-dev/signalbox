@@ -143,20 +143,32 @@ in a run has it open. With `prefers-reduced-motion` the plume stands.
 
 What the yard burns is drawn as coal. Every provider whose agents the yard
 uses (the `kind` of a group that starts sessions, and of a crew member:
-claude, codex, kimi) has a coaling tower in the signal boxes' row, at their
-pitch, to the left of the first box, with the provider over it and its plan.
-The coal in its bunker is what is left of the provider's weekly quota, 100
-less the percent used; the gauge beside it is the five-hour window the same
-way. Under 20 percent left the fill is amber, under 5 red. The sign under
-the tower is the next delivery, when the week starts again in your own time
-("resets Mon 15:00"); an empty tower says "out" before it. A tower whose
+claude, codex, kimi) has a silo in the signal boxes' row, at their pitch, to
+the left of the first box, with the provider over it and its plan. The silo
+is the kit's large tank, and the band round it is the provider's colour:
+
+| provider | band |
+| --- | --- |
+| `claude` | orange, `#d97757` |
+| `codex` | OpenAI's green, `#10a37f` |
+| `kimi` | blue, `#2f6fde` |
+| any other | slate, `#4f5a66` |
+
+The table is `livery` in `src/kit.ts`, by the provider's key. What is left
+stands outside the silo, in two indicators to its right: the coal in the
+first is what is left of the provider's weekly quota, 100 less the percent
+used; the second, lower one is the five-hour window the same way. Under 20
+percent left the fill is amber, under 5 red. The sign under the silo is the
+next delivery, when the week starts again in your own time ("resets Mon
+15:00"); a silo whose week is used up says "out" before it. A silo whose
 level nobody knows (no `aiquokka` on the machine, or a provider it does not
-list) stands empty and says "unknown". Under the pointer a tower says both
-windows in figures. From far out the plan and the sign are hidden, but for
-"out" and "unknown". The levels come from `aiquokka --json`, and there is no
-history of them: a replay shows the towers as they were when the snapshot
+list) has empty indicators and says "unknown". Under the pointer a silo says
+both windows in figures. From far out the plan and the sign are hidden, but
+for "out" and "unknown": the band says which provider, the indicators how
+much is left. The levels come from `aiquokka --json`, and there is no
+history of them: a replay shows the silos as they were when the snapshot
 was taken, marked "now", whatever time the bar stands at, and a snapshot
-without `quota.json` has no towers. Groups of people and of scripts burn
+without `quota.json` has no silos. Groups of people and of scripts burn
 nothing and have none.
 
 A wagon that waits on a person weathers. At a stage only a person moves a
@@ -208,11 +220,11 @@ not seen, the page takes a new snapshot and lays out again: what was placed
 stays where it was.
 
 The script asks the yard through its own commands and nothing else, the ones
-the snapshot uses, every interval while a page listens. The towers' levels
+the snapshot uses, every interval while a page listens. The silos' levels
 it asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquokka` names the
 binary), which is a call over the network for every provider: once a minute
 at most, however many pages are open, and not at all while none is. Without
-`aiquokka` the towers say "unknown" and the rest of the page is as ever. It
+`aiquokka` the silos say "unknown" and the rest of the page is as ever. It
 is three routes beside the files of `dist/`:
 
 - `GET /api/snapshot`: `yard.json`, `layout.json`, `events.json` and
@@ -260,7 +272,7 @@ of this is there, and the page is the committed snapshot and its replay.
 - `scripts/snapshot.sh` writes `public/yard.json` and `public/events.json`
   from the yard's own commands (`npm run snapshot`, with `YARDR=` to name the
   binary), and `public/quota.json` beside them from `aiquokka --json`
-  (`AIQUOKKA=`): the towers' levels. Without `aiquokka` there is no
+  (`AIQUOKKA=`): the silos' levels. Without `aiquokka` there is no
   `quota.json`, and one from an earlier snapshot is removed. The committed files are the demo data and the tests' fixture: the
   tests name the yard's depots, groups and beads, so a new snapshot may need
   them brought along. Of an event the file keeps its number, time, kind and
@@ -273,7 +285,7 @@ of this is there, and the page is the committed snapshot and its replay.
   yard by (`npm run live`). It keeps nothing but the slots it has given and
   the quota's last answer.
 - `public/layout.json` is the layout's memory: the slot of every depot, flow,
-  stage, peer and provider's tower drawn so far. The snapshot script writes it when it is
+  stage, peer and provider's silo drawn so far. The snapshot script writes it when it is
   missing and adds what is new to it otherwise (`scripts/slots.mjs`); the page
   only reads it. Delete it to have the yard laid out afresh.
 - `src/yard.ts`: the shape of the snapshot, and of `quota.json`.
@@ -286,13 +298,17 @@ of this is there, and the page is the committed snapshot and its replay.
   pack's subset with its licence in `public/kit/`: the Train Kit (rails,
   wagons, locomotives), City Kit Industrial in `city/` (the hut is
   `building-i`, the office `building-p`, the works `building-m`, the station
-  `building-s`) and Mini Characters in `people/` (builders `character-male-e`
+  `building-s`, a provider's silo `detail-tank-large`) and Mini Characters in `people/` (builders `character-male-e`
   and `character-female-f`, reviewers `character-male-a`, crew members
   `character-male-c`; the clips `idle`, `walk` and, for work,
   `interact-right`). A hard hat is two boxes on the head bone. A model that
   does not load is a box, a figure two. A works says where its chimney's
-  mouth is: the middle one of `building-m`'s three, a stub on its box. Platforms, signals, signal boxes and
-  coaling towers are boxes in six colours. The kit's diesel is the shunter.
+  mouth is: the middle one of `building-m`'s three, a stub on its box. A silo's band
+  is a material of its own (`TINT`), cut from the faces that lie on the
+  palette texture's orange, since the pack's models share the texture: the
+  scene puts the provider's colour there, and on the band of a silo's box.
+  Platforms, signals, signal boxes and the silos' indicators are boxes in
+  six colours. The kit's diesel is the shunter.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not
@@ -314,7 +330,7 @@ of this is there, and the page is the committed snapshot and its replay.
   shunter against the wagons that stand, and takes the return line where the
   rail would put it on one.
 - `src/scene.ts` draws a layout: `draw` what stands still, `refuel` the coal
-  in the towers from a quota, `Stock` the wagons
+  in the silos' indicators from a quota, `Stock` the wagons
   and figures, which it moves from one state to the next, each figure with a
   mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the
   page: camera, pan and zoom, labels, the bead under the pointer, the card
