@@ -86,7 +86,7 @@ come behind an engine of the peer's, which goes home when they have gone.
 One train runs each way at a time, and the next waits out of sight. A hook
 is a flash of the wire.
 
-![Mid-replay: the shunter of yardr's default track pulling a wagon from new to review, two builders at work at new, and a reviewer on the way down from the office to the wagon](docs/replay.png)
+![Mid-replay: the shunter of yardr's default track coupled to a wagon at new to pull it to review, two builders from yardr's hut at work at new, and a reviewer leaving yardr's office for the wagon; signalbox's hut and office above, with the same signs](docs/replay.png)
 
 ## Following a yard as it runs
 
@@ -131,7 +131,7 @@ machine's on a Tailscale net, for a phone on the same net.
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the committed snapshot and its replay.
 
-![The page following this yard, closer in: Live on the bar, two builders by the door of their hut and the third at work on a wagon at signalbox's new](docs/live.png)
+![The page following this yard, closer in: Live on the bar, two builders by the door of signalbox's hut and the third at work on a wagon at signalbox's new; yardr's hut below says the same 1 of 3 out, with two at its door](docs/live.png)
 
 ## Where things are
 
