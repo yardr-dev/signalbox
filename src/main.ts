@@ -1,18 +1,20 @@
 // The page: load the yard's snapshot, lay it out, draw it, and let the
 // pointer move the camera over it. With the yard's events beside the
-// snapshot it plays them: the bar at the bottom is the player's.
+// snapshot it plays them: the bar at the bottom is the player's. Served by
+// scripts/serve.mjs it follows the yard as it runs: the snapshot is the
+// yard now, and the feed's events move the picture as the replay's do.
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
-import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
-import { line } from "./replay";
+import { line, outgrown } from "./replay";
 import { describe, draw, Stock } from "./scene";
 import "./style.css";
 import type { Slots } from "./layout";
-import type { Log } from "./replay";
+import type { Log, YardEvent } from "./replay";
 import type { Bead, Yard } from "./yard";
 
 // Where the camera stands from what it looks at: turned a little off the
@@ -29,6 +31,7 @@ const tip = document.getElementById("tip")!;
 const note = document.getElementById("note")!;
 const bar = document.getElementById("bar")!;
 const play = document.getElementById("play")!;
+const live = document.getElementById("live")!;
 const speeds = document.getElementById("speeds")!;
 const scrub = document.getElementById("scrub") as HTMLInputElement;
 const clock = document.getElementById("clock")!;
@@ -46,24 +49,65 @@ async function events(): Promise<Log | undefined> {
   }
 }
 
+// What the serve script answers on api/snapshot: the three files of a
+// snapshot in one, taken now.
+interface Snapshot {
+  yard: Yard;
+  layout: Partial<Slots>;
+  log: Log;
+}
+
+// The yard as it is now, where the serve script serves the page. A static
+// server has no such path: it answers that, or the page itself, and the page
+// is then the committed snapshot. A yard that does not answer is an error.
+async function snapshot(): Promise<Snapshot | undefined> {
+  let response: Response;
+  try {
+    response = await fetch(`${base}api/snapshot`);
+  } catch {
+    return undefined;
+  }
+  if (response.status === 404 || response.headers.get("content-type")?.startsWith("application/json") !== true) return undefined;
+  const body = (await response.json()) as Snapshot & { error?: string };
+  if (!response.ok) throw new Error(body.error ?? `api/snapshot: ${response.status}`);
+  return body;
+}
+
+// What a yard is built of, without its beads: two snapshots of one structure
+// are drawn the same.
+function shape(yard: Yard, slots: Partial<Slots>): string {
+  return JSON.stringify([{ ...yard, beads: [], taken_at: "" }, slots]);
+}
+
 // The yard's clock, in the reader's own time.
 const time = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 async function start() {
-  const response = await fetch(`${base}yard.json`);
-  if (!response.ok) throw new Error(`yard.json: ${response.status}`);
-  const yard = (await response.json()) as Yard;
-  // The slots given so far. The page only reads them: what the file does not
-  // hold yet is placed after what it does, the same way on every load.
-  const remembered = await fetch(`${base}layout.json`);
-  const slots = remembered.ok ? ((await remembered.json()) as Partial<Slots>) : {};
+  const api = await snapshot();
+  const files = async (): Promise<Snapshot> => {
+    const response = await fetch(`${base}yard.json`);
+    if (!response.ok) throw new Error(`yard.json: ${response.status}`);
+    // The slots given so far. The page only reads them: what the file does
+    // not hold yet is placed after what it does, the same way on every load.
+    const remembered = await fetch(`${base}layout.json`);
+    return {
+      yard: (await response.json()) as Yard,
+      layout: remembered.ok ? ((await remembered.json()) as Partial<Slots>) : {},
+      log: { taken_at: "", beads: [], events: [] },
+    };
+  };
+  let { yard, layout: slots } = api ?? (await files());
   const kit = await loadKit(base);
-  // The structure stands through a replay; only the beads change.
+  // The structure stands through a replay; only the beads change. Live, a
+  // new snapshot may bring another structure: see adopt.
   const plan = (beads: Bead[]) => layout({ ...yard, beads }, slots);
-  const picture = draw(plan(yard.beads), kit);
-  const log = await events();
-  const player = log && new Player(yard, log);
-  const stock = new Stock(plan(player ? player.state.beads : yard.beads), kit);
+  let picture = draw(plan(yard.beads), kit);
+  const log = api ? api.log : await events();
+  // Live, the window ends when the snapshot was taken, and the page opens
+  // there; a replay opens at its start.
+  const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
+  if (api) first?.follow();
+  const stock = new Stock(plan(first ? first.state.beads : yard.beads), kit);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.grass);
@@ -179,12 +223,22 @@ async function start() {
   fit();
 
   const hint = "drag to pan, scroll or pinch to zoom";
-  if (player) {
+  if (first) {
+    let player = first;
+    // The yard's clock is its machine's, not the reader's: the snapshot says
+    // how far the two are apart.
+    let skew = api ? Date.parse(yard.taken_at) - Date.now() : 0;
+    const now = () => Date.now() + skew;
+    // Whether the feed's line is open.
+    let fed = false;
     document.body.classList.add("replay");
     bar.hidden = false;
-    scrub.max = String(player.to - player.from);
     const told = () => {
       play.textContent = player.playing ? "Pause" : "Play";
+      live.textContent = fed || !player.live ? "Live" : "Live · no feed";
+      live.setAttribute("aria-pressed", String(player.live));
+      // Live, the window grows.
+      scrub.max = String(player.to - player.from);
       for (const b of speeds.querySelectorAll("button")) b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === player.speed));
       scrub.value = String(player.clock - player.from);
       clock.textContent = time.format(player.clock);
@@ -202,13 +256,21 @@ async function start() {
       speeds.append(b);
     }
     play.addEventListener("click", () => {
-      // At the end of the window, play starts the day again.
-      if (!player.playing && player.clock >= player.to) seek(player.from);
-      player.playing = !player.playing;
+      if (player.live) {
+        // Paused, the picture stays at this moment while the yard goes on.
+        player.live = false;
+        player.playing = false;
+      } else {
+        // At the end of the window, play starts the day again.
+        if (!player.playing && player.clock >= player.to) seek(player.from);
+        player.playing = !player.playing;
+      }
       told();
     });
-    // A scrub is a new state, not a move: everything stands where it was then.
+    // A scrub is a new state, not a move: everything stands where it was
+    // then. It leaves the yard as it runs for the replay of the window.
     const seek = (clock: number) => {
+      player.live = false;
       player.seek(clock);
       stock.show(plan(player.state.beads), { tween: false });
       stale = true;
@@ -218,6 +280,7 @@ async function start() {
     told();
 
     const run = (dt: number) => {
+      if (api) player.extend(now());
       if (!player.playing) return;
       const passed = player.advance(dt);
       for (const e of passed) {
@@ -231,8 +294,109 @@ async function start() {
         const left = new Set(passed.filter((e) => e.kind === "advanced").map((e) => e.bead ?? ""));
         stock.show(plan(player.state.beads), { tween: true, left });
       }
+      // Played to the window's end, the replay is at now: it stays there.
+      if (api && !player.live && player.clock >= player.to) player.follow();
       told();
     };
+
+    const noted = () => {
+      const window = api
+        ? `following the yard, events since ${time.format(player.from)}`
+        : `${log.events.length} events, ${time.format(player.from)} to ${time.format(player.to)}`;
+      note.textContent = `${yard.depots.length} depots · ${window} · ${hint}`;
+    };
+    if (api) follow();
+
+    // The yard as it runs: back to now on the bar, the feed's events into
+    // the window, and a new snapshot when they outgrow this one.
+    function follow() {
+      live.hidden = false;
+      live.addEventListener("click", () => {
+        player.extend(now());
+        player.follow();
+        stock.show(plan(player.state.beads), { tween: false });
+        stale = true;
+        told();
+      });
+
+      // Take a snapshot in place of the one the page has: what it is built
+      // of may be new, the slots it remembers keep everything placed where
+      // it was. The picture is drawn again only when the structure changed.
+      const adopt = (next: Snapshot) => {
+        const before = player;
+        const reshaped = shape(next.yard, next.layout) !== shape(yard, slots);
+        ({ yard, layout: slots } = next);
+        skew = Date.parse(yard.taken_at) - Date.now();
+        player = new Player(yard, next.log, now());
+        // What the feed said since the snapshot was taken.
+        for (const event of before.after(player.seq)) player.append(event);
+        player.speed = before.speed;
+        if (before.live) {
+          player.follow();
+        } else {
+          player.seek(before.clock);
+          player.playing = before.playing;
+        }
+        if (reshaped) {
+          // A label is an element of the page: it goes with its object.
+          picture.root.traverse((o) => {
+            if (o instanceof CSS2DObject) o.element.remove();
+          });
+          scene.remove(picture.root);
+          picture = draw(plan(yard.beads), kit);
+          scene.add(picture.root);
+        }
+        stock.show(plan(player.state.beads), { tween: before.live });
+        stale = true;
+        noted();
+        told();
+      };
+      // One at a time: what asks while one is on its way gets the next.
+      let asking = false;
+      let again = false;
+      const refresh = async () => {
+        again = true;
+        if (asking) return;
+        asking = true;
+        try {
+          while (again) {
+            again = false;
+            const next = await snapshot();
+            if (next) adopt(next);
+          }
+        } catch (err) {
+          // The picture stays as it is; the next event that asks tries again.
+          console.warn(err);
+        } finally {
+          asking = false;
+        }
+      };
+
+      const listen = () => {
+        const feed = new EventSource(`${base}api/feed?after=${player.seq}`);
+        feed.onopen = () => {
+          fed = true;
+          told();
+        };
+        feed.onmessage = (message) => {
+          const event = JSON.parse(message.data as string) as YardEvent;
+          if (!player.append(event)) return;
+          if (outgrown(event, yard, player.world)) void refresh();
+        };
+        // More happened than the feed could say: start again from a snapshot.
+        feed.addEventListener("reset", () => void refresh());
+        feed.onerror = () => {
+          fed = false;
+          told();
+          // The browser comes back by itself and says where it was; when it
+          // has given up, a new line goes on after what the window holds.
+          if (feed.readyState !== EventSource.CLOSED) return;
+          feed.close();
+          setTimeout(listen, 3000);
+        };
+      };
+      listen();
+    }
     // The frames: the replay's clock, what is on its way, and the picture
     // when either changed it. A frame after a long pause (a hidden tab)
     // counts as a short one, so the day does not jump.
@@ -248,7 +412,7 @@ async function start() {
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
-    note.textContent = `${yard.depots.length} depots · ${log.events.length} events, ${time.format(player.from)} to ${time.format(player.to)} · ${hint}`;
+    noted();
   } else {
     controls.addEventListener("change", render);
     window.addEventListener("resize", render);

@@ -1,7 +1,8 @@
 // The yard at a moment of its day: one pure reducer over its event log.
 //
 // public/events.json (scripts/snapshot.sh) holds a window of the log, oldest
-// first, cut down to what is read here. state(yard, log, n) is the open
+// first, cut down to what is read here (src/project.ts); the serve script's
+// feed carries single events of the same shape. state(yard, log, n) is the open
 // beads after the window's first n events, in the shape yard.json lists
 // them, so layout.ts draws any moment as it draws the snapshot.
 //
@@ -24,7 +25,7 @@ export interface YardEvent {
     to?: string;
     outcome?: string;
     group?: string;
-    // An alias the snapshot gave it (s1, s2, ...), not the yard's own name.
+    // An alias the snapshot gave it, not the yard's own name.
     session?: string;
     depot?: string;
     type?: string;
@@ -91,6 +92,37 @@ export const SHOWN = new Set([
   "peer_message_received",
   "hook",
 ]);
+
+// The kinds that change what the yard is built of: a depot, a flow, a peer,
+// a crew, or a pack that brings any of them. No event carries the structure
+// itself, so a page that follows the yard takes a new snapshot on these.
+// (yardr logs nothing when a group or a route is added by hand.)
+export const STRUCTURE = new Set([
+  "depot_updated",
+  "depot_removed",
+  "flow_set",
+  "flow_removed",
+  "flow_pointer_set",
+  "flow_pointer_cleared",
+  "peer_added",
+  "peer_removed",
+  "peer_renamed",
+  "crew_defined",
+  "crew_deleted",
+  "pack_applied",
+]);
+
+// Whether an event from the yard's feed names what the snapshot does not
+// hold, so that a new one is due: a change of structure, a bead the cast
+// does not know and the event would bring into the picture, or a group that
+// has no shed yet.
+export function outgrown(event: YardEvent, yard: Yard, w: World): boolean {
+  if (STRUCTURE.has(event.kind)) return true;
+  const enters = event.kind === "created" || event.kind === "advanced";
+  if (enters && event.bead !== undefined && !w.cast.has(event.bead)) return true;
+  const group = event.kind === "claimed" ? event.data?.group : undefined;
+  return group !== undefined && !yard.groups.some((g) => g.name === group);
+}
 
 // A bead as it stands at a stage with nobody on it.
 function idle(bead: Bead, stage: string): Bead {

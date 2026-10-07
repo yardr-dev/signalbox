@@ -3,7 +3,7 @@ import window from "../public/events.json";
 import snapshot from "../public/yard.json";
 import { layout } from "../src/layout";
 import { Player } from "../src/player";
-import { line, opening, SHOWN, state, step, world, type Log, type State, type YardEvent } from "../src/replay";
+import { line, opening, outgrown, SHOWN, state, step, STRUCTURE, world, type Log, type State, type YardEvent } from "../src/replay";
 import type { Bead, Yard } from "../src/yard";
 
 // The committed snapshot and its events are the fixture: this yard's last
@@ -173,7 +173,7 @@ describe("the committed day", () => {
     const data = new Set(log.events.flatMap((e) => Object.keys(e.data ?? {})));
     for (const key of data) expect(["from", "to", "outcome", "group", "session", "depot", "type", "peer", "kind", "crew"]).toContain(key);
     // Sessions by alias, never by the yard's own name for them.
-    for (const e of log.events) if (e.data?.session !== undefined) expect(e.data.session).toMatch(/^s\d+$/);
+    for (const e of log.events) if (e.data?.session !== undefined) expect(e.data.session).toMatch(/^s[0-9a-f]+$/);
     expect(JSON.stringify(log)).not.toMatch(/\/Users\/|worktree/);
   });
 });
@@ -214,5 +214,105 @@ describe("the player", () => {
     expect(line({ seq: 1, at: "", kind: "advanced", bead: "signalbox-a", data: { from: "new", to: "review", outcome: "done" } })).toBe("advanced · signalbox-a · new -> review (done)");
     expect(line({ seq: 2, at: "", kind: "peer_message_sent", data: { peer: "airy", kind: "mail" } })).toBe("peer message sent · airy · mail");
     expect(line({ seq: 3, at: "", kind: "closed", bead: "signalbox-a" })).toBe("closed · signalbox-a");
+  });
+});
+
+// The page as it follows a yard: a snapshot taken in the middle of the
+// window, and what came after it as the feed says it, one event at a time.
+describe("live", () => {
+  // The yard as a snapshot taken after the window's first k events has it:
+  // the beads open then, the closed ones among the rest, the log so far.
+  function taken(k: number): { yard: Yard; log: Log } {
+    const open = state(yard, log, k).beads;
+    const ids = new Set(open.map((b) => b.id));
+    const rest = [...world(yard, log).cast.values()].filter((b) => !ids.has(b.id));
+    return { yard: { ...yard, beads: open }, log: { taken_at: yard.taken_at, beads: rest, events: log.events.slice(0, k) } };
+  }
+  // An event as it comes over the feed: text, and back.
+  const wire = (e: YardEvent) => JSON.parse(JSON.stringify(e)) as YardEvent;
+
+  test("the feed's events are applied as the replay applies them", () => {
+    for (const k of [0, 500, 1000, 1500, log.events.length - 1]) {
+      const snap = taken(k);
+      const p = new Player(snap.yard, snap.log, Date.parse(log.events[k]!.at));
+      p.follow();
+      expect(p.state.beads.map((b) => b.id).sort(), `at ${k}`).toEqual(snap.yard.beads.map((b) => b.id).sort());
+      // The replay of the same window, from the same snapshot.
+      const w = world(snap.yard, snap.log);
+      let replayed = state(snap.yard, snap.log);
+      const passed: YardEvent[] = [];
+      for (const e of log.events.slice(k)) {
+        expect(p.append(wire(e))).toBe(true);
+        // A frame between any two: the picture follows event by event.
+        passed.push(...p.advance(0.016));
+        replayed = step(replayed, e, w);
+        expect(p.state, `after ${e.seq}`).toEqual(replayed);
+      }
+      expect(passed).toEqual(log.events.slice(k));
+      // And as the replay of the whole window ends: the same wagons at the
+      // same stages, with the same crews out.
+      const brief = (b: Bead) => `${b.id} ${b.stage} ${b.working === true} ${b.hold === true}`;
+      expect(p.state.beads.map(brief).sort(), `from ${k}`).toEqual(state(yard, log).beads.map(brief).sort());
+      expect(p.clock).toBe(p.to);
+      expect(p.playing).toBe(true);
+    }
+  });
+
+  test("an event the window holds already is not taken twice", () => {
+    const p = new Player(yard, log);
+    const last = log.events.at(-1)!;
+    expect(p.append(last)).toBe(false);
+    expect(p.append({ ...last, seq: last.seq + 1 })).toBe(true);
+    expect(p.append({ ...last, seq: last.seq + 1 })).toBe(false);
+    expect(p.seq).toBe(last.seq + 1);
+    expect(p.after(last.seq).map((e) => e.seq)).toEqual([last.seq + 1]);
+  });
+
+  test("scrubbed back it is the replay of the window, and follow returns to now", () => {
+    const now = Date.parse(log.events.at(-1)!.at) + 60_000;
+    const p = new Player(yard, log, now);
+    expect(p.to).toBe(now);
+    p.follow();
+    p.live = false;
+    p.seek(p.from + 3600_000);
+    const then = p.state;
+    // The yard goes on: the window grows, the picture stays at its moment.
+    const next: YardEvent = { seq: p.seq + 1, at: new Date(now + 1000).toISOString(), kind: "created", bead: yard.beads[0]!.id };
+    p.append(next);
+    p.extend(now + 5000);
+    expect(p.to).toBe(now + 5000);
+    expect(p.state).toBe(then);
+    p.follow();
+    expect(p.clock).toBe(now + 5000);
+    expect(p.live).toBe(true);
+    expect(p.state).toEqual(state(yard, { ...log, events: [...log.events, next] }));
+  });
+
+  test("a window without events yet starts now", () => {
+    const p = new Player({ ...yard, beads: [] }, { taken_at: "", beads: [], events: [] }, 5000);
+    p.follow();
+    expect([p.from, p.to, p.clock]).toEqual([5000, 5000, 5000]);
+    expect(p.append({ seq: 1, at: new Date(6000).toISOString(), kind: "hook" })).toBe(true);
+    expect(p.advance(0.016).map((e) => e.seq)).toEqual([1]);
+  });
+
+  test("what a snapshot does not hold asks for a new one", () => {
+    const at = (kind: string, id?: string, data?: YardEvent["data"]) => outgrown(event(kind, id, data), one, w);
+    // The kinds yardr logs for a change of structure (internal/store).
+    for (const kind of ["depot_updated", "depot_removed", "flow_set", "flow_removed", "peer_added", "peer_removed", "peer_renamed", "crew_defined", "pack_applied"]) {
+      expect(STRUCTURE.has(kind), kind).toBe(true);
+      expect(at(kind), kind).toBe(true);
+    }
+    // A bead the cast does not know, when the event brings it in.
+    expect(at("created", "signalbox-new")).toBe(true);
+    expect(at("advanced", "signalbox-new", { from: "backlog", to: "new" })).toBe(true);
+    expect(at("noted", "signalbox-new")).toBe(false);
+    expect(at("crew_status", "brakeman-journal")).toBe(false);
+    // What it knows moves by the reducer alone.
+    expect(at("created", "signalbox-b")).toBe(false);
+    expect(at("advanced", "signalbox-a", { from: "new", to: "review" })).toBe(false);
+    expect(at("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" })).toBe(false);
+    expect(at("claimed", "signalbox-a", { group: "a-new-group", session: "s1" })).toBe(true);
+    expect(at("hook")).toBe(false);
   });
 });

@@ -1,0 +1,70 @@
+// Ask a yardr yard what the page draws, through its own commands
+// (yardr ... --json), never its store or socket. What comes back is cut down
+// by src/project.ts, the one place that decides which fields are passed on;
+// scripts/snapshot.mjs writes it to files and scripts/serve.mjs serves it.
+//
+// node runs the page's TypeScript as it is: it has only types to strip.
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { eventOf, logOf, yardOf } from "../src/project.ts";
+
+// The window the page replays. yardr events has no --since, so it is a count
+// and not a day: the newest 2000, oldest first.
+export const WINDOW = 2000;
+
+// A session's name on the page: the same for the same session in every
+// answer, so a start in the snapshot pairs with its end in the feed, and
+// across a restart of the serve script. Not the yard's own name for it.
+export function alias(session) {
+  return `s${createHash("sha256").update(session).digest("hex").slice(0, 8)}`;
+}
+
+// Run one command of the yard and read what it prints. YARDR names the
+// binary; the yard is the one its environment names (YARDR_HOME).
+export function yardr(bin = process.env.YARDR || "yardr") {
+  return (...args) =>
+    new Promise((resolve, reject) => {
+      execFile(bin, [...args, "--json"], { maxBuffer: 256 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) return reject(new Error(`${bin} ${args.join(" ")}: ${stderr.trim() || err.message}`));
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (cause) {
+          reject(new Error(`${bin} ${args.join(" ")}: not JSON`, { cause }));
+        }
+      });
+    });
+}
+
+const now = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+// The yard now and the window of its log: yard.json and events.json.
+export async function snapshot(run, window = WINDOW) {
+  const [depots, groups, routes, crew, peers, beads, events, all] = await Promise.all([
+    run("depot", "list"),
+    run("group", "list"),
+    run("route", "list"),
+    run("crew", "list"),
+    run("peer", "list"),
+    // Without -a or --all: every open bead.
+    run("bead", "list"),
+    run("events", "-n", String(window)),
+    // Every bead there ever was: the ones the window names and that have
+    // closed since are in no other list.
+    run("bead", "list", "--all"),
+  ]);
+  const flows = await Promise.all(depots.map(async ({ name }) => ({ depot: name, flows: await run("flow", "show", name) })));
+  const taken_at = now();
+  return {
+    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads }, taken_at),
+    log: logOf(taken_at, bySeq(events), all, alias),
+  };
+}
+
+// The yard's newest n events, oldest first, as the replay reads them.
+export async function recent(run, n) {
+  return bySeq(await run("events", "-n", String(n))).map((e) => eventOf(e, alias));
+}
+
+function bySeq(events) {
+  return [...events].sort((a, b) => a.seq - b.seq);
+}
