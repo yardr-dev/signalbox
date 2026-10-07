@@ -119,6 +119,22 @@ describe("the figures of the stock", () => {
     expect(stock.beads).not.toContain(figure);
   });
 
+  test("an end during the walk turns the figure home from where it is", () => {
+    const stock = new Stock(quiet, kit);
+    const figure = first(stock);
+    stock.show(busy, { tween: true });
+    stock.tick(WALK_MAX / 4);
+    const interrupted = { x: figure.position.x, z: figure.position.z };
+    expect(interrupted).not.toEqual(place.at);
+    stock.show(quiet, { tween: true });
+    // It heads home from its current point instead of visiting the wagon.
+    stock.tick(WALK_MAX / 4);
+    expect(figure.position.x).toBeLessThan(interrupted.x);
+    expect(figure.position.x).not.toBeCloseTo(post.at.x);
+    stock.tick(WALK_MAX);
+    home(figure);
+  });
+
   test("the replay's speed is the walk's: at 10x it is there in a move's least, at 1x not yet", () => {
     for (const [speed, there] of [[1, false], [10, true]] as const) {
       const stock = new Stock(quiet, kit);

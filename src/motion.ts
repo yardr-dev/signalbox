@@ -163,6 +163,17 @@ export function walk(from: Person, to: Person): Point[] {
   return way.filter((p, i) => i === 0 || p.x !== way[i - 1]!.x || p.z !== way[i - 1]!.z);
 }
 
+// A destination can change while a figure is on its way. Start at its actual
+// position and keep to the ground, stepping off its old platform only if it
+// has reached it; do not finish the abandoned route first.
+export function continueWalk(from: Person, to: Person, at: Point, onPlatform: boolean): Point[] {
+  if (from.platform !== undefined && from.platform === to.platform) return [at, to.at];
+  const way = [at];
+  if (onPlatform && from.platform !== undefined) way.push(from.gate);
+  way.push(to.gate, to.at);
+  return way.filter((p, i) => i === 0 || p.x !== way[i - 1]!.x || p.z !== way[i - 1]!.z);
+}
+
 // The seconds a walk of this length takes, at a speed of the replay: at 1x a
 // second at a walking pace, and never more than two, however far the hut is
 // from the wagon. The replay's clock is the walk's: at 10x it is a tenth of

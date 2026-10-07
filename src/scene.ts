@@ -23,6 +23,7 @@ import {
 import {
   along,
   brake,
+  continueWalk,
   doing,
   ease,
   exit,
@@ -429,7 +430,11 @@ export class Stock {
         this.walkers.set(p.key, walker);
         this.root.add(walker.object);
       } else if (walker.person.at.x !== p.at.x || walker.person.at.z !== p.at.z) {
-        const way = walk(walker.person, p);
+        const at = { x: walker.object.position.x, z: walker.object.position.z };
+        const onPlatform = walker.object.position.y > PLATFORM_HEIGHT / 2;
+        const way = walker.move
+          ? continueWalk(walker.person, p, at, onPlatform)
+          : walk(walker.person, p);
         const time = walkSeconds(measure(way), how.speed);
         walker.stride = stride(measure(way), time);
         walker.steps = [walker.person, p].filter((q) => q.platform !== undefined).map((q) => ({ at: q.at, gate: q.gate }));
