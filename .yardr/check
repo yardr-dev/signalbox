@@ -1,0 +1,13 @@
+#!/bin/sh
+# The merge gate of depot signalbox: yardr depot check runs it in a bead's
+# worktree, and a bead lands only when it exits 0. yardr reads this file from
+# the base branch (main), so an edit here counts once it has landed there.
+set -e
+# From the lockfile, so the gate builds what a clean checkout builds.
+npm ci
+# Types, tests, build: the scripts a bead keeps in package.json.
+npm run check
+npm test
+npm run build
+# The build can exit 0 and write no page.
+test -s dist/index.html
