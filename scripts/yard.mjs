@@ -2,11 +2,13 @@
 // (yardr ... --json), never its store or socket. What comes back is cut down
 // by src/project.ts, the one place that decides which fields are passed on;
 // scripts/snapshot.mjs writes it to files and scripts/serve.mjs serves it.
+// What is left of the providers' quota is no part of the yard: aiquokka says
+// it (quota, below), and it is cut down the same way.
 //
 // node runs the page's TypeScript as it is: it has only types to strip.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cardOf, eventOf, logOf, yardOf } from "../src/project.ts";
+import { cardOf, eventOf, logOf, quotaOf, yardOf } from "../src/project.ts";
 
 // The window the page replays. yardr events has no --since, so it is a count
 // and not a day: the newest 2000, oldest first.
@@ -112,4 +114,22 @@ export async function bead(run, id) {
     if (err instanceof Error && err.message.endsWith(": not found")) return undefined;
     throw err;
   }
+}
+
+// What is left of every provider's quota, as aiquokka --json says: quota.json.
+// AIQUOKKA names the binary. It asks each provider over the network, so a
+// caller asks seldom (scripts/serve.mjs: once a minute). A machine without
+// the binary, or one that does not answer in time, is an error; a provider
+// that fails alone is left out of the answer.
+export function quota(bin = process.env.AIQUOKKA || "aiquokka") {
+  return new Promise((resolve, reject) => {
+    execFile(bin, ["--json"], { timeout: 45_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(`${bin} --json: ${err.code === "ENOENT" ? "not found" : stderr.trim() || err.message}`));
+      try {
+        resolve(quotaOf(JSON.parse(stdout), now()));
+      } catch (cause) {
+        reject(new Error(`${bin} --json: not JSON`, { cause }));
+      }
+    });
+  });
 }

@@ -3,17 +3,21 @@
 //
 //   node scripts/serve.mjs [--host 127.0.0.1] [--port 0] [--interval 3] [--dir dist]
 //   YARDR=/path/to/yardr names the binary, YARDR_HOME the yard, as for the
-//   snapshot (scripts/snapshot.sh).
+//   snapshot (scripts/snapshot.sh); AIQUOKKA=/path/to/aiquokka the one that
+//   says what is left of the providers' quota.
 //
 // Beside the built page (dist/) it answers three routes, all from the yard's
 // own commands (scripts/yard.mjs) and cut down by src/project.ts:
 //
-//   GET /api/snapshot           the yard now, its slots and the window of its
-//                               log: {yard, layout, log}, the three files of
-//                               public/ in one answer
+//   GET /api/snapshot           the yard now, its slots, the window of its
+//                               log and the providers' quota: {yard, layout,
+//                               log, quota}, the four files of public/ in one
+//                               answer; quota is null when nobody knows it
 //   GET /api/feed?after=<seq>   server-sent events: every event of the yard
 //                               after seq, each one message with its seq as
-//                               the id, for as long as the page listens
+//                               the id, for as long as the page listens; and
+//                               the quota when it was asked again, a message
+//                               of the event "quota" with no id
 //   GET /api/bead/<id>          one bead for its card (src/card.ts): {bead,
 //                               notes}, with the bead's body and its notes;
 //                               404 when the yard has no bead of that id
@@ -24,6 +28,10 @@
 // server-sent events do by themselves), so nothing is missed, across a
 // restart of this script too: the script remembers nothing the page needs.
 //
+// The quota is asked of aiquokka, a call over the network for every provider:
+// once a minute at most (QUOTA_EVERY), however many pages ask and listen, and
+// not at all while none does. A snapshot in between has the last answer.
+//
 // There is no login. Whoever reaches the port reads what the routes answer,
 // so it listens on this machine alone unless --host says otherwise.
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
@@ -32,11 +40,17 @@ import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { place } from "../src/layout.ts";
-import { bead, recent, snapshot, yardr } from "./yard.mjs";
+import { bead, quota, recent, snapshot, yardr } from "./yard.mjs";
 
 // How many events one poll asks for. More than that in one interval and a
 // listener is told to start again from a snapshot.
 export const BATCH = 200;
+
+// The milliseconds between two questions to aiquokka, at least; and how long
+// a snapshot waits for the answer before it goes without: the feed has it
+// for the page when it comes.
+export const QUOTA_EVERY = 60_000;
+export const QUOTA_WAIT = 3000;
 
 // A bead's id, as the route takes it: it becomes an argument of a command.
 // It starts with a letter or a figure, so it is never read as a flag.
@@ -59,11 +73,21 @@ const TYPES = {
 //   interval  milliseconds between two polls of the feed
 //   memory    the slots given so far (layout.json); what a snapshot adds is
 //             remembered while the script runs, so nothing placed moves
-export function routes({ yard, root, interval = 3000, memory = {} }) {
+//   quota     asks what is left of the providers' quota (scripts/yard.mjs);
+//             without it nobody asks, and nobody knows
+//   clock     the time in milliseconds, to count QUOTA_EVERY by
+//   wait      milliseconds a snapshot waits for the quota
+export function routes({ yard, root, interval = 3000, memory = {}, quota, clock = Date.now, wait = QUOTA_WAIT }) {
   const listeners = new Set();
   let slots = memory;
   let timer;
   let asking = false;
+  // The last answer about the quota, null when there was none; when it was
+  // asked for; the question on its way; and what went wrong last, said once.
+  let fuel = null;
+  let fuelled;
+  let fuelling;
+  let unfuelled;
 
   const json = (res, status, body) => {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -73,11 +97,40 @@ export function routes({ yard, root, interval = 3000, memory = {} }) {
   // What the yard's command said goes to the terminal: it may name paths.
   const failed = (what, err) => console.error(`signalbox: ${what}: ${err instanceof Error ? err.message : err}`);
 
+  // The quota, asked again when the last answer is old enough, and then sent
+  // to all who listen. Whoever asks while a question is on its way waits for
+  // that one. No answer is null: the levels are not known, and an older
+  // answer is not passed off as now's.
+  function refuel() {
+    if (quota === undefined) return Promise.resolve(fuel);
+    if (fuelling !== undefined) return fuelling;
+    if (fuelled !== undefined && clock() - fuelled < QUOTA_EVERY) return Promise.resolve(fuel);
+    fuelled = clock();
+    fuelling = (async () => {
+      try {
+        fuel = (await quota()) ?? null;
+        unfuelled = undefined;
+      } catch (err) {
+        fuel = null;
+        const said = err instanceof Error ? err.message : String(err);
+        if (said !== unfuelled) failed("quota", err);
+        unfuelled = said;
+      }
+      fuelling = undefined;
+      for (const listener of listeners) listener.res.write(`event: quota\ndata: ${JSON.stringify(fuel)}\n\n`);
+      return fuel;
+    })();
+    return fuelling;
+  }
+
   async function answerSnapshot(res) {
     try {
-      const { yard: now, log } = await yard.snapshot();
+      let late;
+      // A provider that hangs does not hold the page: it has the last answer.
+      const soon = Promise.race([refuel(), new Promise((go) => (late = setTimeout(() => go(fuel), wait)))]);
+      const [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
       slots = place(now, slots);
-      json(res, 200, { yard: now, layout: slots, log });
+      json(res, 200, { yard: now, layout: slots, log, quota: left });
     } catch (err) {
       failed("snapshot", err);
       json(res, 502, { error: "the yard did not answer" });
@@ -117,6 +170,8 @@ export function routes({ yard, root, interval = 3000, memory = {} }) {
   }
 
   async function poll() {
+    // On its own: the yard's events do not wait for the providers.
+    void refuel();
     if (asking) return;
     asking = true;
     try {
@@ -141,6 +196,9 @@ export function routes({ yard, root, interval = 3000, memory = {} }) {
     res.write(`retry: ${interval}\n\n`);
     const listener = { res, last };
     listeners.add(listener);
+    // An answer that came after the page's snapshot went without it. One on
+    // its way goes to all who listen when it is there.
+    if (fuelled !== undefined && fuelling === undefined) res.write(`event: quota\ndata: ${JSON.stringify(fuel)}\n\n`);
     req.on("close", () => {
       listeners.delete(listener);
       if (listeners.size === 0) {
@@ -213,7 +271,7 @@ async function main() {
   const remembered = join(root, "layout.json");
   const memory = existsSync(remembered) ? JSON.parse(readFileSync(remembered, "utf8")) : {};
   const run = yardr();
-  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n), bead: (id) => bead(run, id) }, root, interval, memory });
+  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n), bead: (id) => bead(run, id) }, root, interval, memory, quota: () => quota() });
 
   const server = createServer(handle);
   server.listen(port, values.host, () => {

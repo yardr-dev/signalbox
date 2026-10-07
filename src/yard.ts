@@ -52,6 +52,9 @@ export interface Group {
   name: string;
   // manual is people; any other runner starts sessions.
   runner: string;
+  // The agent its sessions are (claude, codex, kimi): the provider whose
+  // quota they burn. A group of people or of scripts has none.
+  kind?: string;
   limit: number;
   members?: string[];
 }
@@ -67,6 +70,7 @@ export interface Route {
 
 export interface CrewMember {
   name: string;
+  // The agent it is, as a group's kind.
   kind?: string;
   state?: string;
   status?: string;
@@ -118,4 +122,30 @@ export interface Edge {
 export interface Fault {
   kind: string;
   at: string;
+}
+
+// The shape of public/quota.json, beside yard.json: what is left of each
+// provider's quota, as aiquokka --json said when the snapshot was taken.
+export interface Quota {
+  taken_at: string;
+  // The providers that have a window of a week or of five hours.
+  providers: Provider[];
+}
+
+export interface Provider {
+  // As a group's kind names it: claude, codex, kimi.
+  key: string;
+  // As it is written: Claude.
+  name: string;
+  plan?: string;
+  // The window of a week, and the one of five hours: the first of each the
+  // provider has.
+  weekly?: Allowance;
+  short?: Allowance;
+}
+
+export interface Allowance {
+  used_percent: number;
+  // When the window starts again, where the provider says.
+  resets_at?: string;
 }

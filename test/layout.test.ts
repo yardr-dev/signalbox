@@ -5,6 +5,8 @@ import {
   age,
   atWork,
   BOX_FRONT_Z,
+  coal,
+  CREW_PITCH,
   CREW_Z,
   DEPOT_PITCH,
   FIRST_TRACK_Z,
@@ -14,6 +16,7 @@ import {
   LAMP_X,
   PARK_X,
   layout,
+  left,
   PEER_PITCH,
   PEER_Z,
   people,
@@ -25,6 +28,7 @@ import {
   PLATFORM_Z,
   satKey,
   positions,
+  providers,
   SHED_PITCH,
   SHED_WIDTH,
   SHED_Z,
@@ -37,6 +41,7 @@ import {
   STAGE_PITCH,
   TAIL_PITCH,
   TAIL_X,
+  TOWER_X,
   travelOrder,
   weather,
   WORK_Z,
@@ -404,7 +409,7 @@ describe("the mapping", () => {
     // Every session of this yard's crews: both of yardr-builders, each at its wagon.
     expect(l.work.map((w) => w.key).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
     for (const w of l.work) expect(w.at.x).toBe(l.vehicles.find((v) => v.key === w.key)!.at.x);
-    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "couplings", "lamps", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire", "work"]);
+    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "couplings", "lamps", "peers", "platforms", "sheds", "sidings", "towers", "tracks", "vehicles", "wire", "work"]);
   });
 
   test("the places taken are the limit less the sessions at work, and the sign's count is the sessions", () => {
@@ -708,5 +713,54 @@ describe("a wagon that waits for another bead is coupled to it", () => {
       ["signalbox-a", true],
       ["yardr-x", false],
     ]);
+  });
+});
+
+describe("a coaling tower for every provider the yard burns the quota of", () => {
+  const groups = (kinds: [runner: string, kind?: string][]) => kinds.map(([runner, kind], n) => ({ name: `g${n}`, runner, limit: 1, ...(kind !== undefined ? { kind } : {}) }));
+
+  test("the kind of each group that starts agents, then of each crew member, once; none for people and scripts", () => {
+    const y: Yard = { ...yard, groups: groups([["herdr", "codex"], ["manual"], ["exec"], ["herdr", "claude"], ["herdr", "codex"], ["herdr"], ["exec", "grok"]]), crew: [{ name: "a", kind: "kimi" }, { name: "b", kind: "claude" }, { name: "c" }] };
+    expect(providers(y)).toEqual(["codex", "claude", "kimi"]);
+    expect(providers({ ...y, groups: groups([["manual"], ["exec"]]), crew: [] })).toEqual([]);
+    expect(layout({ ...y, groups: [], crew: [] }).towers).toEqual([]);
+  });
+
+  test("this yard: its crew are kimi and claude, in the signal boxes' row, at their pitch, left of the first box", () => {
+    const l = layout(yard);
+    expect(l.towers).toEqual([
+      { key: "tower/kimi", provider: "kimi", at: { x: TOWER_X, z: CREW_Z } },
+      { key: "tower/claude", provider: "claude", at: { x: TOWER_X - CREW_PITCH, z: CREW_Z } },
+    ]);
+    expect(l.boxes[0]!.at.x - l.towers[0]!.at.x).toBe(CREW_PITCH);
+    for (const t of l.towers) expect(t.at.x).toBeLessThan(Math.min(...l.boxes.map((b) => b.at.x)));
+  });
+
+  test("a new provider is one more tower beyond the last, and a new crew member moves none", () => {
+    const grown = copy();
+    grown.groups.find((g) => g.name === "yardr-reviewers")!.kind = "codex";
+    grown.crew.push({ name: "pointsman", kind: "codex" });
+    const { is } = expectKept(yard, grown);
+    expect(is.get("tower:tower/codex")).toEqual({ x: TOWER_X - 2 * CREW_PITCH, z: CREW_Z });
+    // A provider that left and came back has its tower where it stood.
+    const fewer = { ...copy(), crew: yard.crew.filter((c) => c.kind !== "kimi") };
+    expect(positions(layout(fewer, place(yard))).get("tower:tower/claude")).toEqual({ x: TOWER_X - CREW_PITCH, z: CREW_Z });
+  });
+
+  test("the level is what is left of a window: 100 less what is used, between none and all", () => {
+    expect(left({ used_percent: 55 })).toBe(45);
+    expect(left({ used_percent: 0 })).toBe(100);
+    expect(left({ used_percent: 100 })).toBe(0);
+    expect(left({ used_percent: 130 })).toBe(0);
+    expect(left({ used_percent: -4 })).toBe(100);
+    expect(left(undefined)).toBeUndefined();
+    expect(left({ used_percent: Number.NaN })).toBeUndefined();
+  });
+
+  test("under 20 percent left the coal is low, under 5 the last, at none the tower is out", () => {
+    expect([100, 45, 20].map(coal)).toEqual(["plenty", "plenty", "plenty"]);
+    expect([19.9, 5].map(coal)).toEqual(["low", "low"]);
+    expect([4.9, 0.1].map(coal)).toEqual(["last", "last"]);
+    expect(coal(0)).toBe("out");
   });
 });

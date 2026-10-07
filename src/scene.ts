@@ -10,7 +10,9 @@ import { fault, HAT, iron, lamp, palette, weathering, type Clip, type Kit } from
 import {
   atWork,
   BOARD_X,
+  coal,
   HEADSHUNT,
+  left,
   PEER_RAIL_Z,
   people,
   PLATFORM_LENGTH,
@@ -21,7 +23,9 @@ import {
   type Layout,
   type Person,
   type Point,
+  type Coal,
   type Shed,
+  type Tower,
   type Vehicle,
   type Weather,
 } from "./layout";
@@ -45,7 +49,7 @@ import {
   type Stop,
 } from "./motion";
 import { freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
-import type { Bead } from "./yard";
+import type { Allowance, Bead, Provider, Quota } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
 const GROUND_Y = -0.3;
@@ -57,6 +61,18 @@ const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
 // A signal box's sign, over its roof.
 const BOX_HEIGHT = 3.4;
+// A coaling tower: its bunker stands this high on its legs and is this high
+// itself; its sign for the provider is over it. The gauge of the short window
+// stands this far to its right, as high as this.
+const BUNKER_Y = 1.4;
+const BUNKER = 2.4;
+const TOWER_HEIGHT = 4.3;
+const GAUGE_X = 2;
+const GAUGE_Y = 0.4;
+const GAUGE = 1.8;
+// The coal by how much is left: its own dark, amber when it runs low, red for
+// the last of it.
+const COAL: Record<Coal, number> = { plenty: iron, low: lamp.wait, last: lamp.stop, out: lamp.stop };
 // A figure steps up onto a platform over this much ground before its edge,
 // turns at this many radians a second, and takes this many seconds to change
 // from one thing it does to the next.
@@ -102,6 +118,9 @@ export interface Picture {
   bounds: THREE.Box3;
   // The buildings, each with userData.shed: what the pointer can ask about.
   sheds: THREE.Object3D[];
+  // The coaling towers, each with userData.tower: refuel fills them, and the
+  // pointer can ask about them too.
+  towers: THREE.Object3D[];
 }
 
 const materials = new Map<number, THREE.MeshStandardMaterial>();
@@ -325,10 +344,90 @@ function signalBox(x: number, z: number): THREE.Object3D {
   return g;
 }
 
+// What fills: a box that stands on its own floor, as high as it is scaled. Its
+// colour is its own, for it changes with what is left.
+function fill(width: number, depth: number, x: number, y: number, z: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 1, depth).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.95 }));
+  mesh.position.set(x, y, z);
+  mesh.visible = false;
+  return mesh;
+}
+
+// What refuel changes of a tower.
+interface Bunker {
+  coal: THREE.Mesh;
+  gauge: THREE.Mesh;
+  name: CSS2DObject;
+  plan: CSS2DObject;
+  sign: CSS2DObject;
+}
+
+// A coaling tower: a bunker on four legs, open at the top and to the reader
+// at the front and the right, pale boards at its back and its left: the coal
+// in it is seen from above, and how much is not there. A roof would hide it.
+// Beside it a gauge of the same make for the short window. It stands empty
+// until refuel fills it.
+function tower(t: Tower): THREE.Object3D {
+  const g = new THREE.Group();
+  g.position.set(t.at.x, 0, t.at.z);
+  for (const x of [-1.15, 1.15]) for (const z of [-1, 1]) g.add(block(palette.slate, 0.2, BUNKER_Y + BUNKER, 0.2, x, 0, z));
+  g.add(block(palette.slate, 2.5, 0.2, 2.2, 0, BUNKER_Y - 0.2, 0));
+  g.add(block(palette.cream, 2.3, BUNKER, 0.12, 0, BUNKER_Y, -1));
+  g.add(block(palette.cream, 0.12, BUNKER, 2, -1.15, BUNKER_Y, 0));
+  const bunker: Bunker = {
+    coal: fill(2.1, 1.84, 0, BUNKER_Y, 0.02),
+    gauge: fill(0.4, 0.3, GAUGE_X, GAUGE_Y, 0.05),
+    // The provider a line over its plan, both over the roof: from far out
+    // the page shows the provider alone.
+    name: label(t.provider, "tower", 0, TOWER_HEIGHT, 0, [0.5, 2]),
+    plan: label("", "plan", 0, TOWER_HEIGHT, 0, [0.5, 1]),
+    sign: label(UNKNOWN, "fuel", 0, 0, 1.7, [0.5, 0]),
+  };
+  g.add(block(palette.slate, 0.7, GAUGE_Y, 0.6, GAUGE_X, 0, 0));
+  g.add(block(palette.cream, 0.6, GAUGE, 0.1, GAUGE_X, GAUGE_Y, -0.2));
+  g.add(block(palette.cream, 0.1, GAUGE, 0.4, GAUGE_X - 0.25, GAUGE_Y, 0.05));
+  g.add(bunker.coal, bunker.gauge, bunker.name, bunker.plan, bunker.sign);
+  g.userData.tower = t;
+  g.userData.bunker = bunker;
+  return g;
+}
+
+// Fill to what is left of a window, in the colour of that much; nothing where
+// nobody knows, or nothing is left.
+function pour(into: THREE.Mesh, height: number, percent: number | undefined) {
+  into.visible = percent !== undefined && percent > 0;
+  if (percent === undefined) return;
+  into.scale.y = Math.max((height * percent) / 100, 1e-3);
+  (into.material as THREE.MeshStandardMaterial).color.setHex(COAL[coal(percent)]);
+}
+
+// Fill the towers with what a quota says is left: the week in the bunker, the
+// five hours in the gauge, the provider and its plan over the roof, the next
+// delivery on the sign. A tower whose provider the quota does not have, and
+// every tower when there is no quota, stands empty and says so.
+export function refuel(towers: THREE.Object3D[], quota: Quota | undefined) {
+  for (const object of towers) {
+    const t = object.userData.tower as Tower;
+    const bunker = object.userData.bunker as Bunker;
+    const provider = quota?.providers.find((p) => p.key === t.provider);
+    pour(bunker.coal, BUNKER, left(provider?.weekly));
+    pour(bunker.gauge, GAUGE, left(provider?.short));
+    bunker.name.element.textContent = provider?.name ?? t.provider;
+    bunker.plan.element.textContent = provider?.plan ?? "";
+    bunker.sign.element.textContent = delivery(provider);
+    // A sign that only says when is small print, and the page hides it from
+    // far out; one that says out or unknown is read from anywhere.
+    const level = left(provider?.weekly);
+    bunker.sign.element.className = level !== undefined && level > 0 ? "label fuel plain" : "label fuel";
+    object.userData.provider = provider;
+  }
+}
+
 export function draw(l: Layout, kit: Kit): Picture {
   const root = new THREE.Group();
   const bounds = new THREE.Box3();
   const sheds: THREE.Object3D[] = [];
+  const towers: THREE.Object3D[] = [];
   const rails = new Rails();
   const grow = (x: number, z: number, y = 0) => bounds.expandByPoint(new THREE.Vector3(x, y, z));
 
@@ -383,6 +482,18 @@ export function draw(l: Layout, kit: Kit): Picture {
     grow(b.at.x + 2, b.at.z + 2);
   }
 
+  for (const t of l.towers) {
+    const object = tower(t);
+    root.add(object);
+    towers.push(object);
+    grow(t.at.x - 2, t.at.z - 2, TOWER_HEIGHT);
+    grow(t.at.x + GAUGE_X + 0.5, t.at.z + 2.5);
+  }
+  // The towers show the quota as it is, wherever a replay stands: the page
+  // lets this be seen while the picture is of another time.
+  const first = l.towers.find((t) => !l.towers.some((o) => o.at.x < t.at.x));
+  if (first) root.add(label("now", "now", first.at.x - 1.6, BUNKER_Y, first.at.z, [1, 0.5]));
+
   // The telegraph wire, on poles.
   const wire = l.wire;
   root.add(block(palette.slate, wire.length, 0.06, 0.06, wire.at.x + wire.length / 2, POLE_HEIGHT - 0.2, wire.at.z));
@@ -406,7 +517,7 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   root.add(rails.build(kit.make("rail")));
-  return { root, bounds, sheds };
+  return { root, bounds, sheds, towers };
 }
 
 // One thing on its way: along a line of points, from one height, turn and
@@ -1131,6 +1242,46 @@ export class Stock {
 // The tip of a building: its group, what runs it and how many at once.
 export function house(s: Shed): string {
   return `${s.group}\n${s.runner === "" ? "no group of this yard" : `${s.runner} · limit ${s.limit}`}`;
+}
+
+// What a tower is called under the pointer: its provider as it is written,
+// and the plan.
+export function titled(key: string, p: Provider | undefined): string {
+  return p === undefined ? key : p.plan !== undefined ? `${p.name} · ${p.plan}` : p.name;
+}
+
+// The day and time of a delivery, in the reader's own: Mon 15:00.
+const day = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+export const UNKNOWN = "unknown";
+
+// When a window starts again: "resets Mon 15:00". Nothing where the provider
+// did not say.
+export function resets(a: Allowance | undefined): string | undefined {
+  const at = Date.parse(a?.resets_at ?? "");
+  if (Number.isNaN(at)) return undefined;
+  const parts = new Map(day.formatToParts(at).map((p) => [p.type, p.value]));
+  return `resets ${parts.get("weekday")} ${parts.get("hour")}:${parts.get("minute")}`;
+}
+
+// A tower's sign: the next delivery, when the week starts again. An empty
+// tower says it is out first, and one nobody knows the level of says that.
+export function delivery(p: Provider | undefined): string {
+  const percent = left(p?.weekly);
+  if (percent === undefined) return UNKNOWN;
+  const next = resets(p?.weekly);
+  return percent <= 0 ? ["out", ...(next !== undefined ? [next] : [])].join(" · ") : (next ?? "");
+}
+
+// The tip of a tower: what is left of each window, and when it starts again.
+export function fuelled(key: string, p: Provider | undefined): string {
+  const said = (what: string, a: Allowance | undefined) => {
+    const percent = left(a);
+    if (percent === undefined) return [];
+    const next = resets(a);
+    return [`${Math.round(percent)}% of ${what} left${next !== undefined ? `, ${next}` : ""}`];
+  };
+  const lines = [...said("the week", p?.weekly), ...said("the 5 hours", p?.short)];
+  return [titled(key, p), ...(lines.length > 0 ? lines : [UNKNOWN])].join("\n");
 }
 
 // The time of day of a fault, in the reader's own time: 14:02.

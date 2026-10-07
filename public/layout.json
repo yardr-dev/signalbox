@@ -81,5 +81,9 @@
   },
   "peers": {
     "airy": 0
+  },
+  "towers": {
+    "kimi": 0,
+    "claude": 1
   }
 }

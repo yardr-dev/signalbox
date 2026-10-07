@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cardOf, eventOf, logOf, yardOf, type Raw } from "../src/project";
+import { cardOf, eventOf, logOf, quotaOf, yardOf, type Raw } from "../src/project";
 
 // What the yard's commands print, with what must not leave the machine.
 const SECRET = "/Users/someone/.yardr/secret";
@@ -11,7 +11,7 @@ const lists = {
       flows: [{ flow: { name: "default", outcomes: {} }, type: null, stages: [{ stage: "new", group: "builders", next: ["review"], open: 1, stage_file: SECRET }] }],
     },
   ],
-  groups: [{ name: "builders", runner: "herdr", limit: 2, args: [SECRET] }],
+  groups: [{ name: "builders", runner: "herdr", limit: 2, args: [SECRET], config: { kind: "claude", model: "a-model", env_file: SECRET } }],
   routes: [{ id: "r1", stage: "new", type: null, group: "builders", priority: 0 }],
   crew: [{ name: "yardmaster", config: { kind: "claude", env_file: SECRET }, state: "running", dir: SECRET, handle: { pid: 1 } }],
   peers: [{ name: "airy", send: ["mail"], url: SECRET, key: SECRET }],
@@ -29,7 +29,7 @@ describe("the projection", () => {
       taken_at: "2099-01-01T00:00:00Z",
       depots: [{ name: "signalbox", kind: "git", base: "main" }],
       flows: [{ depot: "signalbox", flows: [{ name: "default", stages: [{ stage: "new", group: "builders", next: ["review"] }] }] }],
-      groups: [{ name: "builders", runner: "herdr", limit: 2 }],
+      groups: [{ name: "builders", runner: "herdr", limit: 2, kind: "claude" }],
       routes: [{ stage: "new", group: "builders", priority: 0 }],
       crew: [{ name: "yardmaster", kind: "claude", state: "running" }],
       peers: [{ name: "airy", send: ["mail"] }],
@@ -193,5 +193,40 @@ describe("the projection", () => {
     });
     // What is not a bead with notes is an empty card, not an error.
     expect(cardOf({})).toEqual({ bead: { working: false }, notes: [] });
+  });
+
+  test("the quota keeps each provider's name, plan, week and five hours, and nothing of the account", () => {
+    // What aiquokka --json prints, as its providers name their windows.
+    const printed = {
+      claude: {
+        provider: "Claude",
+        plan: "max",
+        account: { id: "secret-id", email: "someone@secret.example" },
+        windows: [
+          { id: "session", label: "5h", used_percent: 8, resets_at: "2099-01-01T05:00:00Z", duration_seconds: 18000 },
+          { id: "weekly_all", label: "Weekly", used_percent: 55, resets_at: "2099-01-05T13:00:00Z", duration_seconds: 604800 },
+          { id: "weekly_scoped", label: "Weekly Other", used_percent: 46, resets_at: "2099-01-05T12:00:00Z", duration_seconds: 604800 },
+        ],
+      },
+      codex: { provider: "Codex", plan: "plus", windows: [{ id: "7d", label: "Weekly", used_percent: 2, duration_seconds: 604800 }], extra: [{ label: "Resets", value: "secret" }] },
+      kimi: { provider: "Kimi", windows: [{ id: "5h", label: "5h", used_percent: 0, resets_at: "2099-01-01T05:00:00Z", used: 0, limit: 100, duration_seconds: 18000 }] },
+      // Money, a provider that failed, and what is no provider at all.
+      deepseek: { provider: "DeepSeek", windows: [{ id: "balance/usd", label: "Balance", remaining: 5.05, currency: "USD" }] },
+      grok: { error: "secret: no session" },
+      odd: { provider: "Odd", windows: [{ id: "weekly", used_percent: "secret", duration_seconds: 604800 }] },
+      none: null,
+    };
+    const quota = quotaOf(printed, "2099-01-01T00:00:00Z");
+    expect(quota).toEqual({
+      taken_at: "2099-01-01T00:00:00Z",
+      providers: [
+        { key: "claude", name: "Claude", plan: "max", weekly: { used_percent: 55, resets_at: "2099-01-05T13:00:00Z" }, short: { used_percent: 8, resets_at: "2099-01-01T05:00:00Z" } },
+        { key: "codex", name: "Codex", plan: "plus", weekly: { used_percent: 2 } },
+        { key: "kimi", name: "Kimi", short: { used_percent: 0, resets_at: "2099-01-01T05:00:00Z" } },
+      ],
+    });
+    expect(JSON.stringify(quota)).not.toMatch(/secret/);
+    // Whatever was printed, it is a quota: of no provider.
+    for (const nothing of [undefined, null, "", [], 3]) expect(quotaOf(nothing, "t")).toEqual({ taken_at: "t", providers: [] });
   });
 });

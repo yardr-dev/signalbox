@@ -6,8 +6,8 @@ import { fault as tint, iron, lamp, loadKit, weathering, type Kit } from "../src
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH } from "../src/layout";
 import { GOODS_END, goodsSeconds, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { BACKLOG, COUPLING } from "../src/shunt";
-import { awaits, describe as tip, draw, house, sign, Stock, waited, wrong } from "../src/scene";
-import type { Bead, Edge, Yard } from "../src/yard";
+import { awaits, delivery, describe as tip, draw, fuelled, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
+import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
 
 // No file of the kit is there: every model is its box. And no page: a label
 // is an element, of which the scene needs little.
@@ -716,5 +716,126 @@ describe("the couplings of the stock", () => {
     stock.show(at([b], waits), { tween: true });
     expect(chains(stock)).toEqual([]);
     expect(amber(wagon(stock, "signalbox-b"))).toBe(0);
+  });
+});
+
+describe("the coaling towers", () => {
+  const next = "2099-01-05T13:00:00Z";
+  // The day and the time of it where the tests run.
+  const at = (iso: string) => {
+    const parts = new Map(new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(Date.parse(iso)).map((p) => [p.type, p.value]));
+    return `${parts.get("weekday")} ${parts.get("hour")}:${parts.get("minute")}`;
+  };
+  const provider = (key: string, weekly?: number, short?: number): Provider => ({
+    key,
+    name: key.toUpperCase(),
+    ...(weekly !== undefined ? { weekly: { used_percent: weekly, resets_at: next } } : {}),
+    ...(short !== undefined ? { short: { used_percent: short, resets_at: next } } : {}),
+  });
+  const quota = (...providers: Provider[]): Quota => ({ taken_at: "2099-01-01T00:00:00Z", providers });
+  // The fixture's crew are kimi and claude: a tower each.
+  const towers = () => draw(layout(yard), kit).towers;
+  const parts = (o: THREE.Object3D) => o.userData.bunker as { coal: THREE.Mesh; gauge: THREE.Mesh; name: { element: { textContent: string } }; plan: { element: { textContent: string } }; sign: { element: { textContent: string; className: string } } };
+  const colour = (m: THREE.Mesh) => (m.material as THREE.MeshStandardMaterial).color.getHex();
+  const of = (all: THREE.Object3D[], key: string) => all.find((o) => o.userData.tower.provider === key)!;
+
+  test("one for every provider in use, at its place, and until it is filled it stands empty and says unknown", () => {
+    const l = layout(yard);
+    const all = draw(l, kit).towers;
+    expect(all.map((o) => [o.userData.tower.key, o.position.x, o.position.z])).toEqual(l.towers.map((t) => [t.key, t.at.x, t.at.z]));
+    for (const o of all) {
+      expect(parts(o).coal.visible).toBe(false);
+      expect(parts(o).gauge.visible).toBe(false);
+      expect(parts(o).sign.element.textContent).toBe("unknown");
+    }
+  });
+
+  test("the bunker is as full as the week has left, the gauge as the five hours, the sign says the next delivery", () => {
+    const all = towers();
+    refuel(all, quota({ ...provider("claude", 55, 8), plan: "max" }, provider("kimi", 25)));
+    const claude = parts(of(all, "claude"));
+    expect(claude.coal.visible).toBe(true);
+    // Of the whole bunker and the whole gauge, each as high as it is at 100.
+    refuel([of(all, "kimi")], quota(provider("kimi", 0, 0)));
+    const full = parts(of(all, "kimi"));
+    expect(claude.coal.scale.y / full.coal.scale.y).toBeCloseTo(0.45);
+    expect(claude.gauge.scale.y / full.gauge.scale.y).toBeCloseTo(0.92);
+    expect(full.gauge.scale.y).toBeLessThan(full.coal.scale.y);
+    expect(colour(claude.coal)).toBe(iron);
+    expect(claude.name.element.textContent).toBe("CLAUDE");
+    expect(claude.plan.element.textContent).toBe("max");
+    expect(claude.sign.element.textContent).toBe(`resets ${at(next)}`);
+    expect(full.name.element.textContent).toBe("KIMI");
+    expect(full.plan.element.textContent).toBe("");
+    // Inside its tower: over the bunker's floor, under its roof.
+    const tower = new THREE.Box3().setFromObject(of(all, "kimi"));
+    const coal = new THREE.Box3().setFromObject(full.coal);
+    expect(coal.min.y).toBeGreaterThan(1);
+    expect(coal.max.y).toBeLessThan(tower.max.y);
+  });
+
+  test("under 20 percent left the fill is amber, under 5 red, and at none there is no coal and the sign says out", () => {
+    const all = towers();
+    const kimi = parts(of(all, "kimi"));
+    const filled = (weekly: number, short?: number) => refuel(all, quota(provider("kimi", weekly, short)));
+    filled(80);
+    expect(colour(kimi.coal)).toBe(iron);
+    filled(81, 96);
+    expect(colour(kimi.coal)).toBe(lamp.wait);
+    expect(colour(kimi.gauge)).toBe(lamp.stop);
+    filled(95.5, 85);
+    expect(colour(kimi.coal)).toBe(lamp.stop);
+    expect(colour(kimi.gauge)).toBe(lamp.wait);
+    expect(kimi.sign.element.textContent).toBe(`resets ${at(next)}`);
+    expect(kimi.sign.element.className).toBe("label fuel plain");
+    filled(100, 100);
+    expect(kimi.coal.visible).toBe(false);
+    expect(kimi.gauge.visible).toBe(false);
+    expect(kimi.sign.element.textContent).toBe(`out · resets ${at(next)}`);
+    // Read from far out too, where a sign that only says when is hidden.
+    expect(kimi.sign.element.className).toBe("label fuel");
+    // The next delivery fills it again.
+    filled(0);
+    expect(kimi.coal.visible).toBe(true);
+    expect(colour(kimi.coal)).toBe(iron);
+  });
+
+  test("a provider the quota does not have, and no quota at all, is a tower that stands and says unknown", () => {
+    const all = towers();
+    refuel(all, quota(provider("claude", 10, 10)));
+    expect(parts(of(all, "kimi")).sign.element.textContent).toBe("unknown");
+    expect(parts(of(all, "kimi")).name.element.textContent).toBe("kimi");
+    expect(parts(of(all, "kimi")).coal.visible).toBe(false);
+    expect(parts(of(all, "claude")).coal.visible).toBe(true);
+    refuel(all, undefined);
+    for (const o of all) {
+      expect(parts(o).coal.visible).toBe(false);
+      expect(parts(o).gauge.visible).toBe(false);
+      expect(parts(o).sign.element.textContent).toBe("unknown");
+    }
+    // Five hours alone say nothing of the bunker: the gauge is filled, the sign is not.
+    refuel(all, quota(provider("kimi", undefined, 50)));
+    expect(parts(of(all, "kimi")).gauge.visible).toBe(true);
+    expect(parts(of(all, "kimi")).sign.element.textContent).toBe("unknown");
+  });
+
+  test("the sign and the tip in words", () => {
+    expect(resets({ used_percent: 1, resets_at: next })).toBe(`resets ${at(next)}`);
+    expect(resets({ used_percent: 1 })).toBeUndefined();
+    expect(resets({ used_percent: 1, resets_at: "soon" })).toBeUndefined();
+    expect(delivery(undefined)).toBe("unknown");
+    expect(delivery({ key: "k", name: "K", weekly: { used_percent: 100 } })).toBe("out");
+    expect(delivery({ key: "k", name: "K", weekly: { used_percent: 40 } })).toBe("");
+    expect(titled("kimi", undefined)).toBe("kimi");
+    expect(fuelled("kimi", undefined)).toBe("kimi\nunknown");
+    expect(fuelled("claude", { ...provider("claude", 55.4, 8), plan: "max" })).toBe(`CLAUDE · max\n45% of the week left, resets ${at(next)}\n92% of the 5 hours left, resets ${at(next)}`);
+    expect(fuelled("grok", provider("grok", 15))).toBe(`GROK\n85% of the week left, resets ${at(next)}`);
+  });
+
+  test("the first view holds them: they stand left of the board's edge", () => {
+    const l = layout(yard);
+    const { bounds } = draw(l, kit);
+    expect(bounds.min.x).toBeLessThan(Math.min(...l.towers.map((t) => t.at.x)));
+    expect(bounds.max.y).toBeGreaterThanOrEqual(new THREE.Box3().setFromObject(draw(l, kit).root).max.y);
   });
 });

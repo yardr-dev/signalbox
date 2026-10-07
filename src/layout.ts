@@ -2,10 +2,10 @@
 //
 // Every element is placed by its slot in its parent and by constants, never
 // by how much else there is: the board of a depot, the track of a flow in its
-// depot, the platform of a stage in its flow, the line of a peer; and by its
-// index building n of its stage, place p before its door, crew member c. So
-// the same structure gives the same picture. Only extents grow: a track's
-// length, a board's size.
+// depot, the platform of a stage in its flow, the line of a peer, the tower
+// of a provider; and by its index building n of its stage, place p before
+// its door, crew member c. So the same structure gives the same picture.
+// Only extents grow: a track's length, a board's size.
 //
 // A slot is given once (place, below) and remembered: public/layout.json
 // holds the slots given so far, and an element in that file keeps its slot
@@ -16,9 +16,10 @@
 // The ground is the x/z plane, in the train kit's units (a wagon is 2.7 long
 // and 1.2 wide): x runs along the tracks, to the right; z runs down the page,
 // from the top of the yard to its last depot. Negative z is the strip above
-// the depots: signal boxes, the telegraph wire, the lines to peers.
+// the depots: signal boxes and coaling towers, the telegraph wire, the lines
+// to peers.
 
-import type { Bead, Fault, Flow, Group, Yard } from "./yard";
+import type { Allowance, Bead, Fault, Flow, Group, Yard } from "./yard";
 
 export interface Point {
   x: number;
@@ -93,6 +94,10 @@ export const CREW_Z = -7;
 // Where a crew member stands, from the middle of its signal box.
 export const BOX_FRONT_Z = 1.7;
 export const CREW_PITCH = 10;
+// A provider's coaling tower stands in the signal boxes' row, at their pitch,
+// to the left of the first box: the boxes run on to the right as the crew
+// grows, and move no tower.
+export const TOWER_X = -CREW_PITCH;
 export const WIRE_Z = -12;
 export const PEER_Z = -17;
 export const PEER_PITCH = 4;
@@ -295,6 +300,39 @@ export interface SignalBox {
   at: Point;
 }
 
+// A provider's coaling tower: the quota its agents burn is the coal in it.
+export interface Tower {
+  key: string;
+  // The provider, as a group's kind names it.
+  provider: string;
+  at: Point;
+}
+
+// What is left of a window, in percent, between none and all of it; nothing
+// for a window nobody knows.
+export function left(a: Allowance | undefined): number | undefined {
+  if (a === undefined || !Number.isFinite(a.used_percent)) return undefined;
+  return Math.max(0, Math.min(100, 100 - a.used_percent));
+}
+
+// How the coal that is left looks: amber under this much of it, red under
+// that; at none the tower is out.
+export type Coal = "plenty" | "low" | "last" | "out";
+export const LOW = 20;
+export const LAST = 5;
+export function coal(percent: number): Coal {
+  return percent <= 0 ? "out" : percent < LAST ? "last" : percent < LOW ? "low" : "plenty";
+}
+
+// The providers the yard burns the quota of: the kind of every group that
+// starts agents, then of every crew member, each once. People and scripts
+// burn none.
+export function providers(yard: Yard): string[] {
+  const agents = yard.groups.filter((g) => g.runner !== "manual" && g.runner !== "exec");
+  const kinds = [...agents, ...yard.crew].map((of) => of.kind).filter((kind) => typeof kind === "string");
+  return [...new Set(kinds)];
+}
+
 export interface PeerLine {
   key: string;
   name: string;
@@ -315,6 +353,7 @@ export interface Layout {
   counts: Count[];
   lamps: Lamp[];
   boxes: SignalBox[];
+  towers: Tower[];
   peers: PeerLine[];
   // The telegraph wire: its left end and its length.
   wire: { at: Point; length: number };
@@ -329,6 +368,7 @@ export interface Slots {
   // By `${depot}/${flow}`, then by stage.
   stages: Record<string, Record<string, number>>;
   peers: Record<string, number>;
+  towers: Record<string, number>;
 }
 
 // The stages of a flow in the order a bead travels them: breadth first along
@@ -364,9 +404,10 @@ function seat(taken: Record<string, number> | undefined, names: string[]): Recor
   return out;
 }
 
-// A slot for every depot, flow, stage and peer of the yard: the remembered
-// one, else the next free one in order of first sight (depots, flows and
-// peers as the yard lists them, stages as a bead travels them). What memory
+// A slot for every depot, flow, stage, peer and provider of the yard: the
+// remembered one, else the next free one in order of first sight (depots,
+// flows and peers as the yard lists them, stages as a bead travels them,
+// providers as its groups and then its crew name them). What memory
 // holds and the yard does not is kept.
 export function place(yard: Yard, memory: Partial<Slots> = {}): Slots {
   const out: Slots = {
@@ -374,6 +415,7 @@ export function place(yard: Yard, memory: Partial<Slots> = {}): Slots {
     flows: { ...memory.flows },
     stages: { ...memory.stages },
     peers: seat(memory.peers, yard.peers.map((p) => p.name)),
+    towers: seat(memory.towers, providers(yard)),
   };
   for (const { depot, flows } of yard.flows) {
     out.flows[depot] = seat(out.flows[depot], flows.map((f) => f.name));
@@ -447,6 +489,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
     counts: [],
     lamps: [],
     boxes: [],
+    towers: [],
     peers: [],
     wire: { at: { x: BOARD_X, z: WIRE_Z }, length: 0 },
   };
@@ -681,6 +724,9 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
   yard.crew.forEach((member, c) => {
     out.boxes.push({ key: `crew/${member.name}`, name: member.name, at: { x: c * CREW_PITCH, z: CREW_Z } });
   });
+  for (const provider of providers(yard)) {
+    out.towers.push({ key: `tower/${provider}`, provider, at: { x: TOWER_X - slots.towers[provider]! * CREW_PITCH, z: CREW_Z } });
+  }
   yard.peers.forEach((peer) => {
     out.peers.push({
       key: `peer/${peer.name}`,
@@ -711,6 +757,7 @@ export function positions(l: Layout): Map<string, Point> {
   l.counts.forEach((e) => put("count", e.key, e.at));
   l.lamps.forEach((e) => put("lamp", e.key, e.at));
   l.boxes.forEach((e) => put("box", e.key, e.at));
+  l.towers.forEach((e) => put("tower", e.key, e.at));
   l.peers.forEach((e) => put("peer", e.key, e.at));
   put("wire", "wire", l.wire.at);
   return at;

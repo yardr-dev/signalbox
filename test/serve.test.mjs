@@ -6,8 +6,8 @@ import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { BATCH, routes } from "../scripts/serve.mjs";
-import { bead, snapshot, yardr } from "../scripts/yard.mjs";
+import { BATCH, QUOTA_EVERY, routes } from "../scripts/serve.mjs";
+import { bead, quota, snapshot, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
 const root = join(dir, "dist");
@@ -190,7 +190,9 @@ describe("the snapshot", () => {
     const response = await fetch(`${s.url}/api/snapshot`);
     expect(response.headers.get("content-type")).toMatch(/^application\/json/);
     const body = await response.json();
-    expect(Object.keys(body).sort()).toEqual(["layout", "log", "yard"]);
+    expect(Object.keys(body).sort()).toEqual(["layout", "log", "quota", "yard"]);
+    // Nobody was given to ask.
+    expect(body.quota).toBeNull();
     expect(body.yard.depots).toEqual(y.structure.depots);
     expect(body.log.events).toEqual(span(1, 3));
     // What was placed stays; what is new takes the next free slot, and keeps
@@ -208,6 +210,123 @@ describe("the snapshot", () => {
     const response = await fetch(`${s.url}/api/snapshot`);
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "the yard did not answer" });
+  });
+});
+
+describe("the quota", () => {
+  const fuel = (used) => ({ taken_at: "2099-01-01T00:00:00Z", providers: [{ key: "claude", name: "Claude", weekly: { used_percent: used } }] });
+  // aiquokka: how often it was asked, and a clock the test moves.
+  function provider() {
+    const p = { asked: 0, used: 10, now: 1_000_000, down: false };
+    p.quota = async () => {
+      p.asked++;
+      if (p.down) throw new Error("/Users/someone/bin/aiquokka --json: not found");
+      return fuel(p.used);
+    };
+    p.clock = () => p.now;
+    return p;
+  }
+  const taken = async (s) => (await (await fetch(`${s.url}/api/snapshot`)).json()).quota;
+
+  test("in the snapshot, and asked once a minute at most, however many ask", async () => {
+    const p = provider();
+    const s = await start(yard([]), { quota: p.quota, clock: p.clock });
+    expect(await Promise.all([taken(s), taken(s), taken(s)])).toEqual([fuel(10), fuel(10), fuel(10)]);
+    expect(p.asked).toBe(1);
+    p.used = 20;
+    p.now += QUOTA_EVERY - 1;
+    await s.poll();
+    expect(await taken(s)).toEqual(fuel(10));
+    expect(p.asked).toBe(1);
+    p.now += 1;
+    expect(await taken(s)).toEqual(fuel(20));
+    expect(p.asked).toBe(2);
+    expect(QUOTA_EVERY).toBeGreaterThanOrEqual(60_000);
+  });
+
+  test("on the feed as its own kind of message, with no id: when it was asked again, and for a page that comes later", async () => {
+    const y = yard(span(1, 2));
+    const p = provider();
+    const s = await start(y, { quota: p.quota, clock: p.clock });
+    const page = await listen(`${s.url}/api/feed?after=2`);
+    // Asked at the first poll, the one a listener starts.
+    expect(await page.next()).toEqual({ id: Number.NaN, event: "quota", data: fuel(10) });
+    p.used = 30;
+    await s.poll();
+    p.now += QUOTA_EVERY;
+    y.events.push(event(3));
+    await s.poll();
+    const got = await page.take(2);
+    expect(got.find((m) => m.event === "quota")).toEqual({ id: Number.NaN, event: "quota", data: fuel(30) });
+    // The yard's events keep their numbers: a page comes back after the last.
+    expect(got.find((m) => m.event === "message").id).toBe(3);
+    expect(p.asked).toBe(2);
+    // Another page, within the minute: the last answer, and nobody is asked.
+    const later = await listen(`${s.url}/api/feed?after=3`);
+    expect(await later.next()).toEqual({ id: Number.NaN, event: "quota", data: fuel(30) });
+    expect(p.asked).toBe(2);
+    page.close();
+    later.close();
+  });
+
+  test("no aiquokka: the snapshot and the feed say null, the page is served, and it is asked no more often", async () => {
+    const p = provider();
+    p.down = true;
+    const said = [];
+    const error = console.error;
+    console.error = (text) => said.push(text);
+    try {
+      const s = await start(yard([]), { quota: p.quota, clock: p.clock });
+      const response = await fetch(`${s.url}/api/snapshot`);
+      expect(response.status).toBe(200);
+      expect((await response.json()).quota).toBeNull();
+      const page = await listen(`${s.url}/api/feed`);
+      expect(await page.next()).toEqual({ id: Number.NaN, event: "quota", data: null });
+      expect(p.asked).toBe(1);
+      p.now += QUOTA_EVERY;
+      expect(await taken(s)).toBeNull();
+      expect(p.asked).toBe(2);
+      // It comes back: the next answer is passed on.
+      p.down = false;
+      p.now += QUOTA_EVERY;
+      expect(await taken(s)).toEqual(fuel(10));
+      page.close();
+    } finally {
+      console.error = error;
+    }
+    // Said once on the terminal, not once a minute.
+    expect(said).toEqual(["signalbox: quota: /Users/someone/bin/aiquokka --json: not found"]);
+  });
+
+  test("a provider that hangs does not hold the snapshot: it goes with the last answer", async () => {
+    const p = provider();
+    let answer;
+    const s = await start(yard([]), { quota: () => new Promise((done) => (answer = done)), clock: p.clock, wait: 20 });
+    expect(await taken(s)).toBeNull();
+    const page = await listen(`${s.url}/api/feed`);
+    answer(fuel(40));
+    expect(await page.next()).toEqual({ id: Number.NaN, event: "quota", data: fuel(40) });
+    expect(await taken(s)).toEqual(fuel(40));
+    page.close();
+  });
+
+  // aiquokka, as a script that prints what it would.
+  function standIn(script) {
+    const bin = join(dir, "aiquokka");
+    writeFileSync(bin, `#!/bin/sh\n${script}\n`);
+    chmodSync(bin, 0o755);
+    return bin;
+  }
+
+  test("asked of aiquokka --json, cut down; a machine without it is an error", async () => {
+    const bin = standIn(`echo "$*" > "${dir}/quota-args"; echo '{"claude":{"provider":"Claude","plan":"max","account":{"email":"someone@secret.example"},"windows":[{"id":"weekly_all","used_percent":55,"resets_at":"2099-01-05T13:00:00Z","duration_seconds":604800}]},"grok":{"error":"no session"}}'`);
+    const got = await quota(bin);
+    expect(got.providers).toEqual([{ key: "claude", name: "Claude", plan: "max", weekly: { used_percent: 55, resets_at: "2099-01-05T13:00:00Z" } }]);
+    expect(Number.isNaN(Date.parse(got.taken_at))).toBe(false);
+    expect(readFileSync(join(dir, "quota-args"), "utf8").trim()).toBe("--json");
+    await expect(quota(join(dir, "no-such-aiquokka"))).rejects.toThrow("not found");
+    await expect(quota(standIn("echo sorry"))).rejects.toThrow("not JSON");
+    await expect(quota(standIn("echo no network >&2; exit 1"))).rejects.toThrow("no network");
   });
 });
 

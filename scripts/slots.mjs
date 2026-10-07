@@ -1,5 +1,5 @@
 // Write the layout's memory beside a snapshot: the slot of every depot, flow,
-// stage and peer (src/layout.ts, place). Slots the file holds are kept, so
+// stage, peer and provider's tower (src/layout.ts, place). Slots the file holds are kept, so
 // what was drawn stays where it was; only what is new in the snapshot is added.
 //
 //   node scripts/slots.mjs <yard.json> <layout.json>

@@ -12,13 +12,13 @@ import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
-import { describe, draw, house, Stock, type Show } from "./scene";
+import { describe, draw, fuelled, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
 import type { Card, Detail } from "./card";
-import type { Shed, Slots } from "./layout";
+import type { Shed, Slots, Tower } from "./layout";
 import type { Log, YardEvent } from "./replay";
-import type { Bead, Yard } from "./yard";
+import type { Bead, Provider, Quota, Yard } from "./yard";
 
 // Where the camera stands from what it looks at: turned a little off the
 // tracks and looking down, so a track still reads left to right.
@@ -61,12 +61,24 @@ async function events(): Promise<Log | undefined> {
   }
 }
 
-// What the serve script answers on api/snapshot: the three files of a
-// snapshot in one, taken now.
+// What is left of the providers' quota, when the snapshot came with it.
+async function fuel(): Promise<Quota | undefined> {
+  try {
+    const response = await fetch(`${base}quota.json`);
+    const quota = response.ok ? ((await response.json()) as Quota) : undefined;
+    return Array.isArray(quota?.providers) ? quota : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// What the serve script answers on api/snapshot: the four files of a
+// snapshot in one, taken now. The quota is null when nobody could say.
 interface Snapshot {
   yard: Yard;
   layout: Partial<Slots>;
   log: Log;
+  quota?: Quota | null;
 }
 
 // The yard as it is now, where the serve script serves the page. A static
@@ -143,7 +155,13 @@ async function start() {
   // What changes is the beads and what they wait for: a state's, or the
   // snapshot's own.
   const plan = (at: Pick<Yard, "beads" | "edges">, now?: number) => layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now);
-  let picture = draw(plan(yard), kit);
+  // The quota is as it is now, whatever time the picture is of. Live, a tower
+  // stands for every provider in use, and says "unknown" when nobody knows
+  // its level. A snapshot's files without a quota have no tower.
+  let quota = api ? (api.quota ?? undefined) : await fuel();
+  const stands = (): ReturnType<typeof plan> => ({ ...plan(yard), ...(api || quota ? {} : { towers: [] }) });
+  let picture = draw(stands(), kit);
+  refuel(picture.towers, quota);
   const log = api ? api.log : await events();
   // Live, the window ends when the snapshot was taken, and the page opens
   // there; a replay opens at its start.
@@ -248,8 +266,8 @@ async function start() {
       new THREE.Vector2(((at.clientX - box.left) / box.width) * 2 - 1, -((at.clientY - box.top) / box.height) * 2 + 1),
       camera,
     );
-    let hit: THREE.Object3D | null = ray.intersectObjects([...stock.beads, ...picture.sheds], true)[0]?.object ?? null;
-    while (hit && !hit.userData.bead && !hit.userData.shed) hit = hit.parent;
+    let hit: THREE.Object3D | null = ray.intersectObjects([...stock.beads, ...picture.sheds, ...picture.towers], true)[0]?.object ?? null;
+    while (hit && !hit.userData.bead && !hit.userData.shed && !hit.userData.tower) hit = hit.parent;
     return hit;
   };
   // Where the pointer last was: what stands there changes while it is still.
@@ -260,7 +278,8 @@ async function start() {
       tip.style.display = "none";
       return;
     }
-    tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true, hit.userData.age as number | undefined, hit.userData.waits as string[] | undefined);
+    const tower = hit.userData.tower as Tower | undefined;
+    tip.textContent = tower ? fuelled(tower.provider, hit.userData.provider as Provider | undefined) : hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true, hit.userData.age as number | undefined, hit.userData.waits as string[] | undefined);
     tip.style.display = "block";
     tip.style.left = `${Math.min(at.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
     tip.style.top = `${Math.min(at.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
@@ -372,6 +391,8 @@ async function start() {
       play.textContent = player.playing ? "Pause" : "Play";
       live.textContent = fed || !player.live ? "Live" : "Live · no feed";
       live.setAttribute("aria-pressed", String(player.live));
+      // The towers are of now: said when the picture is not.
+      document.body.classList.toggle("past", !player.live);
       // Live, the window grows.
       scrub.max = String(player.to - player.from);
       for (const b of speeds.querySelectorAll("button")) b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === player.speed));
@@ -474,6 +495,7 @@ async function start() {
         const before = player;
         const reshaped = shape(next.yard, next.layout) !== shape(yard, slots);
         ({ yard, layout: slots } = next);
+        quota = next.quota ?? undefined;
         skew = Date.parse(yard.taken_at) - Date.now();
         player = new Player(yard, next.log, now());
         // What the feed said since the snapshot was taken.
@@ -491,10 +513,11 @@ async function start() {
             if (o instanceof CSS2DObject) o.element.remove();
           });
           scene.remove(picture.root);
-          picture = draw(plan(yard), kit);
+          picture = draw(stands(), kit);
           scene.add(picture.root);
           stock.house(picture.sheds);
         }
+        refuel(picture.towers, quota);
         present({ tween: before.live });
         stale = true;
         noted();
@@ -532,6 +555,12 @@ async function start() {
           if (!player.append(event)) return;
           if (outgrown(event, player.world)) void refresh();
         };
+        // The quota, asked again: the towers' levels and signs.
+        feed.addEventListener("quota", (message) => {
+          quota = (JSON.parse((message as MessageEvent<string>).data) as Quota | null) ?? undefined;
+          refuel(picture.towers, quota);
+          stale = true;
+        });
         // More happened than the feed could say: start again from a snapshot.
         feed.addEventListener("reset", () => void refresh());
         feed.onerror = () => {
@@ -571,6 +600,7 @@ async function start() {
     requestAnimationFrame(frame);
     noted();
   } else {
+    document.body.classList.add("past");
     // Nothing runs the frames of a still picture.
     stock.still = true;
     controls.addEventListener("change", render);

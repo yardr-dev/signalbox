@@ -126,6 +126,24 @@ snapshot itself knows only how a bead's last session ended (died, failed,
 aborted), since a stalled or blocked session is still running to the yard.
 So a fault older than the window is seen only if it is of that kind.
 
+What the yard burns is drawn as coal. Every provider whose agents the yard
+uses (the `kind` of a group that starts sessions, and of a crew member:
+claude, codex, kimi) has a coaling tower in the signal boxes' row, at their
+pitch, to the left of the first box, with the provider over it and its plan.
+The coal in its bunker is what is left of the provider's weekly quota, 100
+less the percent used; the gauge beside it is the five-hour window the same
+way. Under 20 percent left the fill is amber, under 5 red. The sign under
+the tower is the next delivery, when the week starts again in your own time
+("resets Mon 15:00"); an empty tower says "out" before it. A tower whose
+level nobody knows (no `aiquokka` on the machine, or a provider it does not
+list) stands empty and says "unknown". Under the pointer a tower says both
+windows in figures. From far out the plan and the sign are hidden, but for
+"out" and "unknown". The levels come from `aiquokka --json`, and there is no
+history of them: a replay shows the towers as they were when the snapshot
+was taken, marked "now", whatever time the bar stands at, and a snapshot
+without `quota.json` has no towers. Groups of people and of scripts burn
+nothing and have none.
+
 A wagon that waits on a person weathers. At a stage only a person moves a
 bead on from (backlog, decide: the flow's `human` stages) its paint is dull
 after three days, rusted after a week, and moss grows on its top after two;
@@ -175,16 +193,25 @@ not seen, the page takes a new snapshot and lays out again: what was placed
 stays where it was.
 
 The script asks the yard through its own commands and nothing else, the ones
-the snapshot uses, every interval while a page listens. It is three routes
-beside the files of `dist/`:
+the snapshot uses, every interval while a page listens. The towers' levels
+it asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquokka` names the
+binary), which is a call over the network for every provider: once a minute
+at most, however many pages are open, and not at all while none is. Without
+`aiquokka` the towers say "unknown" and the rest of the page is as ever. It
+is three routes beside the files of `dist/`:
 
-- `GET /api/snapshot`: `yard.json`, `layout.json` and `events.json` in one
-  answer, taken now.
+- `GET /api/snapshot`: `yard.json`, `layout.json`, `events.json` and
+  `quota.json` in one answer, taken now; `quota` is the last answer of the
+  minute, and `null` when there is none. A provider that is slow does not
+  hold the page: after three seconds the snapshot goes without, and the feed
+  brings the answer.
 - `GET /api/feed?after=<seq>`: server-sent events, one message for each event
   of the yard after `seq`, with its number as the id. A page that lost the
   line says where it was (`Last-Event-ID`) and misses nothing, also when the
   script was restarted in between. Restart it on the same `--port`: a free
   port is another one each time, and the open page looks for the old one.
+  The quota comes on the same line when it was asked again, and once to a
+  page that starts to listen: a message of the event `quota`, with no id.
 - `GET /api/bead/<id>`: one bead for its card, `{bead, notes}`, asked of the
   yard at the click (`yardr prime --bead <id> --json`, which only reads:
   `yardr bead show` prints no notes). An id is lower-case letters, figures,
@@ -197,7 +224,9 @@ now. Depots, flows, stages, groups, routes, crew and peers by name; of each
 open bead its id, title, type, stage, labels, whether a session works it and
 what went wrong with it last (a kind and a time);
 of each event its number, time, kind, bead and a few names (group, depot,
-peer, stages of an advance). And of the one bead a card asks for, live
+peer, stages of an advance); of each provider `aiquokka` lists with a weekly
+or a five-hour window its name, plan, the percent used of each and when it
+starts again, and nothing of the account. And of the one bead a card asks for, live
 only and in no file: its body and its notes, each with its author and time,
 as they were written. Whoever writes a path or a key into a note has put it
 on the card. Never a path or a key the yard itself prints, nor a session's
@@ -215,21 +244,24 @@ of this is there, and the page is the committed snapshot and its replay.
 
 - `scripts/snapshot.sh` writes `public/yard.json` and `public/events.json`
   from the yard's own commands (`npm run snapshot`, with `YARDR=` to name the
-  binary). The committed files are the demo data and the tests' fixture: the
+  binary), and `public/quota.json` beside them from `aiquokka --json`
+  (`AIQUOKKA=`): the towers' levels. Without `aiquokka` there is no
+  `quota.json`, and one from an earlier snapshot is removed. The committed files are the demo data and the tests' fixture: the
   tests name the yard's depots, groups and beads, so a new snapshot may need
   them brought along. Of an event the file keeps its number, time, kind and
   bead, and a few names from its data; a session is an alias, and a close
   says only whether it was a landing.
-- `scripts/yard.mjs` runs those commands, for the snapshot and the serve
-  script alike, and `src/project.ts` cuts what they print down to what the
+- `scripts/yard.mjs` runs those commands, and `aiquokka`, for the snapshot and
+  the serve script alike, and `src/project.ts` cuts what they print down to what the
   page reads: the one place that decides which fields are passed on.
 - `scripts/serve.mjs` serves `dist/` and the two routes a page follows a
-  yard by (`npm run live`). It keeps nothing but the slots it has given.
+  yard by (`npm run live`). It keeps nothing but the slots it has given and
+  the quota's last answer.
 - `public/layout.json` is the layout's memory: the slot of every depot, flow,
-  stage and peer drawn so far. The snapshot script writes it when it is
+  stage, peer and provider's tower drawn so far. The snapshot script writes it when it is
   missing and adds what is new to it otherwise (`scripts/slots.mjs`); the page
   only reads it. Delete it to have the yard laid out afresh.
-- `src/yard.ts`: the shape of the snapshot.
+- `src/yard.ts`: the shape of the snapshot, and of `quota.json`.
 - `src/layout.ts`: from the structure to positions, one pure function. A
   flow's stages stand in the order a bead travels them, its terminal stage
   last; an element with a slot in `layout.json` keeps it, so a yard that grows
@@ -243,8 +275,8 @@ of this is there, and the page is the committed snapshot and its replay.
   and `character-female-f`, reviewers `character-male-a`, crew members
   `character-male-c`; the clips `idle`, `walk` and, for work,
   `interact-right`). A hard hat is two boxes on the head bone. A model that
-  does not load is a box, a figure two. Platforms, signals and signal boxes
-  are boxes in six colours. The kit's diesel is the shunter.
+  does not load is a box, a figure two. Platforms, signals, signal boxes and
+  coaling towers are boxes in six colours. The kit's diesel is the shunter.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not
@@ -264,7 +296,8 @@ of this is there, and the page is the committed snapshot and its replay.
   `Shunter` the queue of one engine. The planner checks each way of the
   shunter against the wagons that stand, and takes the return line where the
   rail would put it on one.
-- `src/scene.ts` draws a layout: `draw` what stands still, `Stock` the wagons
+- `src/scene.ts` draws a layout: `draw` what stands still, `refuel` the coal
+  in the towers from a quota, `Stock` the wagons
   and figures, which it moves from one state to the next, each figure with a
   mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the
   page: camera, pan and zoom, labels, the bead under the pointer, the card

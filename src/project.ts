@@ -12,7 +12,7 @@
 
 import type { Detail } from "./card";
 import type { Log, YardEvent } from "./replay";
-import type { Bead, Edge, Yard } from "./yard";
+import type { Allowance, Bead, Edge, Quota, Yard } from "./yard";
 
 // What a command printed: an object of fields nobody has checked yet.
 export type Raw = Record<string, unknown>;
@@ -114,7 +114,7 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
         }),
       ),
     })),
-    groups: lists.groups.map((g) => pick(g, ["name", "runner", "limit", "members"])),
+    groups: lists.groups.map((g) => pick(g, ["name", "runner", "limit", "members"], { kind: record(g.config).kind })),
     routes: lists.routes.map((r) => pick(r, ["stage", "type", "depot", "label", "group", "priority"])),
     crew: lists.crew.map((c) => pick(c, ["name"], { kind: record(c.config).kind, state: c.state, status: c.status })),
     peers: lists.peers.map((p) => pick(p, ["name", "send", "receive"])),
@@ -185,4 +185,34 @@ export function logOf(taken_at: string, window: Raw[], all: Raw[], alias: (sessi
     .filter((b) => b.status === "closed" && named.has(b.id))
     .map((b) => pick(b, ["id", "title", "type", "stage", "depot", "train", "labels", "priority", "created_at"]));
   return { taken_at, beads: beads as unknown as Bead[], events: window.map((e) => eventOf(e, alias)) };
+}
+
+// The lengths of the two windows a tower shows, in seconds.
+const WEEK = 7 * 24 * 60 * 60;
+const SHORT = 5 * 60 * 60;
+
+// The first window of a length that says how much of it is used. Providers
+// name their windows as they like (weekly_all, 7d), so it is found by its
+// length.
+function allowance(windows: Raw[], seconds: number): Allowance | undefined {
+  const w = windows.find((w) => w.duration_seconds === seconds && typeof w.used_percent === "number" && Number.isFinite(w.used_percent));
+  if (w === undefined) return undefined;
+  return pick({}, [], { used_percent: w.used_percent, resets_at: typeof w.resets_at === "string" ? w.resets_at : undefined }) as unknown as Allowance;
+}
+
+// quota.json: what aiquokka --json printed, cut down to each provider's name,
+// plan and two windows. It also prints the account and its address, balances
+// and what was paid. A provider that failed has an error and no window, and
+// one that counts money has no window of these lengths: neither is passed on.
+export function quotaOf(printed: unknown, taken_at: string): Quota {
+  const providers = Object.entries(record(printed)).flatMap(([key, value]) => {
+    const p = record(value);
+    const windows = list(p.windows);
+    const weekly = allowance(windows, WEEK);
+    const short = allowance(windows, SHORT);
+    if (weekly === undefined && short === undefined) return [];
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    return [pick({}, [], { key, name: text(p.provider) ?? key, plan: text(p.plan), weekly, short })];
+  });
+  return { taken_at, providers } as unknown as Quota;
 }

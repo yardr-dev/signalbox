@@ -78,12 +78,44 @@ body {
 
 .label.crew,
 .label.peer,
-.label.wire {
+.label.wire,
+.label.tower {
   font-weight: 600;
 }
 
-/* Far out, the sheds' names would cover the yard: they come back on the way in. */
-#yard.far .label.group {
+/* A tower's plan, and its sign: the next delivery. */
+.label.plan,
+.label.fuel {
+  font-size: 10px;
+  color: #4a2a20;
+  background: rgb(234 223 180 / 0.9);
+}
+
+.label.plan:empty,
+.label.fuel:empty {
+  display: none;
+}
+
+/* The towers show the quota as it is now: said only while the picture is of
+   another time. */
+.label.now {
+  display: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #4f5a66;
+}
+
+body.past .label.now {
+  display: block;
+}
+
+/* Far out, the sheds' names would cover the yard, and the towers' small print
+   each other: they come back on the way in. A tower that is out, or that
+   nobody knows the level of, still says so. */
+#yard.far .label.group,
+#yard.far .label.plan,
+#yard.far .label.fuel.plain {
   display: none;
 }
 
