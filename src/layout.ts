@@ -96,8 +96,10 @@ export const BOX_FRONT_Z = 1.7;
 export const CREW_PITCH = 10;
 // A provider's tower, the silo of its quota, stands in the signal boxes' row,
 // at their pitch, to the left of the first box: the boxes run on to the right
-// as the crew grows, and move no tower.
-export const TOWER_X = -CREW_PITCH;
+// as the crew grows, and move no tower. The first stands a pitch left of the
+// wire's first post, at the boards' edge: the post's sign reads to the right
+// from there, and at less it lay over the name of the silo beside it.
+export const TOWER_X = BOARD_X - CREW_PITCH;
 export const WIRE_Z = -12;
 export const PEER_Z = -17;
 export const PEER_PITCH = 4;

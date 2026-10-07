@@ -144,7 +144,9 @@ in a run has it open. With `prefers-reduced-motion` the plume stands.
 What the yard burns is drawn as coal. Every provider whose agents the yard
 uses (the `kind` of a group that starts sessions, and of a crew member:
 claude, codex, kimi) has a silo in the signal boxes' row, at their pitch, to
-the left of the first box, with the provider over it and its plan. The silo
+the left of the first box, with the provider over it and its plan. The first
+stands a pitch left of the telegraph's first post, so that the post's sign,
+"hooks", lies over no silo's name. The silo
 is the kit's large tank, and the band round it is the provider's colour:
 
 | provider | band |

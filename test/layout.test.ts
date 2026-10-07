@@ -751,8 +751,21 @@ describe("a coaling tower for every provider the yard burns the quota of", () =>
       { key: "tower/kimi", provider: "kimi", at: { x: TOWER_X, z: CREW_Z } },
       { key: "tower/claude", provider: "claude", at: { x: TOWER_X - CREW_PITCH, z: CREW_Z } },
     ]);
-    expect(l.boxes[0]!.at.x - l.towers[0]!.at.x).toBe(CREW_PITCH);
     for (const t of l.towers) expect(t.at.x).toBeLessThan(Math.min(...l.boxes.map((b) => b.at.x)));
+  });
+
+  // The post's sign, "hooks", reads to the right from the wire's left end,
+  // and a silo's name stands over its middle: at less than a pitch between
+  // them the sign lay over the name of the silo beside the post.
+  test("the wire's first post, where its sign hangs, is a pitch or more from every silo, three of them or six", () => {
+    for (const kinds of [["kimi", "claude", "codex"], ["kimi", "claude", "codex", "grok", "gemini", "glm"]]) {
+      const l = layout({ ...yard, groups: [], crew: kinds.map((kind) => ({ name: kind, kind })) });
+      expect(l.towers).toHaveLength(kinds.length);
+      const nearest = Math.min(...l.towers.map((t) => Math.abs(l.wire.at.x - t.at.x)));
+      expect(nearest).toBeGreaterThanOrEqual(CREW_PITCH);
+      // All to one side of it: the sign reads away from them.
+      for (const t of l.towers) expect(t.at.x).toBeLessThan(l.wire.at.x);
+    }
   });
 
   test("a new provider is one more tower beyond the last, and a new crew member moves none", () => {
