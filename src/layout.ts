@@ -172,6 +172,24 @@ export interface Shed {
   limit: number;
   // Where its crew stand idle: none for a station or a works.
   places: Place[];
+  // A works' gate, in a picture of a moment that knows of one.
+  gate?: Gate;
+}
+
+// How a works' run ended: what it ran on landed, or the gate failed.
+export type Outcome = "landed" | "failed";
+
+// A works' gate at a moment of the yard: the beads its sessions run the gate
+// and the merge on, each since when where that was seen, and how its last
+// run ended. A run that starts puts out what the one before it left.
+export interface Gate {
+  runs: { bead: string; since?: string }[];
+  last?: Outcome;
+}
+
+// A building's key: where it stands, and whose it is.
+export function shedKey(depot: string, flow: string, stage: string, group: string): string {
+  return `${depot}/${flow}/${stage}/${group}`;
 }
 
 // The faults the yard found on a bead, not a session's end: a lamp shows them.
@@ -474,8 +492,9 @@ function byAge(a: Bead, b: Bead): number {
 }
 
 // now is the time the picture is of, for the wagons' ages: when the snapshot
-// was taken, or where a replay stands.
-export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Date.parse(yard.taken_at)): Layout {
+// was taken, or where a replay stands. gates are the works' at that time, by
+// their buildings' keys: the snapshot has none, a replay's state does.
+export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Date.parse(yard.taken_at), gates: Record<string, Gate> = {}): Layout {
   const slots = place(yard, memory);
   const out: Layout = {
     boards: [],
@@ -650,8 +669,10 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
               },
             });
           }
+          const shed = shedKey(depot.name, flow.name, stage.stage, name);
+          const gate = kind === "works" && Object.hasOwn(gates, shed) ? gates[shed] : undefined;
           sheds.push({
-            shed: { key: `${key}/${name}`, group: name, platform: key, kind, at, away, runner: group?.runner ?? "", limit, places },
+            shed: { key: shed, group: name, platform: key, kind, at, away, runner: group?.runner ?? "", limit, places, ...(gate ? { gate } : {}) },
             depot: depot.name,
             rank: [track, platform(stage.stage), n],
           });

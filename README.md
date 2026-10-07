@@ -126,6 +126,21 @@ snapshot itself knows only how a bead's last session ended (died, failed,
 aborted), since a stalled or blocked session is still running to the yard.
 So a fault older than the window is seen only if it is of that kind.
 
+A works smokes while it runs. A session that starts on a bead at a stage
+routed to a group of scripts (the assembly, the refinery: `started`) is a
+run of the depot's gate and the merge: a few grey puffs rise from the works'
+chimney and thin out, at their own pace whatever the replay's speed. The
+lamp on the post beside the works says how the last run ended: green for a
+landing (the advance past the buffer, or a close as merged), red for a gate
+that failed (an advance with the outcome failed), and it stays so until the
+next run starts, which puts it out. Any other end (a hold, a session that
+died, a bead taken back) stops the smoke and leaves the lamp as it was.
+A scrub snaps: the whole plume if a run is open at that time, and the lamp
+of the last run before it. Under the pointer the works says which bead it
+runs the gate on and since when, or how its last run ended. The snapshot
+knows of no run, so a still picture has every lamp out; a window that begins
+in a run has it open. With `prefers-reduced-motion` the plume stands.
+
 What the yard burns is drawn as coal. Every provider whose agents the yard
 uses (the `kind` of a group that starts sessions, and of a crew member:
 claude, codex, kimi) has a coaling tower in the signal boxes' row, at their
@@ -275,12 +290,14 @@ of this is there, and the page is the committed snapshot and its replay.
   and `character-female-f`, reviewers `character-male-a`, crew members
   `character-male-c`; the clips `idle`, `walk` and, for work,
   `interact-right`). A hard hat is two boxes on the head bone. A model that
-  does not load is a box, a figure two. Platforms, signals, signal boxes and
+  does not load is a box, a figure two. A works says where its chimney's
+  mouth is: the middle one of `building-m`'s three, a stub on its box. Platforms, signals, signal boxes and
   coaling towers are boxes in six colours. The kit's diesel is the shunter.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not
   there yet, any other stands where its first advance left.
+  It keeps by works the runs open on it and how its last one ended.
   A feed's event goes through the same reducer; `outgrown` says when one
   names what the snapshot does not hold, and the page takes a new one.
 - `src/player.ts`: the replay's clock and speed, and, live, a window that

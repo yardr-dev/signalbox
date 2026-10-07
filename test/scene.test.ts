@@ -2,11 +2,11 @@
 import * as THREE from "three";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
-import { fault as tint, iron, lamp, loadKit, weathering, type Kit } from "../src/kit";
-import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH } from "../src/layout";
-import { GOODS_END, goodsSeconds, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
+import { CHIMNEY, fault as tint, iron, lamp, loadKit, smoke, weathering, type Kit } from "../src/kit";
+import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
+import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { BACKLOG, COUPLING } from "../src/shunt";
-import { awaits, delivery, describe as tip, draw, fuelled, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
+import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
 
 // No file of the kit is there: every model is its box. And no page: a label
@@ -57,9 +57,15 @@ describe("a kit whose files are missing", () => {
   });
 
   test("a building, a wagon and a rail are a box each", () => {
-    for (const part of ["station", "hut", "office", "works", "wagon", "locomotive", "shunter", "rail"] as const) {
+    for (const part of ["station", "hut", "office", "wagon", "locomotive", "shunter", "rail"] as const) {
       expect(meshes(kit.make(part)), part).toBe(1);
     }
+    // A works' box has a stub of a chimney, and says where its mouth is.
+    const works = kit.make("works");
+    expect(meshes(works)).toBe(2);
+    const top = new THREE.Box3().setFromObject(works).max.y;
+    expect(works.userData[CHIMNEY]).toEqual([expect.any(Number), top, 0]);
+    expect(works.clone().userData[CHIMNEY]).toEqual(works.userData[CHIMNEY]);
     expect(warned).toContain("kit: people/character-male-e did not load, drawing a box");
     expect(warned).toContain("kit: city/building-i did not load, drawing a box");
   });
@@ -358,7 +364,9 @@ describe("the faults of the stock", () => {
     const bulbs = () => {
       const found: THREE.Mesh[] = [];
       stock.root.traverse((o) => {
-        if (o instanceof THREE.Mesh && o.geometry instanceof THREE.SphereGeometry) found.push(o);
+        // The works have lamps too, and none of them is lit.
+        const lit = o instanceof THREE.Mesh && ([lamp.stop, tint.dark] as number[]).includes((o.material as THREE.MeshBasicMaterial).color.getHex());
+        if (lit && o.geometry instanceof THREE.SphereGeometry) found.push(o);
       });
       return found;
     };
@@ -716,6 +724,108 @@ describe("the couplings of the stock", () => {
     stock.show(at([b], waits), { tween: true });
     expect(chains(stock)).toEqual([]);
     expect(amber(wagon(stock, "signalbox-b"))).toBe(0);
+  });
+});
+
+describe("the works of the stock", () => {
+  const key = "signalbox/default/approved/signalbox-assembly";
+  const bare: Yard = { ...yard, beads: [] };
+  const at = (gate?: Gate) => layout(bare, {}, undefined, gate ? { [key]: gate } : {});
+  const running: Gate = { runs: [{ bead: "signalbox-a", since: "2000-01-01T06:27:00Z" }] };
+  const landed: Gate = { runs: [], last: "landed" };
+  const failed: Gate = { runs: [], last: "failed" };
+  // The puffs in the air, and the lit lamps of the works: no wagon is there
+  // to have one.
+  const puffs = (stock: Stock) => {
+    const seen: THREE.Mesh[] = [];
+    stock.root.traverseVisible((o) => {
+      if (o instanceof THREE.Mesh && (o.material as THREE.MeshBasicMaterial).color.getHex() === smoke) seen.push(o);
+    });
+    return seen;
+  };
+  const lamps = (stock: Stock) => {
+    const seen: number[] = [];
+    stock.root.traverseVisible((o) => {
+      if (o instanceof THREE.Mesh && o.geometry instanceof THREE.SphereGeometry && o.material instanceof THREE.MeshBasicMaterial) seen.push(o.material.color.getHex());
+    });
+    return seen.filter((c) => c === lamp.clear || c === lamp.stop);
+  };
+  const works = at().sheds.filter((s) => s.kind === "works").length;
+
+  test("a works with no run has a lamp that is out, and no smoke", () => {
+    const stock = new Stock(at(), kit);
+    expect(works).toBeGreaterThan(1);
+    expect(puffs(stock)).toEqual([]);
+    expect(lamps(stock)).toEqual([]);
+    expect(stock.tick(0.02)).toBe(false);
+    expect([gateLamp(undefined), gateLamp(running), gateLamp({ runs: [] })]).toEqual([lamp.out, lamp.out, lamp.out]);
+    expect([gateLamp(landed), gateLamp(failed)]).toEqual([lamp.clear, lamp.stop]);
+    // A run open puts out what the one before it left.
+    expect(gateLamp({ ...running, last: "failed" })).toBe(lamp.out);
+  });
+
+  test("a run that starts is smoke from the chimney's mouth, a puff at a time; its end lights the lamp and the smoke rises away", () => {
+    const picture = draw(at(), kit);
+    const stock = new Stock(at(), kit, picture.sheds);
+    stock.show(at(running), { tween: true });
+    expect(puffs(stock)).toHaveLength(1);
+    // Over the stub of its box: a quarter of its length right of its middle.
+    const shed = at().sheds.find((s) => s.key === key)!;
+    const mouth = puffs(stock)[0]!.getWorldPosition(new THREE.Vector3());
+    expect(mouth.x).toBeCloseTo(shed.at.x + 0.5);
+    expect(mouth.z).toBeCloseTo(shed.at.z);
+    expect(mouth.y).toBeCloseTo(new THREE.Box3().setFromObject(picture.sheds.find((o) => (o.userData.shed as Shed).key === key)!).max.y);
+    expect(stock.tick(PUFF_SECONDS / 2)).toBe(true);
+    expect(puffs(stock).length).toBeGreaterThan(1);
+    expect(puffs(stock).length).toBeLessThan(PUFFS);
+    for (let t = 0; t < 2 * PUFF_SECONDS; t += 0.1) stock.tick(0.1);
+    expect(puffs(stock)).toHaveLength(PUFFS);
+    expect(puffs(stock).every((p) => p.getWorldPosition(new THREE.Vector3()).y >= mouth.y)).toBe(true);
+    expect(lamps(stock)).toEqual([]);
+    // The pointer is told of the run.
+    const told = picture.sheds.find((o) => (o.userData.shed as Shed).key === key)!.userData.shed as Shed;
+    expect(house(told)).toBe(`signalbox-assembly\nexec · limit 1\nruns the gate on signalbox-a since ${clock(running.runs[0]!.since!)}`);
+
+    stock.show(at(landed), { tween: true });
+    expect(lamps(stock)).toEqual([lamp.clear]);
+    expect(puffs(stock)).toHaveLength(PUFFS);
+    stock.tick(PUFF_SECONDS / 2);
+    expect(puffs(stock).length).toBeLessThan(PUFFS);
+    expect(stock.tick(PUFF_SECONDS / 2)).toBe(false);
+    expect(puffs(stock)).toEqual([]);
+    // It stays green until the next run starts.
+    stock.show(at(landed), { tween: true });
+    expect(lamps(stock)).toEqual([lamp.clear]);
+    stock.show(at(running), { tween: true });
+    expect(lamps(stock)).toEqual([]);
+    stock.show(at(failed), { tween: true });
+    expect(lamps(stock)).toEqual([lamp.stop]);
+  });
+
+  test("a scrub snaps: the whole plume of a run that is open, and none of one that is over", () => {
+    const stock = new Stock(at(), kit);
+    stock.show(at(running), { tween: false });
+    expect(puffs(stock)).toHaveLength(PUFFS);
+    stock.show(at(failed), { tween: false });
+    expect(puffs(stock)).toEqual([]);
+    expect(lamps(stock)).toEqual([lamp.stop]);
+    expect(stock.tick(0.02)).toBe(false);
+    stock.show(at(), { tween: false });
+    expect(lamps(stock)).toEqual([]);
+  });
+
+  test("a picture that does not move has the plume standing, and the tip says how the last run ended", () => {
+    const stock = new Stock(at(), kit);
+    stock.still = true;
+    stock.show(at(running), { tween: true });
+    expect(puffs(stock)).toHaveLength(PUFFS);
+    expect(stock.tick(0.02)).toBe(false);
+    stock.show(at(landed), { tween: true });
+    expect(puffs(stock)).toEqual([]);
+    const shed = (gate: Gate) => at(gate).sheds.find((s) => s.key === key)!;
+    expect(house(shed(landed))).toBe("signalbox-assembly\nexec · limit 1\nlast run landed");
+    expect(house(shed(failed))).toBe("signalbox-assembly\nexec · limit 1\nlast gate failed");
+    expect(house(shed({ runs: [{ bead: "signalbox-a" }] }))).toBe("signalbox-assembly\nexec · limit 1\nruns the gate on signalbox-a");
   });
 });
 

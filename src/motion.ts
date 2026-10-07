@@ -242,3 +242,55 @@ export function doing(person: Person, moving: boolean, stands = true): Doing {
   if (person.sat) return "sit";
   return person.bead !== undefined && stands ? "work" : "idle";
 }
+
+// A works' smoke: this many puffs leave its chimney one after another, and
+// each takes this many seconds to rise this far, drift this far with the
+// wind, and thin out to nothing. Its time is the page's own: at any speed of
+// the replay smoke rises as smoke does.
+export const PUFFS = 8;
+export const PUFF_SECONDS = 2.6;
+export const PUFF_RISE = 2.8;
+export const PUFF_DRIFT = 0.9;
+// How wide a puff is as it leaves the chimney and as it fades, and the most
+// that is seen of it.
+export const PUFF_SIZE: [from: number, to: number] = [0.28, 0.8];
+export const PUFF_SHADE = 0.8;
+
+// A puff of smoke, from its chimney's mouth.
+export interface Puff {
+  x: number;
+  y: number;
+  z: number;
+  size: number;
+  // How much of it is seen, 0 to 1.
+  shade: number;
+}
+
+// Whether any smoke is left over a fire lit so many seconds ago that burnt
+// for so many of them: all of them (Infinity) while it burns.
+export function smokes(seconds: number, burnt = Infinity): boolean {
+  return seconds >= 0 && seconds < burnt + PUFF_SECONDS;
+}
+
+// Where puff i of a fire is, by the seconds since it was lit: none before
+// its turn has come, and none that would have left the chimney after the
+// fire went out. So smoke starts at the chimney, and what is in the air when
+// the fire goes out rises on and fades.
+export function puff(i: number, seconds: number, burnt = Infinity): Puff | undefined {
+  if (!smokes(seconds, burnt)) return undefined;
+  const turn = (i / PUFFS) * PUFF_SECONDS;
+  if (seconds < turn) return undefined;
+  const left = turn + Math.floor((seconds - turn) / PUFF_SECONDS) * PUFF_SECONDS;
+  if (left >= burnt) return undefined;
+  const part = (seconds - left) / PUFF_SECONDS;
+  // Each a little to its own side, so the plume is no straight line.
+  const sway = Math.sin(i * 2.4) * 0.22 * part;
+  return {
+    x: PUFF_DRIFT * part * part + sway,
+    y: PUFF_RISE * part,
+    z: Math.cos(i * 1.7) * 0.18 * part,
+    size: PUFF_SIZE[0] + (PUFF_SIZE[1] - PUFF_SIZE[0]) * part,
+    // Soon there, and thinner all the way up.
+    shade: PUFF_SHADE * Math.min(1, part / 0.12) * (1 - part),
+  };
+}

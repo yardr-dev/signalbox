@@ -17,7 +17,7 @@ import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots, Tower } from "./layout";
-import type { Log, YardEvent } from "./replay";
+import type { Log, State, YardEvent } from "./replay";
 import type { Bead, Provider, Quota, Yard } from "./yard";
 
 // Where the camera stands from what it looks at: turned a little off the
@@ -154,7 +154,8 @@ async function start() {
   // now is where a replay stands: a wagon's age is as of then.
   // What changes is the beads and what they wait for: a state's, or the
   // snapshot's own.
-  const plan = (at: Pick<Yard, "beads" | "edges">, now?: number) => layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now);
+  // A state has the works' gates too; the snapshot knows of none.
+  const plan = (at: Pick<Yard, "beads" | "edges"> & Partial<Pick<State, "works">>, now?: number) => layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now, at.works);
   // The quota is as it is now, whatever time the picture is of. Live, a tower
   // stands for every provider in use, and says "unknown" when nobody knows
   // its level. A snapshot's files without a quota have no tower.

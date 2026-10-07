@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { fault, HAT, iron, lamp, palette, weathering, type Clip, type Kit } from "./kit";
+import { CHIMNEY, fault, HAT, iron, lamp, palette, smoke, weathering, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -24,6 +24,7 @@ import {
   type Person,
   type Point,
   type Coal,
+  type Gate,
   type Shed,
   type Tower,
   type Vehicle,
@@ -39,8 +40,12 @@ import {
   GOODS_STAND,
   heading,
   measure,
+  puff,
+  PUFF_SECONDS,
+  PUFFS,
   route,
   seconds,
+  smokes,
   stride,
   turn,
   TWEEN_MIN,
@@ -108,6 +113,12 @@ const HOOK = 0.2;
 const HOOK_X = 1.2;
 const HOOK_Z = 0.68;
 const CHAIN_Y = PLATFORM_HEIGHT + 0.02;
+// A works' lamp: on a post this far right of its building's middle, clear of
+// the wall, and this high. Where its smoke leaves a building that has no
+// chimney to say so: over its middle, this high.
+const GATE_LAMP_X = SHED_WIDTH / 2 + 0.4;
+const GATE_LAMP_Y = 1.9;
+const ROOF_Y = 2.2;
 
 export interface Picture {
   root: THREE.Group;
@@ -334,6 +345,41 @@ function lay(chain: THREE.Object3D, one: Point, other: Point) {
   line.scale.x = Math.max(Math.hypot(b.x - a.x, b.z - a.z), 1e-3);
   line.rotation.y = Math.atan2(a.z - b.z, b.x - a.x);
   hooks.forEach((h, i) => h.position.set(ends[i]!.x, CHAIN_Y + HOOK / 2, ends[i]!.z));
+}
+
+// A works' chimney and its lamp. The fire was lit so many seconds ago and
+// burnt for so many of them: all of them, Infinity, while a run is open.
+interface Stack {
+  root: THREE.Group;
+  // At the chimney's mouth.
+  plume: THREE.Group;
+  puffs: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>[];
+  post: THREE.Object3D;
+  lamp: THREE.MeshBasicMaterial;
+  seconds: number;
+  burnt: number;
+}
+
+// A puff is a small grey ball, its own material for how much of it is seen.
+const ball = new THREE.SphereGeometry(0.5, 8, 6);
+function stack(): Stack {
+  const light = new THREE.MeshBasicMaterial({ color: lamp.out });
+  const plume = new THREE.Group();
+  const puffs = Array.from({ length: PUFFS }, () => {
+    const mesh = new THREE.Mesh(ball, new THREE.MeshBasicMaterial({ color: smoke, transparent: true, opacity: 0, depthWrite: false }));
+    mesh.visible = false;
+    plume.add(mesh);
+    return mesh;
+  });
+  const post = beacon(light, 0, 0, 0, GATE_LAMP_Y);
+  return { root: new THREE.Group().add(plume, post), plume, puffs, post, lamp: light, seconds: Infinity, burnt: 0 };
+}
+
+// What a works' lamp shows: green after a landing, red after a gate that
+// failed, and nothing while a run is open or before the first has ended.
+export function gateLamp(gate: Gate | undefined): number {
+  if (gate === undefined || gate.runs.length > 0 || gate.last === undefined) return lamp.out;
+  return gate.last === "landed" ? lamp.clear : lamp.stop;
 }
 
 function signalBox(x: number, z: number): THREE.Object3D {
@@ -654,6 +700,9 @@ export class Stock {
   // again whenever either moves.
   private readonly chains = new THREE.Group();
   private links: { waits: string; on: string; object: THREE.Object3D }[] = [];
+  // The works' chimneys and lamps, by their buildings' keys.
+  private readonly fumes = new THREE.Group();
+  private readonly stacks = new Map<string, Stack>();
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private layout: Layout;
 
@@ -672,7 +721,7 @@ export class Stock {
     );
     this.lit.position.set(wire.at.x + wire.length / 2, POLE_HEIGHT - 0.17, wire.at.z);
     this.lit.visible = false;
-    this.root.add(this.counts, this.posts, this.chains, this.lit);
+    this.root.add(this.counts, this.posts, this.chains, this.fumes, this.lit);
     this.show(l, { tween: false });
   }
 
@@ -871,6 +920,8 @@ export class Stock {
     this.lamps = l.lamps.length + l.vehicles.filter((v) => v.lamp).length;
     this.beat(0);
 
+    this.fire(l, how.tween);
+
     this.counts.clear();
     for (const c of l.counts) {
       this.counts.add(label(`+${c.more}${c.of === "beads" ? "" : ` ${c.of}`}`, "count", c.at.x, 1.6, c.at.z, [1, 0.5]));
@@ -888,6 +939,7 @@ export class Stock {
     this.calm = still;
     for (const walker of this.walkers.values()) this.stand(walker, 0);
     this.beat(0);
+    for (const at of this.stacks.values()) this.fume(at, 0);
   }
 
   // Lay every chain between its two wagons, where they are now: it follows
@@ -930,6 +982,60 @@ export class Stock {
     if (flashing && Number.isFinite(dt)) this.blink = (this.blink + dt) % BLINK;
     this.light.color.setHex(!flashing || this.blink < BLINK / 2 ? lamp.stop : fault.dark);
     return flashing;
+  }
+
+  // Every works' chimney and lamp as a layout has its gate: smoke while a
+  // run is open, the lamp for how the last one ended. seen is whether the
+  // picture moves there: then smoke starts at the chimney, and what is in the
+  // air when the run ends rises on; a scrub has the whole plume or none. A
+  // works' building is told its gate too, for the pointer.
+  private fire(l: Layout, seen: boolean) {
+    const works = new Map(l.sheds.filter((s) => s.kind === "works").map((s) => [s.key, s]));
+    const built = new Map(this.sheds.map((o) => [(o.userData.shed as Shed).key, o]));
+    for (const [key, old] of this.stacks) {
+      if (works.has(key)) continue;
+      this.fumes.remove(old.root);
+      this.stacks.delete(key);
+    }
+    for (const [key, s] of works) {
+      let at = this.stacks.get(key);
+      if (!at) {
+        at = stack();
+        this.stacks.set(key, at);
+        this.fumes.add(at.root);
+      }
+      const building = built.get(key);
+      if (building) building.userData.shed = s;
+      const mouth = building?.userData[CHIMNEY] as [number, number, number] | undefined;
+      at.plume.position.copy(building && mouth ? building.localToWorld(new THREE.Vector3(...mouth)) : new THREE.Vector3(s.at.x, ROOF_Y, s.at.z));
+      at.post.position.set(s.at.x + GATE_LAMP_X, 0, s.at.z);
+      at.lamp.color.setHex(gateLamp(s.gate));
+      const burns = (s.gate?.runs.length ?? 0) > 0;
+      if (burns && at.burnt !== Infinity) {
+        at.seconds = seen ? 0 : PUFF_SECONDS;
+        at.burnt = Infinity;
+      } else if (!burns && at.burnt === Infinity) {
+        at.burnt = seen ? at.seconds : 0;
+      }
+      this.fume(at, 0);
+    }
+  }
+
+  // Bring a works' smoke on by a time. No time (Infinity), or a picture that
+  // does not move, is the whole plume of a fire that burns and none of one
+  // that is out. True while its smoke moves.
+  private fume(at: Stack, dt: number): boolean {
+    if (!Number.isFinite(dt) || this.calm) at.seconds = at.burnt === Infinity ? Math.max(at.seconds, PUFF_SECONDS) : Infinity;
+    else at.seconds += dt;
+    at.puffs.forEach((mesh, i) => {
+      const p = puff(i, at.seconds, at.burnt);
+      mesh.visible = p !== undefined;
+      if (!p) return;
+      mesh.position.set(p.x, p.y, p.z);
+      mesh.scale.setScalar(p.size);
+      mesh.material.opacity = p.shade;
+    });
+    return !this.calm && smokes(at.seconds, at.burnt);
   }
 
   // The buildings of a picture drawn again: the next show writes their signs.
@@ -1212,6 +1318,9 @@ export class Stock {
       moving = true;
     }
     if (this.beat(dt)) moving = true;
+    for (const at of this.stacks.values()) {
+      if (this.fume(at, dt)) moving = true;
+    }
     // The shunters, after what moves by itself: a wagon behind one is where
     // the shunter has it. No time is every order done at once, unseen.
     for (const engine of this.engines.values()) {
@@ -1239,9 +1348,15 @@ export class Stock {
   }
 }
 
-// The tip of a building: its group, what runs it and how many at once.
+// The tip of a building: its group, what runs it and how many at once; of a
+// works also what its gate runs on, and how its last run ended.
 export function house(s: Shed): string {
-  return `${s.group}\n${s.runner === "" ? "no group of this yard" : `${s.runner} · limit ${s.limit}`}`;
+  const runs = (s.gate?.runs ?? []).map(({ bead, since }) => {
+    const from = Date.parse(since ?? "");
+    return `runs the gate on ${bead}${Number.isNaN(from) ? "" : ` since ${hour.format(from)}`}`;
+  });
+  const last = s.gate?.last === "landed" ? ["last run landed"] : s.gate?.last === "failed" ? ["last gate failed"] : [];
+  return [s.group, s.runner === "" ? "no group of this yard" : `${s.runner} · limit ${s.limit}`, ...runs, ...last].join("\n");
 }
 
 // What a tower is called under the pointer: its provider as it is written,

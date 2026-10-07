@@ -11,7 +11,7 @@
 // stands at the stage its first advance left. So nothing runs backwards, and
 // the one thing the snapshot adds is the beads that closed in the window.
 
-import { flowIndex, seats } from "./layout";
+import { flowIndex, seats, shedGroups, shedKey, shedKind, type Gate } from "./layout";
 import type { Bead, Edge, Yard } from "./yard";
 
 export interface YardEvent {
@@ -57,6 +57,10 @@ export interface State {
   // One whose blocker closed before the window may still be here; it names
   // no open bead, and nothing is drawn for it.
   edges: Edge[];
+  // By works (its building's key, as layout.ts gives it), its gate: the runs
+  // open on it, and how its last one ended. A works no run was seen at has
+  // no entry.
+  works: Record<string, Gate>;
 }
 
 // What the events do not say and the reducer needs: what a bead is, and how
@@ -67,6 +71,10 @@ export interface World {
   // The stage a new bead of this kind stands at.
   first(bead: Bead): string | undefined;
   terminal(bead: Bead, stage: string): boolean;
+  // The works a session on the bead at this stage is of, by its building's
+  // key: the bead's group when it has one, else the first the stage is routed
+  // to, where that is a group of scripts. None at any other stage.
+  works(bead: Bead, stage: string): string | undefined;
 }
 
 export function world(yard: Yard, log: Log): World {
@@ -74,10 +82,18 @@ export function world(yard: Yard, log: Log): World {
     const flows = yard.flows.find((f) => f.depot === bead.depot)?.flows ?? [];
     return flows[flowIndex(flows, bead.type)];
   };
+  const scripts = (group: string) => shedKind(yard.groups.find((g) => g.name === group)) === "works";
   return {
     cast: new Map([...log.beads, ...yard.beads].map((b) => [b.id, b])),
     first: (bead) => flow(bead)?.stages[0]?.stage,
     terminal: (bead, stage) => flow(bead)?.stages.find((s) => s.stage === stage)?.terminal === true,
+    works: (bead, stage) => {
+      const at = flow(bead);
+      if (!at) return undefined;
+      const routed = shedGroups(yard, bead.depot, at, stage);
+      const group = bead.group ?? routed.find(scripts);
+      return group !== undefined && routed.includes(group) && scripts(group) ? shedKey(bead.depot, at.name, stage, group) : undefined;
+    },
   };
 }
 
@@ -183,6 +199,39 @@ function without<V>(record: Record<string, V>, key: string): Record<string, V> {
 // the event changes nothing: an unknown kind, a bead the snapshot does not
 // know, an end of a session that is not the one at work.
 export function step(state: State, event: YardEvent, w: World): State {
+  return gated(moved(state, event, w), event, w);
+}
+
+// The works after an event, given the beads after it. A session that starts
+// on a bead at a works' stage opens a run there. The run is over with the
+// first event that leaves the bead with nobody at work on it: an advance
+// past the buffer or a close as merged is a landing, an advance with the
+// outcome failed a gate that failed, and any other end (a hold, a session
+// that died, a bead taken back) leaves what the last run said.
+function gated(state: State, event: YardEvent, w: World): State {
+  const id = event.bead;
+  if (id === undefined) return state;
+  const bead = state.beads.find((b) => b.id === id);
+  const open = Object.keys(state.works).find((key) => state.works[key]!.runs.some((r) => r.bead === id));
+  if (event.kind === "started") {
+    const key = bead?.working === true ? w.works(bead, bead.stage) : undefined;
+    if (key === undefined || open !== undefined) return state;
+    const runs = state.works[key]?.runs ?? [];
+    return { ...state, works: { ...state.works, [key]: { runs: [...runs, { bead: id, since: event.at }] } } };
+  }
+  if (open === undefined || bead?.working === true) return state;
+  const gate = state.works[open]!;
+  const data = event.data ?? {};
+  const known = w.cast.get(id);
+  const past = event.kind === "advanced" && known !== undefined && data.to !== undefined && w.terminal(known, data.to);
+  const landed = past || (event.kind === "closed" && data.reason === "merged");
+  const last = landed ? "landed" : event.kind === "advanced" && data.outcome === "failed" ? "failed" : gate.last;
+  const runs = gate.runs.filter((r) => r.bead !== id);
+  return { ...state, works: { ...state.works, [open]: { runs, ...(last !== undefined ? { last } : {}) } } };
+}
+
+// The beads, the sessions and the edges after one more event.
+function moved(state: State, event: YardEvent, w: World): State {
   const id = event.bead;
   if (id === undefined) return state;
   const here = state.beads.find((b) => b.id === id);
@@ -323,7 +372,14 @@ export function opening(yard: Yard, log: Log, w: World = world(yard, log)): Stat
       beads.push(hold ? { ...at, hold } : at);
     }
   }
-  return { beads, sessions: {}, edges: waits(yard, log) };
+  // A works whose session was at it when the window began: since when is not
+  // known, and neither is how the run before it ended.
+  const works: Record<string, Gate> = {};
+  for (const bead of beads) {
+    const key = bead.working === true ? w.works(bead, bead.stage) : undefined;
+    if (key !== undefined) works[key] = { runs: [...(works[key]?.runs ?? []), { bead: bead.id }] };
+  }
+  return { beads, sessions: {}, edges: waits(yard, log), works };
 }
 
 // The yard after the window's first n events.

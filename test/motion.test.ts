@@ -10,6 +10,12 @@ import {
   GOODS_MIN,
   GOODS_SECONDS,
   goodsSeconds,
+  puff,
+  PUFF_RISE,
+  PUFF_SECONDS,
+  PUFF_SHADE,
+  PUFFS,
+  smokes,
   heading,
   measure,
   pull,
@@ -227,5 +233,44 @@ describe("a figure's way", () => {
     expect(doing(at(15), false)).toBe("work");
     // No one works on a wagon that is not there yet.
     expect(doing(at(15), false, false)).toBe("idle");
+  });
+});
+
+describe("a works' smoke", () => {
+  const out = (seconds: number, burnt?: number) => Array.from({ length: PUFFS }, (_, i) => puff(i, seconds, burnt)).filter((p) => p !== undefined);
+
+  test("it starts at the chimney: one puff, then one more at a time, never more than a dozen", () => {
+    expect(PUFFS).toBeLessThanOrEqual(12);
+    expect(out(0)).toEqual([{ x: 0, y: 0, z: 0, size: expect.any(Number), shade: 0 }]);
+    const step = PUFF_SECONDS / PUFFS;
+    for (let n = 1; n <= PUFFS; n++) expect(out((n - 0.5) * step)).toHaveLength(n);
+    // From then on all of them, round and round.
+    for (const seconds of [PUFF_SECONDS, 7.3, 3600.1]) expect(out(seconds)).toHaveLength(PUFFS);
+    expect(puff(0, 1 + PUFF_SECONDS)).toEqual(puff(0, 1));
+  });
+
+  test("a puff rises, grows and thins out to nothing", () => {
+    const [low, mid, high] = [0.1, 0.5, 0.99].map((part) => puff(0, part * PUFF_SECONDS)!);
+    expect(low!.y).toBeLessThan(mid!.y);
+    expect(mid!.y).toBeLessThan(high!.y);
+    expect(high!.y).toBeLessThan(PUFF_RISE);
+    expect(low!.size).toBeLessThan(high!.size);
+    expect(mid!.shade).toBeLessThanOrEqual(PUFF_SHADE);
+    expect(high!.shade).toBeLessThan(0.01);
+    expect(high!.x).toBeGreaterThan(0);
+  });
+
+  test("when the fire goes out what is in the air rises on, and nothing follows it", () => {
+    const burnt = 10;
+    expect(out(burnt, burnt)).toHaveLength(PUFFS);
+    expect(out(burnt + PUFF_SECONDS / 2, burnt).length).toBeLessThan(PUFFS);
+    expect(out(burnt + PUFF_SECONDS / 2, burnt).length).toBeGreaterThan(0);
+    expect(out(burnt + PUFF_SECONDS, burnt)).toEqual([]);
+    expect(smokes(burnt + PUFF_SECONDS - 0.01, burnt)).toBe(true);
+    expect(smokes(burnt + PUFF_SECONDS, burnt)).toBe(false);
+    // A fire that never burnt, and one nobody saw lit.
+    expect(out(0.5, 0)).toEqual([]);
+    expect(out(Infinity, 0)).toEqual([]);
+    expect(smokes(3600)).toBe(true);
   });
 });

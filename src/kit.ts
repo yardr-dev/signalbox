@@ -24,8 +24,11 @@ export const palette = {
 
 // Lamps and hard hats are outside the six: a hat is what tells a crew from
 // the top of the yard, hi-vis for builders, white for reviewers.
-// wait is the amber of a wagon that waits for a bead on another board.
-export const lamp = { clear: 0x3fd46b, stop: 0xe0453a, wait: 0xffb020 } as const;
+// wait is the amber of a wagon that waits for a bead on another board, out a
+// lamp that is not lit.
+export const lamp = { clear: 0x3fd46b, stop: 0xe0453a, wait: 0xffb020, out: 0x343b43 } as const;
+// The grey of a works' smoke.
+export const smoke = 0x6c7278;
 // The iron of a chain between a wagon and the one it waits for.
 export const iron = 0x2a2d31;
 export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
@@ -123,7 +126,40 @@ function box(part: Part): THREE.Object3D {
     new THREE.MeshStandardMaterial({ color: colour, flatShading: true }),
   );
   mesh.position.y = height / 2;
-  return new THREE.Group().add(mesh);
+  const group = new THREE.Group().add(mesh);
+  if (part !== "works") return group;
+  // A works smokes: its box has a stub of a chimney on the roof.
+  const stub = block(palette.brick, STUB, STUB, STUB, height);
+  stub.position.x = length / 4;
+  group.userData[CHIMNEY] = [length / 4, height + STUB, 0];
+  return group.add(stub);
+}
+
+// A works says where its chimney's mouth is, from its own middle on the
+// ground: userData[CHIMNEY], as [x, y, z]. A plain list, so a copy has it too.
+export const CHIMNEY = "chimney";
+const STUB = 0.5;
+
+// The mouth of a model's chimney: the middle of what stands highest on it.
+// Of several stacks of one height it is the one nearest the middle of them
+// all, not the air between two.
+function chimney(model: THREE.Object3D): [number, number, number] | undefined {
+  const all: THREE.Vector3[] = [];
+  model.updateMatrixWorld(true);
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    const at = (part.geometry as THREE.BufferGeometry).getAttribute("position");
+    for (let i = 0; at && i < at.count; i++) all.push(new THREE.Vector3().fromBufferAttribute(at, i).applyMatrix4(part.matrixWorld));
+  });
+  const height = Math.max(0, ...all.map((v) => v.y));
+  const top = all.filter((v) => v.y > height * 0.99);
+  if (top.length === 0) return undefined;
+  const mean = (of: THREE.Vector3[]) => of.reduce((sum, v) => sum.add(v), new THREE.Vector3()).divideScalar(of.length);
+  const middle = mean(top);
+  const nearest = top.reduce((a, b) => (a.distanceTo(middle) <= b.distanceTo(middle) ? a : b));
+  // A stack is narrow beside its building: a tenth of its height across.
+  const mouth = mean(top.filter((v) => v.distanceTo(nearest) < height / 10));
+  return [mouth.x, mouth.y, mouth.z];
 }
 
 function block(colour: number, width: number, height: number, depth: number, y: number): THREE.Mesh {
@@ -177,7 +213,10 @@ export async function loadKit(base: string): Promise<Kit> {
     const [turn, size] = buildings[part] ?? [Math.PI / 2, 1];
     model.rotation.y = turn;
     model.scale.setScalar(size);
-    return new THREE.Group().add(model);
+    const group = new THREE.Group().add(model);
+    const mouth = part === "works" ? chimney(group) : undefined;
+    if (mouth) group.userData[CHIMNEY] = mouth;
+    return group;
   };
   const person = async (name: string): Promise<Figure | undefined> => {
     const file = await load(name);
