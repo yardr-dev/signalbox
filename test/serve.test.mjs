@@ -1,12 +1,14 @@
 // The serve script's routes (scripts/serve.mjs), over a real socket on a free
 // loopback port, with a yard that is a list in this file.
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Socket } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { BATCH, QUOTA_EVERY, routes } from "../scripts/serve.mjs";
+import { BATCH, QUOTA_EVERY, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
 import { bead, quota, snapshot, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
@@ -203,6 +205,138 @@ describe("the snapshot", () => {
     expect((await (await fetch(`${s.url}/api/snapshot`)).json()).layout.depots).toEqual({ gone: 0, signalbox: 4, newer: 5 });
     y.structure.depots.shift();
     expect((await (await fetch(`${s.url}/api/snapshot`)).json()).layout.depots).toEqual({ gone: 0, signalbox: 4, newer: 5 });
+  });
+
+  test("the slots are kept in the yard's home", () => {
+    expect(layoutFile({ YARDR_HOME: "/a/yard" })).toBe("/a/yard/signalbox/layout.json");
+    for (const env of [{}, { YARDR_HOME: "" }]) expect(layoutFile(env)).toBe(join(homedir(), ".yardr", "signalbox", "layout.json"));
+  });
+
+  test("a yard not served before is laid out from slot 0, and what it was given is there the next time", async () => {
+    const file = join(dir, "fresh-yard", "signalbox", "layout.json");
+    const kept = (slots) => remember(file, slots);
+    // Neither the file nor its directory is there yet.
+    expect(recall(file)).toEqual({});
+    const y = yard([]);
+    const s = await start(y, { memory: recall(file), remember: kept });
+    expect(existsSync(file)).toBe(false);
+    const first = (await (await fetch(`${s.url}/api/snapshot`)).json()).layout;
+    expect(first.depots).toEqual({ signalbox: 0 });
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(first);
+    // As the snapshot script writes its own (scripts/slots.mjs).
+    expect(readFileSync(file, "utf8")).toBe(`${JSON.stringify(first, null, 2)}\n`);
+    await s.stop();
+
+    // Started again, the yard listed in another order: nothing has moved.
+    y.structure.depots.unshift({ name: "newer", kind: "git" });
+    const again = await start(y, { memory: recall(file), remember: kept });
+    expect((await (await fetch(`${again.url}/api/snapshot`)).json()).layout.depots).toEqual({ signalbox: 0, newer: 1 });
+    expect(recall(file).depots).toEqual({ signalbox: 0, newer: 1 });
+  });
+
+  test("the slots are written when a snapshot added to them, and not otherwise", async () => {
+    const y = yard([]);
+    const written = [];
+    const s = await start(y, { remember: (slots) => written.push(slots) });
+    const taken = async () => (await (await fetch(`${s.url}/api/snapshot`)).json()).layout;
+    const first = await taken();
+    expect(written).toEqual([first]);
+    await taken();
+    expect(written).toHaveLength(1);
+    y.structure.depots.push({ name: "newer", kind: "git" });
+    expect(written.at(-1)).not.toEqual(await taken());
+    expect(written).toHaveLength(2);
+    expect(written[1].depots).toEqual({ signalbox: 0, newer: 1 });
+  });
+
+  test("slots that cannot be written do not hold the snapshot, and are written when they can be", async () => {
+    const errors = [];
+    const said = console.error;
+    console.error = (line) => errors.push(line);
+    try {
+      let full = true;
+      const written = [];
+      const s = await start(yard([]), {
+        remember: (slots) => {
+          if (full) throw new Error("no space left on device");
+          written.push(slots);
+        },
+      });
+      const response = await fetch(`${s.url}/api/snapshot`);
+      expect(response.status).toBe(200);
+      const { layout } = await response.json();
+      expect(layout.depots).toEqual({ signalbox: 0 });
+      expect(errors).toEqual(["signalbox: layout: no space left on device"]);
+      full = false;
+      await fetch(`${s.url}/api/snapshot`);
+      expect(written).toEqual([layout]);
+    } finally {
+      console.error = said;
+    }
+  });
+
+  // The script itself, as npm run live starts it, against a yard that is a
+  // stand-in for yardr: one depot, and nothing else.
+  async function served(home, args = []) {
+    const bin = join(dir, "yardr-one-depot");
+    writeFileSync(bin, `#!/bin/sh\ncase "$*" in "depot list --json") echo '[{"name":"papers","kind":"dir"}]';; *) echo '[]';; esac\n`);
+    chmodSync(bin, 0o755);
+    // The page it was built with holds another yard's slots.
+    const built = join(dir, "built");
+    mkdirSync(built, { recursive: true });
+    writeFileSync(join(built, "index.html"), "<!doctype html><title>signalbox</title>");
+    writeFileSync(join(built, "layout.json"), JSON.stringify({ depots: { aiquokka: 0, signalbox: 1, yardr: 2, "yardr.dev": 3 }, peers: { airy: 0 } }));
+    // Nothing of this session's: its yard, its yardr and aiquokka are not asked.
+    const env = { PATH: "/usr/bin:/bin", HOME: home, YARDR_HOME: home, YARDR: bin, AIQUOKKA: join(dir, "no-such-aiquokka") };
+    const child = spawn(process.execPath, [fileURLToPath(new URL("../scripts/serve.mjs", import.meta.url)), "--port", "0", "--dir", built, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+    const ended = new Promise((done) => child.on("close", (code) => done(code)));
+    running.push(async () => {
+      child.kill();
+      await ended;
+    });
+    let out = "";
+    let err = "";
+    child.stderr.on("data", (d) => (err += d));
+    const url = await new Promise((done) => {
+      child.stdout.on("data", (d) => {
+        out += d;
+        const at = /http:\/\/127\.0\.0\.1:\d+/.exec(out);
+        if (at) done(at[0]);
+      });
+      void ended.then(() => done(undefined));
+    });
+    return { url, code: ended, said: () => err };
+  }
+
+  test("the script keeps a yard's slots in its home, and reads none from beside the page", async () => {
+    const home = join(dir, "home");
+    mkdirSync(home);
+    const file = join(home, "signalbox", "layout.json");
+    const s = await served(home);
+    const { layout } = await (await fetch(`${s.url}/api/snapshot`)).json();
+    expect(layout.depots).toEqual({ papers: 0 });
+    expect(layout.peers).toEqual({});
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(layout);
+  });
+
+  test("--layout names another file, and one that is no JSON stops the script as it is", async () => {
+    const home = join(dir, "home-other");
+    mkdirSync(home);
+    const file = join(dir, "other-layout.json");
+    writeFileSync(file, JSON.stringify({ depots: { gone: 0 } }));
+    const s = await served(home, ["--layout", file]);
+    expect((await (await fetch(`${s.url}/api/snapshot`)).json()).layout.depots).toEqual({ gone: 0, papers: 1 });
+    expect(recall(file).depots).toEqual({ gone: 0, papers: 1 });
+    expect(existsSync(join(home, "signalbox"))).toBe(false);
+
+    writeFileSync(file, "{ half");
+    const before = statSync(file).mtimeMs;
+    const broken = await served(home, ["--layout", file]);
+    expect(broken.url).toBeUndefined();
+    expect(await broken.code).toBe(1);
+    expect(broken.said()).toContain(file);
+    expect(readFileSync(file, "utf8")).toBe("{ half");
+    expect(statSync(file).mtimeMs).toBe(before);
   });
 
   test("a yard that does not answer is an error, without what it said", async () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Serve the page and let it follow a yard as it runs.
 //
-//   node scripts/serve.mjs [--host 127.0.0.1] [--port 0] [--interval 3] [--dir dist]
+//   node scripts/serve.mjs [--host 127.0.0.1] [--port 0] [--interval 3] [--dir dist] [--layout file]
 //   YARDR=/path/to/yardr names the binary, YARDR_HOME the yard, as for the
 //   snapshot (scripts/snapshot.sh); AIQUOKKA=/path/to/aiquokka the one that
 //   says what is left of the providers' quota.
@@ -28,15 +28,22 @@
 // server-sent events do by themselves), so nothing is missed, across a
 // restart of this script too: the script remembers nothing the page needs.
 //
+// The slots it gives are the yard's, not the built page's: it keeps them in
+// a file in the yard's home (layoutFile, below; --layout names another), which
+// is not there for a yard it has not served, so that yard is laid out from
+// slot 0. The layout.json beside the page is the committed snapshot's, another
+// yard's as a rule, and is not read here.
+//
 // The quota is asked of aiquokka, a call over the network for every provider:
 // once a minute at most (QUOTA_EVERY), however many pages ask and listen, and
 // not at all while none does. A snapshot in between has the last answer.
 //
 // There is no login. Whoever reaches the port reads what the routes answer,
 // so it listens on this machine alone unless --host says otherwise.
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { place } from "../src/layout.ts";
@@ -66,20 +73,44 @@ const TYPES = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+// Where the slots given to a yard are kept: in its home, which YARDR_HOME
+// names as it does for yardr, else ~/.yardr.
+export function layoutFile(env = process.env) {
+  return join(env.YARDR_HOME || join(homedir(), ".yardr"), "signalbox", "layout.json");
+}
+
+// The slots that file holds: none when it is not there yet.
+export function recall(file) {
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+}
+
+// Write them, as scripts/slots.mjs writes public/layout.json. Whole or not at
+// all: a script that is stopped half-way leaves the file it found.
+export function remember(file, slots) {
+  mkdirSync(dirname(file), { recursive: true });
+  const half = `${file}.${process.pid}.tmp`;
+  writeFileSync(half, `${JSON.stringify(slots, null, 2)}\n`);
+  renameSync(half, file);
+}
+
 // The routes as one request handler, and close to end what it holds open.
 //   yard      {snapshot(), recent(n), bead(id)}: the yard's answers
 //             (scripts/yard.mjs)
 //   root      the directory of the built page
 //   interval  milliseconds between two polls of the feed
-//   memory    the slots given so far (layout.json); what a snapshot adds is
+//   memory    the slots given so far (recall); what a snapshot adds is
 //             remembered while the script runs, so nothing placed moves
+//   remember  keeps the slots when a snapshot added to them, for the next
+//             time the script runs; without it they are forgotten then
 //   quota     asks what is left of the providers' quota (scripts/yard.mjs);
 //             without it nobody asks, and nobody knows
 //   clock     the time in milliseconds, to count QUOTA_EVERY by
 //   wait      milliseconds a snapshot waits for the quota
-export function routes({ yard, root, interval = 3000, memory = {}, quota, clock = Date.now, wait = QUOTA_WAIT }) {
+export function routes({ yard, root, interval = 3000, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT }) {
   const listeners = new Set();
   let slots = memory;
+  // What was kept last, as it is written.
+  let kept = JSON.stringify(memory);
   let timer;
   let asking = false;
   // The last answer about the quota, null when there was none; when it was
@@ -123,6 +154,20 @@ export function routes({ yard, root, interval = 3000, memory = {}, quota, clock 
     return fuelling;
   }
 
+  // Keep the slots when they are not the ones kept last. A file that cannot
+  // be written does not hold the page: the slots stand while the script runs,
+  // and the next snapshot tries again.
+  function keep() {
+    const now = JSON.stringify(slots);
+    if (remember === undefined || now === kept) return;
+    try {
+      remember(slots);
+      kept = now;
+    } catch (err) {
+      failed("layout", err);
+    }
+  }
+
   async function answerSnapshot(res) {
     try {
       let late;
@@ -130,6 +175,7 @@ export function routes({ yard, root, interval = 3000, memory = {}, quota, clock 
       const soon = Promise.race([refuel(), new Promise((go) => (late = setTimeout(() => go(fuel), wait)))]);
       const [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
       slots = place(now, slots);
+      keep();
       json(res, 200, { yard: now, layout: slots, log, quota: left });
     } catch (err) {
       failed("snapshot", err);
@@ -254,24 +300,32 @@ async function main() {
       port: { type: "string", default: "0" },
       interval: { type: "string", default: "3" },
       dir: { type: "string", default: fileURLToPath(new URL("../dist", import.meta.url)) },
+      layout: { type: "string", default: layoutFile() },
     },
   });
   const interval = Number(values.interval) * 1000;
   const port = Number(values.port);
   const root = resolve(values.dir);
   if (!(interval >= 100) || !Number.isInteger(port) || port < 0) {
-    console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--interval seconds, 0.1 or more] [--dir dist]");
+    console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--interval seconds, 0.1 or more] [--dir dist] [--layout file]");
     process.exit(2);
   }
   if (!existsSync(join(root, "index.html"))) {
     console.error(`signalbox: no page in ${root}: npm run build writes it`);
     process.exit(1);
   }
-  // The slots the snapshot script remembered for the page it built.
-  const remembered = join(root, "layout.json");
-  const memory = existsSync(remembered) ? JSON.parse(readFileSync(remembered, "utf8")) : {};
+  // The slots this yard was given before. A file that is no JSON is left as
+  // it is: laying out afresh over it would lose what it held.
+  const layout = resolve(values.layout);
+  let memory;
+  try {
+    memory = recall(layout);
+  } catch (err) {
+    console.error(`signalbox: ${layout}: ${err instanceof Error ? err.message : err}: mend it, or delete it to have the yard laid out afresh`);
+    process.exit(1);
+  }
   const run = yardr();
-  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n), bead: (id) => bead(run, id) }, root, interval, memory, quota: () => quota() });
+  const { handle, close } = routes({ yard: { snapshot: () => snapshot(run), recent: (n) => recent(run, n), bead: (id) => bead(run, id) }, root, interval, memory, remember: (slots) => remember(layout, slots), quota: () => quota() });
 
   const server = createServer(handle);
   server.listen(port, values.host, () => {

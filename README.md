@@ -219,7 +219,8 @@ yard's clock. Scrub back and it is the replay of the window so far (the
 yard's newest 2000 events), at the speed you set; `Live` returns to now.
 When the yard gets a new depot, flow, peer or crew, or a bead the page has
 not seen, the page takes a new snapshot and lays out again: what was placed
-stays where it was.
+stays where it was, also when the script is started again: it keeps the
+yard's slots in the yard's home (`$YARDR_HOME/signalbox/layout.json`).
 
 The script asks the yard through its own commands and nothing else, the ones
 the snapshot uses, every interval while a page listens. The silos' levels
@@ -283,13 +284,19 @@ of this is there, and the page is the committed snapshot and its replay.
 - `scripts/yard.mjs` runs those commands, and `aiquokka`, for the snapshot and
   the serve script alike, and `src/project.ts` cuts what they print down to what the
   page reads: the one place that decides which fields are passed on.
-- `scripts/serve.mjs` serves `dist/` and the two routes a page follows a
+- `scripts/serve.mjs` serves `dist/` and the routes a page follows a
   yard by (`npm run live`). It keeps nothing but the slots it has given and
-  the quota's last answer.
-- `public/layout.json` is the layout's memory: the slot of every depot, flow,
-  stage, peer and provider's silo drawn so far. The snapshot script writes it when it is
-  missing and adds what is new to it otherwise (`scripts/slots.mjs`); the page
-  only reads it. Delete it to have the yard laid out afresh.
+  the quota's last answer. The slots are the yard's own, in a file in its
+  home: `$YARDR_HOME/signalbox/layout.json` (`~/.yardr/signalbox/layout.json`
+  without `YARDR_HOME`; `--layout <file>` names another). It is written at the
+  first snapshot of a yard, laid out from slot 0, and added to when the yard
+  grows. The `layout.json` beside the built page is not read by the script.
+  Delete the yard's file, with the script stopped, to have it laid out afresh.
+- `public/layout.json` is the layout's memory for the committed snapshot: the
+  slot of every depot, flow, stage, peer and provider's silo drawn so far. The
+  snapshot script writes it when it is missing and adds what is new to it
+  otherwise (`scripts/slots.mjs`); the static page and the tests only read it.
+  Delete it to have that yard laid out afresh.
 - `src/yard.ts`: the shape of the snapshot, and of `quota.json`.
 - `src/layout.ts`: from the structure to positions, one pure function. A
   flow's stages stand in the order a bead travels them, its terminal stage
