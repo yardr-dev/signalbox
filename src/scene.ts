@@ -54,6 +54,8 @@ const PLATFORM_WIDTH = 1.4;
 const SIGN_Z = 1.3;
 const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
+// A signal box's sign, over its roof.
+const BOX_HEIGHT = 3.4;
 // A figure steps up onto a platform over this much ground before its edge,
 // turns at this many radians a second, and takes this many seconds to change
 // from one thing it does to the next.
@@ -79,8 +81,10 @@ const MARK_X = 1.15;
 
 export interface Picture {
   root: THREE.Group;
-  // The box on the ground everything stands in, for the first view. A peer's
-  // line counts only where it starts: it runs off the page on purpose.
+  // The box everything stands in, for the first view: on the ground, and as
+  // high as what stands in the strip above the depots, which nothing behind
+  // it covers. A peer's line counts only where it starts: it runs off the
+  // page on purpose.
   bounds: THREE.Box3;
   // The buildings, each with userData.shed: what the pointer can ask about.
   sheds: THREE.Object3D[];
@@ -277,7 +281,7 @@ export function draw(l: Layout, kit: Kit): Picture {
   const bounds = new THREE.Box3();
   const sheds: THREE.Object3D[] = [];
   const rails = new Rails();
-  const grow = (x: number, z: number) => bounds.expandByPoint(new THREE.Vector3(x, 0, z));
+  const grow = (x: number, z: number, y = 0) => bounds.expandByPoint(new THREE.Vector3(x, y, z));
 
   for (const b of l.boards) {
     root.add(block(palette.ballast, b.width, -GROUND_Y, b.depth, b.at.x + b.width / 2, GROUND_Y, b.at.z + b.depth / 2));
@@ -325,8 +329,8 @@ export function draw(l: Layout, kit: Kit): Picture {
 
   for (const b of l.boxes) {
     root.add(signalBox(b.at.x, b.at.z));
-    root.add(label(b.name, "crew", b.at.x, 3.4, b.at.z, [0.5, 1]));
-    grow(b.at.x - 2, b.at.z - 2);
+    root.add(label(b.name, "crew", b.at.x, BOX_HEIGHT, b.at.z, [0.5, 1]));
+    grow(b.at.x - 2, b.at.z - 2, BOX_HEIGHT);
     grow(b.at.x + 2, b.at.z + 2);
   }
 
@@ -338,7 +342,7 @@ export function draw(l: Layout, kit: Kit): Picture {
     root.add(block(palette.slate, 0.12, 0.12, 1.2, wire.at.x + x, POLE_HEIGHT - 0.3, wire.at.z));
   }
   root.add(label("hooks", "wire", wire.at.x + 1, POLE_HEIGHT, wire.at.z, [0, 1]));
-  grow(wire.at.x, wire.at.z);
+  grow(wire.at.x, wire.at.z, POLE_HEIGHT);
 
   for (const p of l.peers) {
     // A rail each way: out on the near one, in on the far one.

@@ -65,6 +65,32 @@ describe("a kit whose files are missing", () => {
   });
 });
 
+describe("the box the first view holds", () => {
+  // A dir depot with no flow, as a fresh yard has it: a board and nothing on it.
+  const bare: Yard = { ...yard, depots: [{ name: "papers", kind: "dir" }], flows: [{ depot: "papers", flows: [] }], routes: [], peers: [], beads: [] };
+
+  test("a board with no flow has its whole plot in it, in whatever slot it stands", () => {
+    for (const slot of [0, 4]) {
+      const l = layout(bare, { depots: { papers: slot } });
+      const board = l.boards[0]!;
+      expect(l.tracks).toEqual([]);
+      expect(board.width).toBeGreaterThan(0);
+      expect(board.depth).toBeGreaterThan(0);
+      const { min, max } = draw(l, kit).bounds;
+      expect(min.x).toBeLessThanOrEqual(board.at.x);
+      expect(min.z).toBeLessThanOrEqual(board.at.z);
+      expect(max.x).toBeGreaterThanOrEqual(board.at.x + board.width);
+      expect(max.z).toBeGreaterThanOrEqual(board.at.z + board.depth);
+    }
+  });
+
+  test("it is as high as the signal boxes: their signs are not over the view's edge", () => {
+    const { min, max } = draw(layout(bare), kit).bounds;
+    expect(min.y).toBe(0);
+    expect(max.y).toBeGreaterThanOrEqual(new THREE.Box3().setFromObject(draw(layout(bare), kit).root).max.y);
+  });
+});
+
 describe("the figures of the stock", () => {
   const idle = yard.beads.filter((b) => b.group !== "yardr-builders");
   const work: Bead = { id: "signalbox-w", title: "w", type: "task", stage: "new", depot: "signalbox", group: "yardr-builders", working: true, priority: 2, created_at: "2000-01-01T00:00:00Z" };

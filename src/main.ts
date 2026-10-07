@@ -27,6 +27,9 @@ const ELEVATION = THREE.MathUtils.degToRad(40);
 const DISTANCE = 400;
 // Pixels per unit of ground below which the sheds' names are hidden.
 const FAR = 14;
+// Pixels between the yard and the edge of the first view. A sign stands over
+// its point, so this is more than one is high.
+const MARGIN = 28;
 // Pixels a pointer may move between down and up and still have clicked.
 const SLOP = 5;
 
@@ -193,24 +196,31 @@ async function start() {
     return { w, h };
   };
 
-  // The first view holds the whole yard.
+  // The first view holds the whole yard, the same margin all round, above
+  // what lies over the canvas at the bottom: the note, and the player's bar
+  // when it is shown. Their height is the page's own, so it is asked for.
   const fit = () => {
     const { w, h } = size();
+    const foot = h - Math.min(h, ...[note, bar].filter((e) => !e.hidden).map((e) => e.getBoundingClientRect().top - host.getBoundingClientRect().top));
     camera.updateMatrixWorld();
     const seen = new THREE.Box3();
     const { min, max } = picture.bounds;
     for (const x of [min.x, max.x]) {
-      for (const z of [min.z, max.z]) {
-        seen.expandByPoint(new THREE.Vector3(x, 0, z).applyMatrix4(camera.matrixWorldInverse));
+      for (const y of [min.y, max.y]) {
+        for (const z of [min.z, max.z]) {
+          seen.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(camera.matrixWorldInverse));
+        }
       }
     }
     const extent = seen.getSize(new THREE.Vector3());
     const middle = seen.getCenter(new THREE.Vector3());
-    camera.zoom = Math.min(w / extent.x, h / extent.y) * 0.94;
+    // A window too small for the margins still shows the yard, however small.
+    camera.zoom = Math.min(Math.max(w - 2 * MARGIN, 1) / extent.x, Math.max(h - foot - 2 * MARGIN, 1) / extent.y);
     controls.minZoom = camera.zoom * 0.5;
     controls.maxZoom = 80;
-    // Look at the ground under the middle of what is seen.
-    const eye = new THREE.Vector3(middle.x, middle.y, 0).applyMatrix4(camera.matrixWorld);
+    // Look at the ground under the middle of what is seen, from half the
+    // foot lower: the yard stands in the middle of what is left above it.
+    const eye = new THREE.Vector3(middle.x, middle.y - foot / 2 / camera.zoom, 0).applyMatrix4(camera.matrixWorld);
     const forward = camera.getWorldDirection(new THREE.Vector3());
     const ground = eye.addScaledVector(forward, -eye.y / forward.y);
     controls.target.copy(ground);
@@ -317,7 +327,6 @@ async function start() {
     size();
     stale = true;
   });
-  fit();
 
   const hint = "drag to pan, scroll or pinch to zoom";
   if (first) {
@@ -549,6 +558,8 @@ async function start() {
     window.addEventListener("resize", render);
     note.textContent = `${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`;
   }
+  // Now that the bar and the note are on the page.
+  fit();
   render();
   // For whoever drives the page from outside (a screenshot, a test).
   document.body.dataset.ready = "true";
