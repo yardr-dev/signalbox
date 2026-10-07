@@ -54,6 +54,11 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    must be true of the commit you hand on: commit after it, and you run the
    gate again.
 
+Each command you run starts a new shell, so a variable set in an earlier
+command is empty in a later one, and `rm -rf "$S"/x` there deletes `/x`. Set
+the variable on the line that deletes under it and write it `"${S:?}"`, which
+fails when it is empty: `S=<dir>; rm -rf "${S:?}"/x`.
+
 If you are stuck and the stage offers no outcome for it:
 `yardr bead note <id> "..."`, then `yardr bead hold <id>`; a hold reaches the
 yardmaster's inbox.
