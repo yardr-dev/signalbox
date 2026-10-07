@@ -286,6 +286,12 @@ async function start() {
     if (bead) void open(bead);
     else shut();
   });
+  // The replay controls sit over the yard but outside its canvas. They are
+  // still elsewhere on the page, so a click there closes the card too.
+  document.addEventListener("pointerup", (e) => {
+    const target = e.target;
+    if (target instanceof Node && !host.contains(target) && !side.contains(target)) shut();
+  });
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") shut();
   });
