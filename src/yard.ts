@@ -80,8 +80,8 @@ export interface Bead {
   stage: string;
   depot: string;
   group?: string;
-  // The session working the bead now.
-  session?: string;
+  // Whether a running session is working the bead now.
+  working?: boolean;
   // The train a wagon belongs to.
   train?: string;
   labels?: string[];

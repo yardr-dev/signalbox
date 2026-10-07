@@ -56,7 +56,7 @@ jq -n \
     routes: [$routes[0][] | {stage, type, depot, label, group, priority} | tidy],
     crew: [$crew[0][] | {name, kind: .config.kind, state, status} | tidy],
     peers: [$peers[0][] | {name, send, receive} | tidy],
-    beads: [$beads[0][] | {id, title, type, stage, depot, group, session, train, labels, priority, created_at} | tidy]
+    beads: [$beads[0][] | {id, title, type, stage, depot, group, working: (.session != null), train, labels, priority, created_at} | tidy]
   }' >"$tmp/yard.json"
 
 mv "$tmp/yard.json" "$out"

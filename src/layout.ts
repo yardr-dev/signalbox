@@ -282,7 +282,7 @@ export function layout(yard: Yard): Layout {
             x: x - PLATFORM_LENGTH / 2 + BAY_WIDTH / 2 + n * SHED_PITCH,
             z: z + (siding ? SIDING_SHED_Z : SHED_Z),
           };
-          const crews = people ? [] : standing.filter((b) => b.group === name && b.session !== undefined);
+          const crews = people ? [] : standing.filter((b) => b.group === name && b.working === true);
           const bays: Bay[] = [];
           for (let b = 0; b < (people ? 0 : Math.min(limit, BAYS_DRAWN)); b++) {
             const crew = crews[b];

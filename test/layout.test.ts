@@ -131,7 +131,7 @@ describe("the mapping", () => {
   });
 
   test("a running session is a crew in a bay of its group's shed", () => {
-    const working = yard.beads.filter((b) => b.session !== undefined && yard.groups.find((g) => g.name === b.group)?.runner !== "manual");
+    const working = yard.beads.filter((b) => b.working === true && yard.groups.find((g) => g.name === b.group)?.runner !== "manual");
     const crews = l.sheds.flatMap((s) => s.bays).filter((b) => b.crew !== undefined);
     expect(crews.map((b) => b.crew!.id).sort()).toEqual(working.map((b) => b.id).sort());
   });
