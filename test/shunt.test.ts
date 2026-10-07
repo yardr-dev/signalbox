@@ -438,26 +438,27 @@ describe("any yard, any move", () => {
   const dice = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
   const places = [0, 1, 3, 4].flatMap((p) => [0, 1, 2].map((s) => slot(p, s))).concat([0, 1, 2].map(stub));
 
-  test("the shunter keeps clear of every wagon, and every wagon ends where the state has it", () => {
-    for (let seed = 1; seed <= 25; seed++) {
-      const random = dice(seed);
-      const pick = <T>(of: T[]): T => of[Math.floor(random() * of.length)]!;
-      const free = [...places];
-      const take = () => free.splice(Math.floor(random() * free.length), 1)[0]!;
-      const yard = new Yard(Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`w${i}`, take()])));
-      for (let move = 0; move < 12 && yard.state.size > 0; move++) {
-        // One, two or three orders at a time: the later ones wait.
-        for (let n = 1 + Math.floor(random() * 3); n > 0 && yard.state.size > 0; n--) {
-          const key = pick([...yard.state.keys()]);
-          const from = yard.state.get(key)!;
-          const to = random() < 0.15 ? undefined : take();
-          free.push(from);
-          expect(yard.move({ [key]: to })).toEqual([]);
-        }
-        yard.clear();
-        for (const [key, stop] of yard.state) expect(yard.seen.get(key), `${seed}: ${key}`).toMatchObject(stop.at);
-        expect(yard.seen.size).toBe(yard.state.size);
+  // A test to a seed: each has the timeout to itself, and a failure names its seed.
+  const seeds = Array.from({ length: 25 }, (_, i) => i + 1);
+
+  test.each(seeds)("the shunter keeps clear of every wagon, and every wagon ends where the state has it (seed %i)", (seed) => {
+    const random = dice(seed);
+    const pick = <T>(of: T[]): T => of[Math.floor(random() * of.length)]!;
+    const free = [...places];
+    const take = () => free.splice(Math.floor(random() * free.length), 1)[0]!;
+    const yard = new Yard(Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`w${i}`, take()])));
+    for (let move = 0; move < 12 && yard.state.size > 0; move++) {
+      // One, two or three orders at a time: the later ones wait.
+      for (let n = 1 + Math.floor(random() * 3); n > 0 && yard.state.size > 0; n--) {
+        const key = pick([...yard.state.keys()]);
+        const from = yard.state.get(key)!;
+        const to = random() < 0.15 ? undefined : take();
+        free.push(from);
+        expect(yard.move({ [key]: to })).toEqual([]);
       }
+      yard.clear();
+      for (const [key, stop] of yard.state) expect(yard.seen.get(key), key).toMatchObject(stop.at);
+      expect(yard.seen.size).toBe(yard.state.size);
     }
   });
 });
