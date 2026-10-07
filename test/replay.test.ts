@@ -303,8 +303,9 @@ describe("live", () => {
       expect(STRUCTURE.has(kind), kind).toBe(true);
       expect(at(kind), kind).toBe(true);
     }
-    // A new shed for a group the yard has: the route's event, as the feed gives it.
-    expect(at("route_added", undefined, { group: "yardr-builders", depot: "signalbox", type: "task" })).toBe(true);
+    // A new shed for a group the yard has: the projected event, as the feed gives it.
+    const routeAdded = wire(event("route_added", undefined, { group: "yardr-builders", depot: "signalbox", type: "task" }));
+    expect(outgrown(routeAdded, w)).toBe(true);
     // A bead the cast does not know, when the event brings it in.
     expect(at("created", "signalbox-new")).toBe(true);
     expect(at("advanced", "signalbox-new", { from: "backlog", to: "new" })).toBe(true);
