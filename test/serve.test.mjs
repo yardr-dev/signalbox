@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
 import { BATCH, routes } from "../scripts/serve.mjs";
-import { bead, yardr } from "../scripts/yard.mjs";
+import { bead, snapshot, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
 const root = join(dir, "dist");
@@ -208,6 +208,26 @@ describe("the snapshot", () => {
     const response = await fetch(`${s.url}/api/snapshot`);
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "the yard did not answer" });
+  });
+});
+
+describe("the yard's edges", () => {
+  test("asked of the yard: dep list for every open bead, and each blocks edge once", async () => {
+    const asked = [];
+    const open = Array.from({ length: 20 }, (_, n) => ({ id: `signalbox-${n}`, title: "t", type: "task", stage: "backlog", depot: "signalbox", priority: 2 }));
+    const edge = { from: "signalbox-0", to: "signalbox-1", kind: "blocks", created_at: "2099-01-01T00:00:00Z" };
+    const run = async (...args) => {
+      asked.push(args.join(" "));
+      if (args[0] === "bead") return open;
+      if (args[0] !== "dep") return [];
+      if (args[2] === "signalbox-0") return [edge];
+      if (args[2] === "signalbox-1") return [edge, { from: "signalbox-9", to: "signalbox-1", kind: "discovered-from" }];
+      // A bead with no edge.
+      return args[2] === "signalbox-2" ? null : [];
+    };
+    const { yard } = await snapshot(run);
+    expect(yard.edges).toEqual([{ from: "signalbox-0", to: "signalbox-1" }]);
+    expect(asked.filter((a) => a.startsWith("dep "))).toEqual(open.map((b) => `dep list ${b.id}`));
   });
 });
 

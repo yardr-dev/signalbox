@@ -136,6 +136,25 @@ weathers as the bar is scrubbed forward and is fresh again when it moves.
 The snapshot knows a bead's last advance (`moved_at`) only from the window
 of the log: a bead that moved before it counts from when it was created.
 
+A wagon that waits for another bead shows it. Only a `blocks` edge counts
+(a `parent` is the train's coupling, a `discovered-from` is history), and
+only while its blocker is open: a wagon whose blocker has closed waits for
+nothing, though it may still stand in backlog.
+
+- Both wagons drawn on one board: a chain between them, a thin dark line
+  with a hook at each end, on the platform's edge. It follows the wagons
+  when a shunter moves them.
+- The blocker on another board, or on this one but only counted: a small
+  amber lamp on the wagon that waits, lit and still, until the blocker
+  closes.
+
+Either way the wagon says under the pointer what it waits for ("waits for
+yardr-xyz (aiquokka)": the bead, and the board it is on). The snapshot has
+the edges as `edges` in `yard.json`. yardr lists edges one bead at a time,
+so the snapshot runs `yardr dep list` once for every open bead. The replay
+keeps them from `dep_added` and `dep_removed`, and drops a bead's edges
+when it closes.
+
 ![Mid-replay, on yardr's board: a session at new has stalled, and its builder sits on the platform at its wagon, hat off, back to it, while the hut's sign says 0 of 3 out and three builders stand at its door; a reviewer is at work at review, and the bar names the event](docs/replay.png)
 
 ## Following a yard as it runs

@@ -12,7 +12,7 @@
 // the one thing the snapshot adds is the beads that closed in the window.
 
 import { flowIndex, seats } from "./layout";
-import type { Bead, Yard } from "./yard";
+import type { Bead, Edge, Yard } from "./yard";
 
 export interface YardEvent {
   seq: number;
@@ -20,7 +20,8 @@ export interface YardEvent {
   kind: string;
   bead?: string;
   data?: {
-    // Of an advance.
+    // Of an advance: its stages. Of an edge (dep_added, dep_removed), from
+    // is the bead at its other end: the event's own bead waits for it.
     from?: string;
     to?: string;
     outcome?: string;
@@ -30,7 +31,8 @@ export interface YardEvent {
     depot?: string;
     type?: string;
     peer?: string;
-    // Of a peer message: mail, ping.
+    // Of a peer message: mail, ping. Of an edge: blocks, parent,
+    // discovered-from.
     kind?: string;
     crew?: string;
     // Of a close: merged, a landing. No other reason leaves the yard.
@@ -51,6 +53,10 @@ export interface State {
   // By bead, the session at work on it, where an event named one: an end
   // that names another session is an old one's and ends nothing.
   sessions: Record<string, string>;
+  // The blocks edges between beads that have not closed: who waits for whom.
+  // One whose blocker closed before the window may still be here; it names
+  // no open bead, and nothing is drawn for it.
+  edges: Edge[];
 }
 
 // What the events do not say and the reducer needs: what a bead is, and how
@@ -108,6 +114,8 @@ export const SHOWN = new Set([
   "held",
   "unheld",
   "closed",
+  "dep_added",
+  "dep_removed",
   "peer_message_sent",
   "peer_message_received",
   "hook",
@@ -180,10 +188,11 @@ export function step(state: State, event: YardEvent, w: World): State {
   const here = state.beads.find((b) => b.id === id);
   const others = () => state.beads.filter((b) => b.id !== id);
   const put = (bead: Bead, session?: string): State => ({
+    ...state,
     beads: here ? state.beads.map((b) => (b.id === id ? bead : b)) : [...state.beads, bead],
     sessions: session !== undefined ? { ...state.sessions, [id]: session } : without(state.sessions, id),
   });
-  const gone = (): State => (here ? { beads: others(), sessions: without(state.sessions, id) } : state);
+  const gone = (): State => (here ? { ...state, beads: others(), sessions: without(state.sessions, id) } : state);
   const data = event.data ?? {};
 
   switch (event.kind) {
@@ -225,8 +234,22 @@ export function step(state: State, event: YardEvent, w: World): State {
     case "unheld":
       if (!here || here.hold !== true) return state;
       return put({ ...here, hold: false }, state.sessions[id]);
-    case "closed":
-      return gone();
+    case "closed": {
+      // Nothing waits for a closed bead any more, and it waits for nothing.
+      // Its wagon may have left before: past the buffer it is not closed yet.
+      const left = gone();
+      const edges = left.edges.filter((e) => e.from !== id && e.to !== id);
+      return edges.length === left.edges.length ? left : { ...left, edges };
+    }
+    case "dep_added":
+    case "dep_removed": {
+      // Only a blocks edge is a wait. The event's bead is the one that waits.
+      const from = data.from;
+      if (data.kind !== "blocks" || from === undefined || !w.cast.has(id)) return state;
+      const has = state.edges.some((e) => e.from === from && e.to === id);
+      if (has === (event.kind === "dep_added")) return state;
+      return { ...state, edges: has ? state.edges.filter((e) => e.from !== from || e.to !== id) : [...state.edges, { from, to: id }] };
+    }
     default: {
       if (!here) return state;
       const at = state.sessions[id];
@@ -244,6 +267,22 @@ export function step(state: State, event: YardEvent, w: World): State {
       return put({ ...here, working: false });
     }
   }
+}
+
+// The edges at the window's start, read off the window as the beads are: one
+// the window first adds was not there yet, one it first removes was, and any
+// other is as the snapshot has it.
+function waits(yard: Yard, log: Log): Edge[] {
+  const edges = new Map<string, Edge>((yard.edges ?? []).map((e) => [`${e.from}>${e.to}`, e]));
+  const there = new Map<string, boolean>();
+  for (const { kind, bead, data } of log.events) {
+    if ((kind !== "dep_added" && kind !== "dep_removed") || data?.kind !== "blocks" || data.from === undefined || bead === undefined) continue;
+    const key = `${data.from}>${bead}`;
+    if (there.has(key)) continue;
+    there.set(key, kind === "dep_removed");
+    edges.set(key, { from: data.from, to: bead });
+  }
+  return [...edges].filter(([key]) => there.get(key) ?? true).map(([, e]) => e);
 }
 
 // The yard at the window's start, read off the window: see the top.
@@ -284,7 +323,7 @@ export function opening(yard: Yard, log: Log, w: World = world(yard, log)): Stat
       beads.push(hold ? { ...at, hold } : at);
     }
   }
-  return { beads, sessions: {} };
+  return { beads, sessions: {}, edges: waits(yard, log) };
 }
 
 // The yard after the window's first n events.
@@ -300,6 +339,7 @@ export function line(event: YardEvent): string {
   if (event.bead !== undefined) parts.push(event.bead);
   if (from !== undefined && to !== undefined) parts.push(`${from} -> ${to}${outcome !== undefined ? ` (${outcome})` : ""}`);
   else if (peer !== undefined) parts.push(`${peer}${kind !== undefined ? ` · ${kind}` : ""}`);
+  else if (event.kind.startsWith("dep_") && from !== undefined) parts.push(kind === "blocks" ? `waits for ${from}` : `${kind ?? "edge"} ${from}`);
   else if (event.kind === "claimed" && group !== undefined) parts.push(group);
   else if (event.kind === "hook" && type !== undefined) parts.push(type);
   return parts.join(" · ");

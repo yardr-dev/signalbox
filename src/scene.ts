@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { fault, HAT, lamp, palette, weathering, type Clip, type Kit } from "./kit";
+import { fault, HAT, iron, lamp, palette, weathering, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -17,6 +17,7 @@ import {
   seats,
   SHED_WIDTH,
   SIDING_Z,
+  type Coupling,
   type Layout,
   type Person,
   type Point,
@@ -78,6 +79,19 @@ const PLATFORM_LAMP_Y = 1.7;
 // to its flag's pole and its lamp's.
 const CHOCK_X = 1.46;
 const MARK_X = 1.15;
+// The lamp of a wagon that waits: left of its middle, this far over its roof.
+const WAIT_X = 0.55;
+const WAIT_Y = 0.3;
+// A chain between two wagons: how thick it and its hooks are, and where a
+// hook takes hold of a wagon, from its middle: along it towards the other
+// wagon, and on its side to the other one, or to the platform when both
+// stand on one rail. It lies as low as it is seen there: on the platform's
+// edge, not under it.
+const CHAIN = 0.07;
+const HOOK = 0.2;
+const HOOK_X = 1.2;
+const HOOK_Z = 0.68;
+const CHAIN_Y = PLATFORM_HEIGHT + 0.02;
 
 export interface Picture {
   root: THREE.Group;
@@ -266,6 +280,41 @@ function beacon(light: THREE.Material, x: number, y: number, z: number, height: 
   bulb.position.set(x, y + height + 0.2, z);
   g.add(bulb);
   return g;
+}
+
+// A small lamp on a short post over a wagon's roof, which is this high.
+function lantern(light: THREE.Material, top: number): THREE.Object3D {
+  const g = new THREE.Group();
+  g.add(block(palette.slate, 0.08, top + WAIT_Y, 0.08, -WAIT_X, 0, 0));
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), light);
+  bulb.position.set(-WAIT_X, top + WAIT_Y + 0.12, 0);
+  g.add(bulb);
+  return g;
+}
+
+// A chain: a thin dark line and a hook at each end, laid by lay.
+const link = new THREE.BoxGeometry(1, CHAIN, CHAIN);
+const hook = new THREE.BoxGeometry(HOOK, HOOK, HOOK);
+function chain(): THREE.Object3D {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(link, material(iron)), new THREE.Mesh(hook, material(iron)), new THREE.Mesh(hook, material(iron)));
+  return g;
+}
+
+// Where a chain takes hold of the wagon at from, on its way to the one at to.
+function hold(from: Point, to: Point): Point {
+  return { x: from.x + Math.max(-HOOK_X, Math.min(HOOK_X, to.x - from.x)), z: from.z + (to.z < from.z ? -HOOK_Z : HOOK_Z) };
+}
+
+// Lay a chain between two wagons, where they stand now.
+function lay(chain: THREE.Object3D, one: Point, other: Point) {
+  const [line, ...hooks] = chain.children as [THREE.Object3D, THREE.Object3D, THREE.Object3D];
+  const ends = [hold(one, other), hold(other, one)] as const;
+  const [a, b] = ends;
+  line.position.set((a.x + b.x) / 2, CHAIN_Y + HOOK / 2, (a.z + b.z) / 2);
+  line.scale.x = Math.max(Math.hypot(b.x - a.x, b.z - a.z), 1e-3);
+  line.rotation.y = Math.atan2(a.z - b.z, b.x - a.x);
+  hooks.forEach((h, i) => h.position.set(ends[i]!.x, CHAIN_Y + HOOK / 2, ends[i]!.z));
 }
 
 function signalBox(x: number, z: number): THREE.Object3D {
@@ -488,6 +537,12 @@ export class Stock {
   private readonly light = new THREE.MeshBasicMaterial({ color: lamp.stop });
   private lamps = 0;
   private blink = 0;
+  // The lamps of the wagons that wait: amber, and lit steadily.
+  private readonly amber = new THREE.MeshBasicMaterial({ color: lamp.wait });
+  // The chains, each with the keys of the two wagons it lies between: laid
+  // again whenever either moves.
+  private readonly chains = new THREE.Group();
+  private links: { waits: string; on: string; object: THREE.Object3D }[] = [];
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private layout: Layout;
 
@@ -506,7 +561,7 @@ export class Stock {
     );
     this.lit.position.set(wire.at.x + wire.length / 2, POLE_HEIGHT - 0.17, wire.at.z);
     this.lit.visible = false;
-    this.root.add(this.counts, this.posts, this.lit);
+    this.root.add(this.counts, this.posts, this.chains, this.lit);
     this.show(l, { tween: false });
   }
 
@@ -535,6 +590,8 @@ export class Stock {
       this.land(this.engines.get(track)?.queue.snap() ?? []);
       gave.add(track);
     };
+    const waits = new Map<string, Coupling[]>();
+    for (const c of l.couplings) waits.set(c.waits, [...(waits.get(c.waits) ?? []), c]);
     for (const v of l.vehicles) {
       standing.add(v.key);
       const platform = platforms.get(v.platform);
@@ -582,7 +639,10 @@ export class Stock {
       wagon.track = on;
       wagon.object.userData.bead = v.bead;
       wagon.object.userData.age = v.age;
-      this.mark(wagon, v);
+      const waiting = waits.get(v.key) ?? [];
+      wagon.object.userData.waits = waiting.map(awaits);
+      // A chain says it where there is one: the lamp is for the others.
+      this.mark(wagon, v, waiting.some((c) => !c.chained));
     }
     for (const [key, wagon] of this.wagons) {
       if (standing.has(key)) continue;
@@ -684,6 +744,17 @@ export class Stock {
       this.send(walker, [{ x, z }], { turn: [walker.heading, walker.heading], size: [1, 0], seconds: TWEEN_MIN, last: true }, true);
     }
 
+    this.chains.clear();
+    this.links = l.couplings
+      .filter((c) => c.chained)
+      .map((c) => {
+        const object = chain();
+        object.userData.coupling = c.key;
+        this.chains.add(object);
+        return { waits: c.waits, on: c.on, object };
+      });
+    this.hang();
+
     this.posts.clear();
     for (const post of l.lamps) this.posts.add(beacon(this.light, post.at.x, PLATFORM_HEIGHT, post.at.z, PLATFORM_LAMP_Y));
     this.lamps = l.lamps.length + l.vehicles.filter((v) => v.lamp).length;
@@ -708,12 +779,23 @@ export class Stock {
     this.beat(0);
   }
 
+  // Lay every chain between its two wagons, where they are now: it follows
+  // them behind a shunter. None for a wagon that is not there.
+  private hang() {
+    for (const { waits, on, object } of this.links) {
+      const [a, b] = [waits, on].map((key) => this.wagons.get(key)?.object);
+      object.visible = a !== undefined && b !== undefined && a.visible && b.visible;
+      if (a && b) lay(object, { x: a.position.x, z: a.position.z }, { x: b.position.x, z: b.position.z });
+    }
+  }
+
   // What a wagon wears for what is wrong with its bead: chocks and a flag
-  // for a hold, a lamp for a fault; and for a long wait on a person: dull
-  // paint, rust, then moss on top. Nothing for a wagon that is well.
-  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp" | "weather">) {
-    const marked = `${v.chocked === true}/${v.lamp === true}/${v.weather ?? ""}`;
-    if ((wagon.marked ?? "false/false/") === marked) return;
+  // for a hold, a lamp for a fault; for a long wait on a person: dull
+  // paint, rust, then moss on top; and for a wait on a bead it has no chain
+  // to (waits): a small amber lamp. Nothing for a wagon that is well.
+  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp" | "weather">, waits = false) {
+    const marked = `${v.chocked === true}/${v.lamp === true}/${v.weather ?? ""}/${waits}`;
+    if ((wagon.marked ?? "false/false//false") === marked) return;
     wagon.marked = marked;
     if (wagon.marks) wagon.object.remove(wagon.marks);
     delete wagon.chocks;
@@ -726,6 +808,7 @@ export class Stock {
       wagon.marks.add(wagon.chocks, flag());
     }
     if (v.lamp) wagon.marks.add(beacon(this.light, -MARK_X, 0, 0, LAMP_Y - 0.2));
+    if (waits) wagon.marks.add(lantern(this.amber, wagon.top));
     wagon.object.add(wagon.marks);
   }
 
@@ -1026,6 +1109,7 @@ export class Stock {
       this.drive(engine);
       if (engine.queue.busy) moving = true;
     }
+    this.hang();
     // No chocks under a wagon that rolls, or that a shunter has.
     for (const [key, wagon] of this.wagons) {
       if (wagon.chocks) wagon.chocks.visible = !wagon.move && !this.hauled(key);
@@ -1072,11 +1156,18 @@ export function waited(stage: string, days: number): string {
   return `in ${stage} ${whole < 1 ? "under a day" : whole === 1 ? "1 day" : `${whole} days`}`;
 }
 
+// What a wagon waits for, in words, with the board that is on: "waits for
+// yardr-xyz (aiquokka)".
+export function awaits(c: Coupling): string {
+  return `waits for ${c.on} (${c.depot})`;
+}
+
 // The tip of a wagon, or of the figure that works it or sits by it. age is
-// the days the wagon has waited on a person, where it does.
-export function describe(bead: Bead, crew: boolean, age?: number): string {
+// the days the wagon has waited on a person, where it does; waits is what
+// it waits for, a line for each bead (awaits).
+export function describe(bead: Bead, crew: boolean, age?: number, waits: string[] = []): string {
   const faults = wrong(bead);
   const stands = `${bead.depot} · ${bead.type} · ${bead.stage}${faults !== undefined ? ` · ${faults}` : ""}`;
-  const where = age !== undefined ? `${stands}\n${waited(bead.stage, age)}` : stands;
+  const where = [stands, ...(age !== undefined ? [waited(bead.stage, age)] : []), ...waits].join("\n");
   return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
 }

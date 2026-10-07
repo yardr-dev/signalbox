@@ -12,7 +12,7 @@
 
 import type { Detail } from "./card";
 import type { Log, YardEvent } from "./replay";
-import type { Bead, Yard } from "./yard";
+import type { Bead, Edge, Yard } from "./yard";
 
 // What a command printed: an object of fields nobody has checked yet.
 export type Raw = Record<string, unknown>;
@@ -34,6 +34,9 @@ export interface Lists {
   // The window of the log (events), in any order: none for a caller that did
   // not ask.
   events?: Raw[];
+  // What dep list printed for every open bead, in one list: none for a
+  // caller that did not ask.
+  edges?: Raw[];
 }
 
 // The named fields of a record that are set: yardr leaves out what is unset,
@@ -83,7 +86,18 @@ function moves(events: Raw[]): Map<unknown, string> {
   return out;
 }
 
-// yard.json: the structure of the yard and its open beads.
+// The edges that are a wait: of kind blocks, each once. dep list prints an
+// edge for both of its ends, and a parent is the train's coupling, a
+// discovered-from history: neither is drawn from here.
+function blocks(edges: Raw[]): Edge[] {
+  const out = new Map<string, Edge>();
+  for (const { from, to, kind } of edges) {
+    if (kind === "blocks" && typeof from === "string" && typeof to === "string") out.set(`${from}>${to}`, { from, to });
+  }
+  return [...out.values()];
+}
+
+// yard.json: the structure of the yard, its open beads and what they wait for.
 export function yardOf(lists: Lists, taken_at: string): Yard {
   const fault = faults(lists.sessions ?? []);
   const moved = moves(lists.events ?? []);
@@ -105,6 +119,7 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
     crew: lists.crew.map((c) => pick(c, ["name"], { kind: record(c.config).kind, state: c.state, status: c.status })),
     peers: lists.peers.map((p) => pick(p, ["name", "send", "receive"])),
     beads: lists.beads.map((b) => ({ ...beadOf(b, fault.get(b.id)), ...pick({}, [], { moved_at: moved.get(b.id) }) })),
+    edges: blocks(lists.edges ?? []),
   };
   return yard as unknown as Yard;
 }
@@ -135,9 +150,12 @@ export function cardOf(raw: Raw): Detail {
 }
 
 // The names an event's data may carry, each only as a string. An advance
-// alone keeps from and to: on other kinds they are people and builds.
+// alone keeps from and to, and an edge its from, the bead at its other end:
+// on other kinds they are people and builds.
 const NAMES = ["group", "depot", "type", "peer", "kind", "crew"];
 const OF_ADVANCE = ["from", "to", "outcome"];
+const OF_EDGE = ["from"];
+const MORE: Record<string, string[]> = { advanced: OF_ADVANCE, dep_added: OF_EDGE, dep_removed: OF_EDGE };
 // A close's reason is what somebody wrote, but for the yard's own word for a
 // landing: that one is passed on, and no other.
 const LANDED = "merged";
@@ -148,7 +166,8 @@ const LANDED = "merged";
 export function eventOf(raw: Raw, alias: (session: string) => string): YardEvent {
   const from = record(raw.data);
   const data: Raw = {};
-  for (const key of raw.kind === "advanced" ? [...NAMES, ...OF_ADVANCE] : NAMES) {
+  const more = typeof raw.kind === "string" && Object.hasOwn(MORE, raw.kind) ? MORE[raw.kind]! : [];
+  for (const key of [...NAMES, ...more]) {
     if (typeof from[key] === "string") data[key] = from[key];
   }
   if (typeof from.session === "string") data.session = alias(from.session);

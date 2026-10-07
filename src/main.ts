@@ -138,14 +138,16 @@ async function start() {
   // The structure stands through a replay; only the beads change. Live, a
   // new snapshot may bring another structure: see adopt.
   // now is where a replay stands: a wagon's age is as of then.
-  const plan = (beads: Bead[], now?: number) => layout({ ...yard, beads }, slots, now);
-  let picture = draw(plan(yard.beads), kit);
+  // What changes is the beads and what they wait for: a state's, or the
+  // snapshot's own.
+  const plan = (at: Pick<Yard, "beads" | "edges">, now?: number) => layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now);
+  let picture = draw(plan(yard), kit);
   const log = api ? api.log : await events();
   // Live, the window ends when the snapshot was taken, and the page opens
   // there; a replay opens at its start.
   const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
   if (api) first?.follow();
-  const stock = new Stock(plan(first ? first.state.beads : yard.beads, first?.clock), kit, picture.sheds);
+  const stock = new Stock(plan(first ? first.state : yard, first?.clock), kit, picture.sheds);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.grass);
@@ -254,7 +256,7 @@ async function start() {
       tip.style.display = "none";
       return;
     }
-    tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true, hit.userData.age as number | undefined);
+    tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true, hit.userData.age as number | undefined, hit.userData.waits as string[] | undefined);
     tip.style.display = "block";
     tip.style.left = `${Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
     tip.style.top = `${Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
@@ -341,7 +343,7 @@ async function start() {
     // then, so the clock is kept to show them again as it runs on.
     let aged = player.clock;
     const present = (how: Show) => {
-      stock.show(plan(player.state.beads, player.clock), how);
+      stock.show(plan(player.state, player.clock), how);
       aged = player.clock;
     };
     document.body.classList.add("replay");
@@ -474,7 +476,7 @@ async function start() {
             if (o instanceof CSS2DObject) o.element.remove();
           });
           scene.remove(picture.root);
-          picture = draw(plan(yard.beads), kit);
+          picture = draw(plan(yard), kit);
           scene.add(picture.root);
           stock.house(picture.sheds);
         }

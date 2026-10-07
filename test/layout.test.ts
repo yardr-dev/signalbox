@@ -404,7 +404,7 @@ describe("the mapping", () => {
     // Every session of this yard's crews: both of yardr-builders, each at its wagon.
     expect(l.work.map((w) => w.key).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
     for (const w of l.work) expect(w.at.x).toBe(l.vehicles.find((v) => v.key === w.key)!.at.x);
-    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "lamps", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire", "work"]);
+    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "couplings", "lamps", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire", "work"]);
   });
 
   test("the places taken are the limit less the sessions at work, and the sign's count is the sessions", () => {
@@ -659,5 +659,54 @@ describe("a wagon that waits on a person weathers", () => {
     expect(at("signalbox-held")).toMatchObject({ platform: "signalbox/default/decide", chocked: true });
     expect(at("signalbox-held").weather).toBeUndefined();
     expect(at("signalbox-kept")).toMatchObject({ platform: "signalbox/default/decide", weather: "rusted" });
+  });
+});
+
+describe("a wagon that waits for another bead is coupled to it", () => {
+  const on = (id: string, over: Partial<Bead> = {}) => bead(id, { depot: "signalbox", stage: "backlog", ...over });
+  const couplings = (beads: Bead[], edges: Yard["edges"]) => layout({ ...yard, beads, edges }).couplings;
+
+  test("both wagons on one board: a chain, from the one that waits to its blocker", () => {
+    const beads = [on("signalbox-a", { stage: "new" }), on("signalbox-b")];
+    expect(couplings(beads, [{ from: "signalbox-a", to: "signalbox-b" }])).toEqual([
+      { key: "signalbox-a>signalbox-b", waits: "signalbox-b", on: "signalbox-a", depot: "signalbox", chained: true },
+    ]);
+    // A snapshot without edges, and one with none, has no couplings.
+    expect(layout({ ...yard, beads }).couplings).toEqual([]);
+    expect(couplings(beads, [])).toEqual([]);
+  });
+
+  test("the blocker on another board: no chain, and the coupling names that board for the lamp", () => {
+    const beads = [bead("yardr-x", { depot: "yardr" }), on("signalbox-b")];
+    expect(couplings(beads, [{ from: "yardr-x", to: "signalbox-b" }])).toEqual([
+      { key: "yardr-x>signalbox-b", waits: "signalbox-b", on: "yardr-x", depot: "yardr", chained: false },
+    ]);
+  });
+
+  test("a blocker that has closed is waited for no more, though the wagon still stands in backlog", () => {
+    expect(couplings([on("signalbox-b")], [{ from: "signalbox-a", to: "signalbox-b" }])).toEqual([]);
+  });
+
+  test("a blocker that is only counted at its platform has no wagon for a chain: a lamp", () => {
+    // The oldest three are drawn; the blocker is the youngest of four.
+    const drawn = [1, 2, 3].map((n) => on(`signalbox-o${n}`, { created_at: `2098-01-0${n}T00:00:00Z` }));
+    const beads = [...drawn, on("signalbox-a"), on("signalbox-b", { stage: "new" })];
+    const l = layout({ ...yard, beads, edges: [{ from: "signalbox-a", to: "signalbox-b" }] });
+    expect(l.vehicles.map((v) => v.key)).not.toContain("signalbox-a");
+    expect(l.couplings).toMatchObject([{ waits: "signalbox-b", on: "signalbox-a", chained: false }]);
+    // And a wagon that is not drawn itself has nothing to hang either on.
+    expect(layout({ ...yard, beads, edges: [{ from: "signalbox-b", to: "signalbox-a" }] }).couplings).toEqual([]);
+  });
+
+  test("a wagon that waits for two has a coupling to each", () => {
+    const beads = [on("signalbox-a"), bead("yardr-x", { depot: "yardr" }), on("signalbox-b", { stage: "new" })];
+    const edges = [
+      { from: "signalbox-a", to: "signalbox-b" },
+      { from: "yardr-x", to: "signalbox-b" },
+    ];
+    expect(couplings(beads, edges).map((c) => [c.on, c.chained])).toEqual([
+      ["signalbox-a", true],
+      ["yardr-x", false],
+    ]);
   });
 });

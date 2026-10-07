@@ -24,7 +24,10 @@ export const palette = {
 
 // Lamps and hard hats are outside the six: a hat is what tells a crew from
 // the top of the yard, hi-vis for builders, white for reviewers.
-export const lamp = { clear: 0x3fd46b, stop: 0xe0453a } as const;
+// wait is the amber of a wagon that waits for a bead on another board.
+export const lamp = { clear: 0x3fd46b, stop: 0xe0453a, wait: 0xffb020 } as const;
+// The iron of a chain between a wagon and the one it waits for.
+export const iron = 0x2a2d31;
 export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
 // A lamp that flashes is dark between, and a wheel chock is its own orange.
 export const fault = { dark: 0x4a1512, chock: 0xf28c1d } as const;

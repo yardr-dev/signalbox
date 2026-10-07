@@ -46,6 +46,24 @@ function said(stdout) {
   }
 }
 
+// How many dep list commands run at a time.
+const AT_ONCE = 8;
+
+// The edges that touch the open beads. yardr has no listing of a yard's
+// edges: dep list takes one bead. So this is a command for every open bead,
+// a few at a time, on every snapshot: a yard of n open beads starts n
+// processes for it. An edge between two open beads comes back twice
+// (src/project.ts keeps it once).
+async function edges(run, beads) {
+  const out = [];
+  for (let i = 0; i < beads.length; i += AT_ONCE) {
+    const some = await Promise.all(beads.slice(i, i + AT_ONCE).map((b) => run("dep", "list", b.id)));
+    // A bead with no edge may print null for its list.
+    out.push(...some.flatMap((printed) => printed ?? []));
+  }
+  return out;
+}
+
 const now = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
 // The yard now and the window of its log: yard.json and events.json.
@@ -67,9 +85,10 @@ export async function snapshot(run, window = WINDOW) {
     run("session", "list", "-a", "--all"),
   ]);
   const flows = await Promise.all(depots.map(async ({ name }) => ({ depot: name, flows: await run("flow", "show", name) })));
+  const waits = await edges(run, beads);
   const taken_at = now();
   return {
-    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads, sessions, events }, taken_at),
+    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads, sessions, events, edges: waits }, taken_at),
     log: logOf(taken_at, bySeq(events), all, alias),
   };
 }

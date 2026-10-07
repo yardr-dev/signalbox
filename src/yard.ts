@@ -14,6 +14,9 @@ export interface Yard {
   peers: Peer[];
   // The open beads.
   beads: Bead[];
+  // The blocks edges that touch an open bead. A snapshot taken before the
+  // page drew them has none.
+  edges?: Edge[];
 }
 
 export interface Depot {
@@ -96,6 +99,14 @@ export interface Bead {
   // When it last moved to another stage, where that is known: a bead that
   // never moved, or moved before the window of the log, has none.
   moved_at?: string;
+}
+
+// A blocks edge between two beads: from must close before to is ready, so to
+// waits for from. An edge stays when its blocker has closed: a bead waits
+// only for one that is still open.
+export interface Edge {
+  from: string;
+  to: string;
 }
 
 // A fault on a bead. Its kind is how the bead's session ended when that was

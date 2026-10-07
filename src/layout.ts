@@ -256,6 +256,23 @@ export interface Vehicle {
   weather?: Weather;
 }
 
+// A wagon that waits for another bead: a blocks edge whose blocker is open.
+// A blocker that has closed is waited for no more, and a wagon that is not
+// drawn has nothing to hang a coupling on.
+export interface Coupling {
+  // `${on}>${waits}`.
+  key: string;
+  // The wagon that waits, by its vehicle's key, and the bead it waits for.
+  waits: string;
+  on: string;
+  // The blocker's depot: the board it is on.
+  depot: string;
+  // The blocker's wagon is drawn on the same board: a chain on the ground
+  // between the two, and on is its vehicle's key. Otherwise (another board,
+  // or only counted on this one) a lamp on the wagon that waits.
+  chained: boolean;
+}
+
 // A lamp on a platform, flashing red: a bead that sits there has no route.
 export interface Lamp {
   key: string;
@@ -294,6 +311,7 @@ export interface Layout {
   sheds: Shed[];
   work: Work[];
   vehicles: Vehicle[];
+  couplings: Coupling[];
   counts: Count[];
   lamps: Lamp[];
   boxes: SignalBox[];
@@ -425,6 +443,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
     sheds: [],
     work: [],
     vehicles: [],
+    couplings: [],
     counts: [],
     lamps: [],
     boxes: [],
@@ -632,6 +651,18 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
       depth: BOARD_HEAD + tracks * FLOW_PITCH,
     });
   });
+
+  // What waits for what, in the order of the edges. A board is a depot's, and
+  // a wagon is on the board of the platform it stands at.
+  const board = new Map(out.platforms.map((p) => [p.key, p.depot]));
+  const stood = new Map(out.vehicles.map((v) => [v.key, board.get(v.platform)]));
+  const beads = new Map(yard.beads.map((b) => [b.id, b]));
+  for (const { from, to } of yard.edges ?? []) {
+    const blocker = beads.get(from);
+    if (blocker === undefined || !stood.has(to)) continue;
+    const chained = stood.has(from) && stood.get(from) === stood.get(to);
+    out.couplings.push({ key: `${from}>${to}`, waits: to, on: from, depot: blocker.depot, chained });
+  }
 
   // A crew has one building on a board: at the platform of the lowest slots
   // there, so what is added to the board later takes it nowhere else. A group

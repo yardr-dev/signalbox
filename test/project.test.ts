@@ -37,6 +37,7 @@ describe("the projection", () => {
         { id: "signalbox-a", title: "a", type: "task", stage: "new", depot: "signalbox", working: true, priority: 2, created_at: "2099-01-01T00:00:00Z" },
         { id: "signalbox-b", title: "b", type: "task", stage: "backlog", depot: "signalbox", working: false, priority: 2, created_at: "2099-01-01T00:00:00Z" },
       ],
+      edges: [],
     });
     expect(JSON.stringify(yard)).not.toMatch(/secret|4wbdbdwypgzzjr5vgfwr/);
   });
@@ -87,6 +88,25 @@ describe("the projection", () => {
     expect(JSON.stringify(yard)).not.toMatch(/secret|4wbdbdwypgzzjr5vgfwr/);
   });
 
+  test("the edges are the blocks ones, each once, as its two ends", () => {
+    const edge = (from: unknown, to: unknown, kind: string): Raw => ({ from, to, kind, created_at: "2099-01-01T00:00:00Z", actor: SECRET });
+    const edges = [
+      edge("signalbox-a", "signalbox-b", "blocks"),
+      // dep list prints an edge for both of its ends.
+      edge("signalbox-a", "signalbox-b", "blocks"),
+      edge("signalbox-b", "signalbox-a", "discovered-from"),
+      edge("signalbox-t", "signalbox-a", "parent"),
+      edge("yardr-x", "signalbox-a", "blocks"),
+      edge({ path: SECRET }, "signalbox-a", "blocks"),
+    ];
+    const yard = yardOf({ ...lists, edges }, "2099-01-01T00:00:00Z");
+    expect(yard.edges).toEqual([
+      { from: "signalbox-a", to: "signalbox-b" },
+      { from: "yardr-x", to: "signalbox-a" },
+    ]);
+    expect(JSON.stringify(yard)).not.toMatch(/secret/);
+  });
+
   test("an event keeps its number, time, kind and bead, and a few names of its data", () => {
     const started: Raw = {
       seq: 7,
@@ -104,6 +124,16 @@ describe("the projection", () => {
       to: "review",
       outcome: "done",
     });
+    // An edge keeps the bead at its other end and its kind.
+    for (const kind of ["dep_added", "dep_removed"]) {
+      expect(eventOf({ seq: 8, at: "t", kind, bead: "signalbox-b", actor: "yardmaster", data: { from: "signalbox-a", kind: "blocks", to: SECRET, note: SECRET } }, alias)).toEqual({
+        seq: 8,
+        at: "t",
+        kind,
+        bead: "signalbox-b",
+        data: { kind: "blocks", from: "signalbox-a" },
+      });
+    }
     // A close says that it was a landing, in the yard's word for one; what somebody wrote as the reason stays.
     expect(eventOf({ seq: 8, at: "t", kind: "closed", bead: "signalbox-a", data: { reason: "merged", deliveries: [SECRET] } }, alias).data).toEqual({ reason: "merged" });
     expect(eventOf({ seq: 8, at: "t", kind: "closed", bead: "signalbox-a", data: { reason: SECRET } }, alias)).toEqual({ seq: 8, at: "t", kind: "closed", bead: "signalbox-a" });
