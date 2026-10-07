@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import window from "../public/events.json";
-import { cueOf, cues, Sound, type Store } from "../src/sound";
+import { clankCue, cueOf, cues, Sound, type Store } from "../src/sound";
 import type { Log, YardEvent } from "../src/replay";
 
 const log = window as Log;
@@ -37,6 +37,12 @@ describe("the cue of an event", () => {
     expect(cues([event("hook"), event("session_stalled"), landing, landing, event("session_prompt_gave_up")])).toEqual(["bell", "whistle"]);
     expect(cues([event("hook"), event("claimed")])).toEqual([]);
     expect(cues([])).toEqual([]);
+  });
+
+  test("a shunter settling after pause is silent; a coupling during playback clanks", () => {
+    expect(clankCue(false, 1)).toBeUndefined();
+    expect(clankCue(true, 0)).toBeUndefined();
+    expect(clankCue(true, 1)).toBe("clank");
   });
 
   test("the committed window has landings to whistle at, and a stall to ring for", () => {

@@ -13,7 +13,7 @@ import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
 import { describe, draw, house, Stock } from "./scene";
-import { cues, Sound } from "./sound";
+import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots } from "./layout";
@@ -516,7 +516,8 @@ async function start() {
       run(dt);
       const moving = stock.tick(dt);
       // A shunter took wagons on or let go of them in this frame.
-      if (playing && stock.coupled > 0) sound.play("clank");
+      const clank = clankCue(playing, stock.coupled);
+      if (clank) sound.play(clank);
       stock.coupled = 0;
       if (moving || stale) {
         stale = false;

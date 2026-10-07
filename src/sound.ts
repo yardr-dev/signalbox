@@ -11,6 +11,12 @@ import type { YardEvent } from "./replay";
 
 export type Cue = "whistle" | "bell" | "clank";
 
+// A shunter may finish an animation after the player was paused. Its clank
+// is heard only when that frame belongs to playback.
+export function clankCue(playing: boolean, couplings: number): Cue | undefined {
+  return playing && couplings > 0 ? "clank" : undefined;
+}
+
 // The kinds that say a session does not get on by itself any more.
 const STUCK = new Set(["session_stalled", "session_prompt_gave_up"]);
 
