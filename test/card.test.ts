@@ -74,11 +74,11 @@ describe("the card", () => {
     expect(brief({ ...bead, working: false, fault: { kind: "failed", at } }, when, ASKING).facts).toEqual(card({ bead: { ...bead, working: false, fault: { kind: "failed", at } }, notes: [] }, when).facts);
   });
 
-  test("the yard's answer takes the fault the page shows, which the log alone may know", () => {
+  test("the yard's answer agrees with the fault the page shows, including on a replay", () => {
     const at = "2099-01-02T00:48:00Z";
     const answer: Detail = { bead: { ...bead, working: false, status: "open", fault: { kind: "died", at } }, notes: [] };
-    // Nothing on the wagon: the answer as it is.
-    expect(agreed(answer, bead)).toBe(answer);
+    // On a replay, the answer may know of a later session fault the page does not show.
+    expect(agreed(answer, bead).bead.fault).toBeUndefined();
     const shown = { ...bead, fault: { kind: "move_refused", at } };
     expect(agreed({ ...answer, bead: { ...bead, status: "open" } }, shown).bead).toEqual({ ...bead, status: "open", fault: shown.fault });
     expect(agreed(answer, shown).bead.fault).toEqual(shown.fault);

@@ -85,12 +85,13 @@ export function card(detail: Detail, when: When): Card {
   };
 }
 
-// The yard's answer with the fault the page shows on the bead, where it shows
-// one. The answer's fault is how the bead's last session ended; a stall, a
-// refused move or a stranded bead is in the log alone, which the page has
-// followed and the answer has not: the card names what the wagon wears.
+// The yard's answer with the fault the page shows on the bead. The answer's
+// fault is how the bead's last session ended; a stall, a refused move or a
+// stranded bead is in the log alone, which the page has followed and the
+// answer has not. On a replay, no fault can also be the page's answer.
 export function agreed(detail: Detail, shown: Bead): Detail {
-  return shown.fault === undefined ? detail : { ...detail, bead: { ...detail.bead, fault: shown.fault } };
+  const { fault: _answerFault, ...bead } = detail.bead;
+  return { ...detail, bead: { ...bead, ...(shown.fault === undefined ? {} : { fault: shown.fault }) } };
 }
 
 // The card of a bead as the snapshot has it, and why it has no more.
