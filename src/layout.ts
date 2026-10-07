@@ -44,19 +44,21 @@ export const SIDING_SHED_Z = -6;
 export const RETURN_Z = -1.3;
 
 // A group's building stands on a plot this wide from its platform's left
-// end, the next one a pitch on, so two fit beside one platform. A crew's has
-// its door on the right, down the line: the yard is seen from below, and a
-// door to the platform would be behind the building, its crew with it. The
-// crew stand idle before the door in rows of three out from it, a place for
-// each session the group may run.
+// end, the next one a pitch on, so two fit beside one platform. Its door is
+// on the platform's side. The yard is seen from below and from the right, so
+// that side is the building's back and what stands before the door is behind
+// it: a crew stand idle in a row from the door's corner down the line, on
+// the door's side, where the building hides no one. Three to a row, a place
+// for each session the group may run; a further row stands behind the last,
+// away from the platform.
 export const SHED_PITCH = 5;
 export const SHED_WIDTH = 2.5;
 export const PLACE_FILES = 3;
 export const PLACE_PITCH = 0.85;
-// From the door to the first place of a row, and from the building's middle
-// to a row: the first on the platform's side, the second on the other.
+// From the building's right wall to the first place of a row, and from its
+// middle towards the platform to the first row: level with the door.
 export const PLACE_X = 0.55;
-export const PLACE_Z = 0.45;
+export const PLACE_Z = 0.9;
 // From a building's middle towards its platform: the ground the crew walk
 // on, between the buildings and the platforms.
 export const GROUND_Z = 1.1;
@@ -477,7 +479,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         }
 
         // Buildings stand beyond the platform, away from the track; a crew's
-        // places are in rows before its door, the first place nearest it.
+        // places are in rows from its door's corner, the first place nearest.
         const away: 1 | -1 = siding ? -1 : 1;
         const middle = z + (siding ? SIDING_SHED_Z : SHED_Z);
         const ground = middle - away * GROUND_Z;
@@ -493,7 +495,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
               key: `${key}/${name}#${p}`,
               at: {
                 x: at.x + SHED_WIDTH / 2 + PLACE_X + (p % PLACE_FILES) * PLACE_PITCH,
-                z: at.z + away * (Math.floor(p / PLACE_FILES) === 0 ? -PLACE_Z : PLACE_Z + (Math.floor(p / PLACE_FILES) - 1) * PLACE_PITCH),
+                z: at.z - away * (PLACE_Z - Math.floor(p / PLACE_FILES) * PLACE_PITCH),
               },
             });
           }

@@ -282,22 +282,23 @@ describe("the mapping", () => {
     // A station and a works stand at every platform routed to them.
     expect(l.sheds.filter((s) => s.group === "backlog").length).toBeGreaterThan(1);
 
-    // The places: in a row out from the door, on the platform's side of the building's middle.
+    // The places: in a row from the door's corner down the line, on the door's side: the platform's.
     const hut = builders[0]!;
     expect(hut.places.map((p) => p.key)).toEqual([0, 1, 2].map((p) => `${hut.key}#${p}`));
     hut.places.forEach((p, k) => {
       expect(p.at.x).toBeCloseTo(hut.at.x + SHED_WIDTH / 2 + PLACE_X + k * PLACE_PITCH);
       expect(p.at.z).toBeCloseTo(hut.at.z - PLACE_Z);
     });
-    // Beyond three, a second row on the other side; further rows extend away.
+    // Beyond three, a second row behind the first, and so on away from the platform.
     const grown = copy();
     grown.groups.find((g) => g.name === "yardr-builders")!.limit = 8;
     const wide = layout(grown).sheds.find((s) => s.key === hut.key)!;
     expect(wide.limit).toBe(8);
     expect(wide.places.length).toBe(wide.limit);
     expect(wide.places.slice(0, 3)).toEqual(hut.places);
-    expect(wide.places[3]!.at).toEqual({ x: hut.places[0]!.at.x, z: hut.at.z + PLACE_Z });
-    expect(wide.places[6]!.at).toEqual({ x: hut.places[0]!.at.x, z: hut.at.z + PLACE_Z + PLACE_PITCH });
+    expect(wide.places[3]!.at.x).toBe(hut.places[0]!.at.x);
+    expect(wide.places[3]!.at.z).toBeCloseTo(hut.at.z - PLACE_Z + PLACE_PITCH);
+    expect(wide.places[6]!.at.z).toBeCloseTo(hut.at.z - PLACE_Z + 2 * PLACE_PITCH);
     expect(new Set(wide.places.map((p) => `${p.at.x}/${p.at.z}`)).size).toBe(wide.limit);
     // The first platform is the one of the lowest slots, not the first listed.
     const turned = copy();

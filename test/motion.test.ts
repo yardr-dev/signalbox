@@ -196,12 +196,22 @@ describe("a figure's way", () => {
     expect(WALK_MAX).toBe(2);
   });
 
+  test("the replay's speed is the walk's, down to a move's least", () => {
+    expect(walkSeconds(1.5 * WALK_SPEED, 1)).toBe(1.5);
+    expect(walkSeconds(1.5 * WALK_SPEED, 2)).toBe(0.75);
+    expect(walkSeconds(400, 2)).toBe(1);
+    for (const speed of [10, 60, 600]) expect(walkSeconds(400, speed)).toBe(TWEEN_MIN);
+  });
+
   test("the legs keep the pace of the way, up to a run", () => {
     expect(stride(WALK_SPEED, 1)).toBe(1);
     expect(stride(1.5 * WALK_SPEED, 1)).toBe(1.5);
     // A short way in its least second is still a walk, not a slow one.
     expect(stride(0.5, 1)).toBe(1);
     expect(stride(400, WALK_MAX)).toBe(STRIDE_MAX);
+    // A walk the replay made shorter: the legs are as much faster.
+    expect(stride(WALK_SPEED, walkSeconds(WALK_SPEED, 2))).toBe(2);
+    expect(stride(400, walkSeconds(400, 10))).toBeCloseTo((STRIDE_MAX * WALK_MAX) / TWEEN_MIN);
   });
 
   test("it looks the way it goes, and turns the short way round", () => {

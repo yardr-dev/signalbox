@@ -291,18 +291,18 @@ async function start() {
       if (api) player.extend(now());
       if (!player.playing) return;
       const passed = player.advance(dt);
+      // Live, the yard's own pace, whatever speed the bar was left at.
+      const speed = player.live ? 1 : player.speed;
       for (const e of passed) {
         if (e.kind === "hook") stock.flash();
         const peer = e.data?.peer;
-        // Live, the yard's own pace, whatever speed the bar was left at.
-        const speed = player.live ? 1 : player.speed;
         if (peer !== undefined && e.kind === "peer_message_sent") stock.goods(peer, "out", e.data?.kind, speed);
         if (peer !== undefined && e.kind === "peer_message_received") stock.goods(peer, "in", e.data?.kind, speed);
       }
       if (passed.length > 0) {
         // A bead an advance took out of the state went past the buffer.
         const left = new Set(passed.filter((e) => e.kind === "advanced").map((e) => e.bead ?? ""));
-        stock.show(plan(player.state.beads), { tween: true, left });
+        stock.show(plan(player.state.beads), { tween: true, left, speed });
       }
       // Played to the window's end, the replay is at now: it stays there.
       if (api && !player.live && player.clock >= player.to) player.follow();

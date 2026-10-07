@@ -11,11 +11,12 @@ export const TRAIN_SPEED = 14;
 export const TWEEN_MIN = 0.3;
 export const TWEEN_MAX = 1;
 // A figure's pace over the ground, and the least and the most seconds of a
-// walk: the caps of a move, each twice as long, since a person is no train.
+// walk at 1x: a move's longest and twice that, since a person is no train.
+// A faster replay walks faster, down to a move's least.
 export const WALK_SPEED = 5;
 export const WALK_MIN = TWEEN_MAX;
 export const WALK_MAX = 2 * TWEEN_MAX;
-// The fastest the walking clip plays, in times its own pace.
+// The fastest the walking clip plays at 1x, in times its own pace.
 export const STRIDE_MAX = 2.5;
 // How far past the end of its track a wagon rolls on its way out.
 export const RUN_OUT = 9;
@@ -162,17 +163,22 @@ export function walk(from: Person, to: Person): Point[] {
   return way.filter((p, i) => i === 0 || p.x !== way[i - 1]!.x || p.z !== way[i - 1]!.z);
 }
 
-// The seconds a walk of this length takes: a second at a walking pace, and
-// never more than two, however far the hut is from the wagon.
-export function walkSeconds(length: number): number {
-  return Math.min(WALK_MAX, Math.max(WALK_MIN, length / WALK_SPEED));
+// The seconds a walk of this length takes, at a speed of the replay: at 1x a
+// second at a walking pace, and never more than two, however far the hut is
+// from the wagon. The replay's clock is the walk's: at 10x it is a tenth of
+// that, but never under a move's least, as for a wagon.
+export function walkSeconds(length: number, speed = 1): number {
+  const plain = Math.min(WALK_MAX, Math.max(WALK_MIN, length / WALK_SPEED));
+  return Math.max(TWEEN_MIN, plain / speed);
 }
 
-// How fast the walking clip plays over a way: with the feet at the pace over
-// the ground, as far as legs go. A long way in two seconds is a run, not a
-// blur.
+// How fast the walking clip plays over a way that takes these seconds: at 1x
+// with the feet at the pace over the ground, as far as legs go (a long way
+// in two seconds is a run, not a blur), and as much faster as the replay
+// made the walk shorter.
 export function stride(length: number, seconds: number): number {
-  return Math.min(STRIDE_MAX, Math.max(1, length / seconds / WALK_SPEED));
+  const plain = walkSeconds(length);
+  return Math.min(STRIDE_MAX, Math.max(1, length / plain / WALK_SPEED)) * (plain / seconds);
 }
 
 // The way a thing looks that goes from a to b, as scene.ts turns a model: 0

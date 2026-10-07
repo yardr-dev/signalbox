@@ -158,12 +158,12 @@ function signal(x: number, z: number): THREE.Object3D {
   return post;
 }
 
-// A group's building, of its kind, in the middle of its plot. A crew's door
-// looks down the line, at its crew; a station's and a works' at the platform.
+// A group's building, of its kind, in the middle of its plot, its door to the
+// platform.
 function shed(s: Shed, kit: Kit): THREE.Object3D {
   const object = kit.make(s.kind);
   // The kit hands it out with its door to -z: where a track's own side is.
-  object.rotation.y = s.places.length > 0 ? -Math.PI / 2 : s.away < 0 ? Math.PI : 0;
+  object.rotation.y = s.away < 0 ? Math.PI : 0;
   // Centred by its walls, whatever stands out from them.
   const middle = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
   object.position.set(s.at.x - middle.x, 0, s.at.z - middle.z);
@@ -331,6 +331,8 @@ export interface Show {
   tween: boolean;
   // The beads that left for good: they roll out past the buffer.
   left?: ReadonlySet<string>;
+  // The replay's speed: a walk that starts now is that much faster.
+  speed?: number;
 }
 
 // The moving stock. show takes a layout and brings every wagon, figure and
@@ -428,7 +430,7 @@ export class Stock {
         this.root.add(walker.object);
       } else if (walker.person.at.x !== p.at.x || walker.person.at.z !== p.at.z) {
         const way = walk(walker.person, p);
-        const time = walkSeconds(measure(way));
+        const time = walkSeconds(measure(way), how.speed);
         walker.stride = stride(measure(way), time);
         walker.steps = [walker.person, p].filter((q) => q.platform !== undefined).map((q) => ({ at: q.at, gate: q.gate }));
         this.send(walker, way, { seconds: time }, how.tween);
@@ -525,7 +527,8 @@ export class Stock {
       }
       w.playing = now;
     }
-    // The working loop keeps its own pace; only the walk is as fast as its way.
+    // The working loop keeps its own pace at any speed of the replay; only the
+    // walk is as fast as its way.
     next?.setEffectiveTimeScale(now === "walk" ? w.stride : 1);
     mixer.update(Number.isFinite(dt) && !frozen ? dt : 0);
   }

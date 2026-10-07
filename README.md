@@ -46,13 +46,17 @@ group has a building beside a platform it is routed to: people a station, a
 group whose sessions are scripts a works, at each of their platforms. A
 group that runs sessions in panes is a crew, and has one building for all
 its platforms, at the first of them: builders a site hut and yellow hard
-hats, reviewers an office and white ones. The crew stand idle in a row out
-from the door, a place for each session the group may run, and the sign
+hats, reviewers an office and white ones. Every building has its door to
+its platform; a crew stand idle in a row from the door's corner down the
+line, where the building does not hide them from the reader, a place for
+each session the group may run, and the sign
 counts who is out (`yardr-builders · 1 of 3 out`), so an empty place is a
 session at work. When a session starts, the first figure at home walks over
-the ground to the platform its bead stands at (a second or two, however
-far), turns to the wagon and works on it, and says under the pointer which
-bead and group; when the session ends it walks back. A scrub puts everyone
+the ground to the platform its bead stands at (a second or two at 1x,
+however far; a faster replay walks as much faster, down to a wagon's least
+0.3 s), turns to the wagon and works on it at its own pace, whatever the
+replay's, and says under the pointer which bead and group; when the session
+ends it walks back. A scrub puts everyone
 where they were then, at once. With `prefers-reduced-motion` the figures
 stand still where they are, a hand at the wagon. A building says under the
 pointer its group, runner and limit. The yard's crew members stand before
@@ -106,7 +110,7 @@ machine's on a Tailscale net, for a phone on the same net.
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the committed snapshot and its replay.
 
-![The page following this yard, closer in: Live on the bar, two builders before their hut and the third at work on a wagon at signalbox's new](docs/live.png)
+![The page following this yard, closer in: Live on the bar, two builders by the door of their hut and the third at work on a wagon at signalbox's new](docs/live.png)
 
 ## Where things are
 
@@ -151,8 +155,8 @@ of this is there, and the page is the committed snapshot and its replay.
 - `src/player.ts`: the replay's clock and speed, and, live, a window that
   grows at its end. `src/motion.ts`: the way a wagon takes between two
   places, and how long it takes (a second at most, at any speed; a peer's goods four at
-1x and never under two), a figure's way between its place and its wagon, and
-  what it does there.
+1x and never under two), a figure's way between its place and its wagon, how
+  long it takes at a speed of the replay, and what it does there.
 - `src/scene.ts` draws a layout: `draw` what stands still, `Stock` the wagons
   and figures, which it moves from one state to the next, each figure with a
   mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the

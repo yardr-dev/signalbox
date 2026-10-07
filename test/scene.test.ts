@@ -4,8 +4,8 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
 import { loadKit, type Kit } from "../src/kit";
 import { layout, people, PLACE_X, SHED_WIDTH } from "../src/layout";
-import { WALK_MAX } from "../src/motion";
-import { describe as tip, house, sign, Stock } from "../src/scene";
+import { TWEEN_MIN, WALK_MAX } from "../src/motion";
+import { describe as tip, draw, house, sign, Stock } from "../src/scene";
 import type { Bead, Yard } from "../src/yard";
 
 // No file of the kit is there: every model is its box. And no page: a label
@@ -117,6 +117,28 @@ describe("the figures of the stock", () => {
     stock.tick(WALK_MAX);
     home(figure);
     expect(stock.beads).not.toContain(figure);
+  });
+
+  test("the replay's speed is the walk's: at 10x it is there in a move's least, at 1x not yet", () => {
+    for (const [speed, there] of [[1, false], [10, true]] as const) {
+      const stock = new Stock(quiet, kit);
+      const figure = first(stock);
+      stock.show(busy, { tween: true, speed });
+      stock.tick(TWEEN_MIN);
+      expect(figure.position.x === post.at.x && figure.position.z === post.at.z, `${speed}x`).toBe(there);
+    }
+  });
+
+  test("a building's door is to its platform, and no one of its crew stands behind it", () => {
+    const sheds = draw(quiet, kit).sheds;
+    for (const object of sheds) {
+      const s = object.userData.shed as (typeof quiet.sheds)[number];
+      // The kit's door looks to -z: up the page, where a main line's platform is.
+      expect(object.rotation.y, s.key).toBe(s.away > 0 ? 0 : Math.PI);
+      const wall = new THREE.Box3().setFromObject(object).max.x;
+      for (const p of s.places) expect(p.at.x, p.key).toBeGreaterThan(wall);
+    }
+    expect(sheds.some((o) => (o.userData.shed as (typeof quiet.sheds)[number]).places.length > 0)).toBe(true);
   });
 
   test("a scrub snaps: at the wagon at once, and at home at once", () => {
