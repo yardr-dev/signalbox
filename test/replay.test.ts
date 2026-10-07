@@ -297,12 +297,14 @@ describe("live", () => {
   });
 
   test("what a snapshot does not hold asks for a new one", () => {
-    const at = (kind: string, id?: string, data?: YardEvent["data"]) => outgrown(event(kind, id, data), one, w);
+    const at = (kind: string, id?: string, data?: YardEvent["data"]) => outgrown(event(kind, id, data), w);
     // The kinds yardr logs for a change of structure (internal/store).
-    for (const kind of ["depot_updated", "depot_removed", "flow_set", "flow_removed", "peer_added", "peer_removed", "peer_renamed", "crew_defined", "pack_applied"]) {
+    for (const kind of ["depot_updated", "depot_removed", "flow_set", "flow_removed", "group_set", "group_removed", "route_added", "route_removed", "peer_added", "peer_removed", "peer_renamed", "crew_defined", "pack_applied"]) {
       expect(STRUCTURE.has(kind), kind).toBe(true);
       expect(at(kind), kind).toBe(true);
     }
+    // A new shed for a group the yard has: the route's event, as the feed gives it.
+    expect(at("route_added", undefined, { group: "yardr-builders", depot: "signalbox", type: "task" })).toBe(true);
     // A bead the cast does not know, when the event brings it in.
     expect(at("created", "signalbox-new")).toBe(true);
     expect(at("advanced", "signalbox-new", { from: "backlog", to: "new" })).toBe(true);
@@ -312,7 +314,8 @@ describe("live", () => {
     expect(at("created", "signalbox-b")).toBe(false);
     expect(at("advanced", "signalbox-a", { from: "new", to: "review" })).toBe(false);
     expect(at("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" })).toBe(false);
-    expect(at("claimed", "signalbox-a", { group: "a-new-group", session: "s1" })).toBe(true);
+    // A group comes by its group_set, never by the claim that names it.
+    expect(at("claimed", "signalbox-a", { group: "a-new-group", session: "s1" })).toBe(false);
     expect(at("hook")).toBe(false);
   });
 });

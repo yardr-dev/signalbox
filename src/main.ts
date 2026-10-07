@@ -392,7 +392,7 @@ async function start() {
         feed.onmessage = (message) => {
           const event = JSON.parse(message.data as string) as YardEvent;
           if (!player.append(event)) return;
-          if (outgrown(event, yard, player.world)) void refresh();
+          if (outgrown(event, player.world)) void refresh();
         };
         // More happened than the feed could say: start again from a snapshot.
         feed.addEventListener("reset", () => void refresh());

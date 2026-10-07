@@ -93,10 +93,10 @@ export const SHOWN = new Set([
   "hook",
 ]);
 
-// The kinds that change what the yard is built of: a depot, a flow, a peer,
-// a crew, or a pack that brings any of them. No event carries the structure
-// itself, so a page that follows the yard takes a new snapshot on these.
-// (yardr logs nothing when a group or a route is added by hand.)
+// The kinds that change what the yard is built of: a depot, a flow, a group,
+// a route, a peer, a crew, or a pack that brings any of them. No event
+// carries the structure itself, so a page that follows the yard takes a new
+// snapshot on these.
 export const STRUCTURE = new Set([
   "depot_updated",
   "depot_removed",
@@ -104,6 +104,10 @@ export const STRUCTURE = new Set([
   "flow_removed",
   "flow_pointer_set",
   "flow_pointer_cleared",
+  "group_set",
+  "group_removed",
+  "route_added",
+  "route_removed",
   "peer_added",
   "peer_removed",
   "peer_renamed",
@@ -113,15 +117,12 @@ export const STRUCTURE = new Set([
 ]);
 
 // Whether an event from the yard's feed names what the snapshot does not
-// hold, so that a new one is due: a change of structure, a bead the cast
-// does not know and the event would bring into the picture, or a group that
-// has no shed yet.
-export function outgrown(event: YardEvent, yard: Yard, w: World): boolean {
+// hold, so that a new one is due: a change of structure, or a bead the cast
+// does not know and the event would bring into the picture.
+export function outgrown(event: YardEvent, w: World): boolean {
   if (STRUCTURE.has(event.kind)) return true;
   const enters = event.kind === "created" || event.kind === "advanced";
-  if (enters && event.bead !== undefined && !w.cast.has(event.bead)) return true;
-  const group = event.kind === "claimed" ? event.data?.group : undefined;
-  return group !== undefined && !yard.groups.some((g) => g.name === group);
+  return enters && event.bead !== undefined && !w.cast.has(event.bead);
 }
 
 // A bead as it stands at a stage with nobody on it.

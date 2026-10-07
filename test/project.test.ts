@@ -60,6 +60,12 @@ describe("the projection", () => {
     });
     // A name that is no string is no name; no data, no key.
     expect(eventOf({ seq: 9, at: "t", kind: "hook", data: { type: { path: SECRET }, peer: 3 } }, alias)).toEqual({ seq: 9, at: "t", kind: "hook" });
+    // A change of structure keeps its kind, by which the page takes a new snapshot, and its names.
+    const route = { route: 12, stage: "review", group: "reviewers", priority: 10, type: "", depot: "signalbox", label: SECRET };
+    expect(eventOf({ seq: 10, at: "t", kind: "route_added", actor: "yard", data: route }, alias)).toEqual({ seq: 10, at: "t", kind: "route_added", data: { group: "reviewers", depot: "signalbox", type: "" } });
+    for (const kind of ["group_set", "group_removed", "route_removed"]) {
+      expect(eventOf({ seq: 11, at: "t", kind, data: { group: "reviewers", runner: SECRET, limit: 2, members: [SECRET], routes: [route] } }, alias)).toEqual({ seq: 11, at: "t", kind, data: { group: "reviewers" } });
+    }
   });
 
   test("the log's beads are the closed ones its window names", () => {
