@@ -1,39 +1,45 @@
-// Draws a layout: the kit's rails, wagons and locomotives, and boxes in the
-// palette for the rest. Nothing here decides where a thing is; layout.ts did.
-// draw is what stands still: the structure, the same through a replay. Stock
-// is what moves: wagons, robot arms and counts, shown again for every state.
+// Draws a layout: the kits' rails, wagons, locomotives, buildings and
+// figures, and boxes in the palette for the rest. Nothing here decides where
+// a thing is; layout.ts did. draw is what stands still: the structure, the
+// same through a replay. Stock is what moves: wagons, figures, counts and
+// the crews' signs, shown again for every state.
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { lamp, palette, type Kit } from "./kit";
+import { lamp, palette, type Clip, type Kit } from "./kit";
 import {
-  BAY_COLUMNS,
-  BAY_DEPTH,
-  BAY_WIDTH,
+  atWork,
   BOARD_X,
   PEER_RAIL_Z,
+  people,
   PLATFORM_LENGTH,
+  SHED_WIDTH,
   SIDING_Z,
   type Layout,
+  type Person,
   type Point,
   type Shed,
 } from "./layout";
 import {
   along,
-  armPose,
   brake,
+  doing,
   ease,
   exit,
   goods,
   goodsSeconds,
   GOODS_STAND,
+  heading,
   headway,
   measure,
   pull,
-  raise,
   route,
   seconds,
+  stride,
+  turn,
   TWEEN_MIN,
+  walk,
+  walkSeconds,
   type Stop,
 } from "./motion";
 import type { Bead } from "./yard";
@@ -42,14 +48,16 @@ import type { Bead } from "./yard";
 const GROUND_Y = -0.3;
 const PLATFORM_HEIGHT = 0.45;
 const PLATFORM_WIDTH = 1.4;
-const WALL_HEIGHT = 0.6;
+// A sign is this far from its building's middle, away from the track.
+const SIGN_Z = 1.3;
 const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
-// A robot arm: its base, and the lengths of its two segments and its claw.
-const ARM_BASE = 0.3;
-const ARM_UPPER = 1.5;
-const ARM_FORE = 1;
-const ARM_CLAW = 0.3;
+// A figure steps up onto a platform over this much ground before its edge,
+// turns at this many radians a second, and takes this many seconds to change
+// from one thing it does to the next.
+const STEP = 0.2;
+const TURN = 9;
+const FADE = 0.2;
 // A peer's goods by the kind of the message: the kit's wagon and its size. A
 // ping is the lighter wagon: the kit has no empty flat, so it is the box van
 // small.
@@ -63,6 +71,8 @@ export interface Picture {
   // The box on the ground everything stands in, for the first view. A peer's
   // line counts only where it starts: it runs off the page on purpose.
   bounds: THREE.Box3;
+  // The buildings, each with userData.shed: what the pointer can ask about.
+  sheds: THREE.Object3D[];
 }
 
 const materials = new Map<number, THREE.MeshStandardMaterial>();
@@ -148,29 +158,32 @@ function signal(x: number, z: number): THREE.Object3D {
   return post;
 }
 
-// A group of people: a station building. A group that runs sessions: a
-// shed open above, a stall per bay. Its sessions work at the platform.
-function shed(s: Shed): THREE.Object3D {
-  const g = new THREE.Group();
-  if (s.people) {
-    g.add(block(palette.cream, 2.6, 1.5, 1.4, s.at.x + 0.7, 0, s.at.z));
-    g.add(block(palette.slate, 3, 0.25, 1.8, s.at.x + 0.7, 1.5, s.at.z));
-    return g;
-  }
-  const columns = Math.min(s.bays.length, BAY_COLUMNS);
-  const rows = Math.ceil(s.bays.length / BAY_COLUMNS);
-  if (rows === 0) return g;
-  const width = columns * BAY_WIDTH;
-  const depth = rows * BAY_DEPTH;
-  const cx = s.at.x + (width - BAY_WIDTH) / 2;
-  const cz = s.at.z + (s.away * (depth - BAY_DEPTH)) / 2;
-  g.add(block(palette.slate, width + 0.2, 0.08, depth + 0.2, cx, 0, cz));
-  for (let c = 0; c <= columns; c++) {
-    g.add(block(palette.brick, 0.12, WALL_HEIGHT, depth, s.at.x - BAY_WIDTH / 2 + c * BAY_WIDTH, 0, cz));
-  }
-  // The back wall is the one away from the track.
-  g.add(block(palette.brick, width + 0.12, WALL_HEIGHT, 0.12, cx, 0, cz + (s.away * depth) / 2));
-  return g;
+// A group's building, of its kind, in the middle of its plot. A crew's door
+// looks down the line, at its crew; a station's and a works' at the platform.
+function shed(s: Shed, kit: Kit): THREE.Object3D {
+  const object = kit.make(s.kind);
+  // The kit hands it out with its door to -z: where a track's own side is.
+  object.rotation.y = s.places.length > 0 ? -Math.PI / 2 : s.away < 0 ? Math.PI : 0;
+  // Centred by its walls, whatever stands out from them.
+  const middle = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+  object.position.set(s.at.x - middle.x, 0, s.at.z - middle.z);
+  object.userData.shed = s;
+  return object;
+}
+
+// What a building's sign says. A crew's counts who is out; out is then how
+// many of its sessions are at work.
+export function sign(s: Shed, out = 0): string {
+  if (s.kind === "station") return s.group;
+  return s.kind === "works" ? `${s.group} · ${s.limit}` : `${s.group} · ${out} of ${s.limit} out`;
+}
+
+// Where a building's sign is: on its side away from the track, at the left
+// end of its plot, or under its crew where it has one; a platform's second
+// building has it a line further out, clear of the first's.
+function signAt(s: Shed, n: number): [number, number, number] {
+  const x = s.places.length > 0 ? s.at.x + SHED_WIDTH / 2 : s.at.x - SHED_WIDTH / 2;
+  return [x, 0, s.at.z + s.away * (SIGN_Z + (n % 2) * 1.3)];
 }
 
 function signalBox(x: number, z: number): THREE.Object3D {
@@ -184,6 +197,7 @@ function signalBox(x: number, z: number): THREE.Object3D {
 export function draw(l: Layout, kit: Kit): Picture {
   const root = new THREE.Group();
   const bounds = new THREE.Box3();
+  const sheds: THREE.Object3D[] = [];
   const rails = new Rails();
   const grow = (x: number, z: number) => bounds.expandByPoint(new THREE.Vector3(x, 0, z));
 
@@ -216,16 +230,17 @@ export function draw(l: Layout, kit: Kit): Picture {
     if (p.signal) root.add(signal(p.at.x + PLATFORM_LENGTH / 2 - 0.4, p.at.z));
   }
 
-  // A shed's name is on its side away from the track, clear of its bays; a
-  // platform's second shed has it a line further out, clear of the first's.
+  // A crew's sign changes with who is out: Stock writes it, here.
   const beside = new Map<string, number>();
   for (const s of l.sheds) {
     const n = beside.get(s.platform) ?? 0;
     beside.set(s.platform, n + 1);
-    root.add(shed(s));
-    const text = s.people ? s.group : `${s.group} · ${s.limit}`;
-    const out = BAY_DEPTH / 2 + 0.3 + (n % 2) * 1.3;
-    root.add(label(text, "group", s.at.x - BAY_WIDTH / 2, 0, s.at.z + s.away * out, [0, s.away > 0 ? 0 : 1]));
+    const object = shed(s, kit);
+    root.add(object);
+    sheds.push(object);
+    const at = signAt(s, n);
+    if (s.places.length > 0) object.userData.sign = at;
+    else root.add(label(sign(s), "group", ...at, [0, s.away > 0 ? 0 : 1]));
   }
 
   for (const b of l.boxes) {
@@ -258,7 +273,7 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   root.add(rails.build(kit.make("rail")));
-  return { root, bounds };
+  return { root, bounds, sheds };
 }
 
 // One thing on its way: along a line of points, from one height, turn and
@@ -290,43 +305,25 @@ interface Wagon extends Mover {
   stop: Stop;
 }
 
-// A robot arm, built bending towards +x: the base stands, the upper arm
-// turns at the shoulder, the forearm at the elbow, the claw's two fingers at
-// its end.
-interface Robot {
-  object: THREE.Group;
-  shoulder: THREE.Group;
-  elbow: THREE.Group;
-  fingers: [THREE.Group, THREE.Group];
-  // Whether a session runs on the wagon at its slot, the seconds it has
-  // worked, and how far it is unfolded (motion.ts: armPose).
-  working: boolean;
-  worked: number;
-  raised: number;
+// A figure: it walks from where it stood to where its person stands now,
+// and plays what it does there.
+interface Walker extends Mover {
+  person: Person;
+  // The way it looks, as a turn about the vertical.
+  heading: number;
+  // The platforms' edges it steps onto or off on its way: where it stands on
+  // one, and the gate behind it.
+  steps: { at: Point; gate: Point }[];
+  mixer?: THREE.AnimationMixer;
+  actions: Partial<Record<Clip, THREE.AnimationAction>>;
+  playing?: Clip;
+  // How fast its walking clip plays on this way.
+  stride: number;
 }
 
-function robot(): Robot {
-  const object = new THREE.Group();
-  object.add(block(palette.slate, 0.6, ARM_BASE, 0.6, 0, 0, 0));
-  const shoulder = new THREE.Group();
-  shoulder.position.y = ARM_BASE;
-  shoulder.add(block(palette.slate, 0.34, 0.34, 0.38, 0, -0.17, 0));
-  shoulder.add(block(palette.brick, 0.24, ARM_UPPER, 0.24, 0, 0, 0));
-  const elbow = new THREE.Group();
-  elbow.position.y = ARM_UPPER;
-  elbow.add(block(palette.slate, 0.3, 0.3, 0.32, 0, -0.15, 0));
-  elbow.add(block(palette.brick, 0.18, ARM_FORE, 0.18, 0, 0, 0));
-  const finger = (side: number) => {
-    const f = new THREE.Group();
-    f.position.set(side * 0.06, ARM_FORE, 0);
-    f.add(block(palette.cream, 0.07, ARM_CLAW, 0.16, 0, 0, 0));
-    elbow.add(f);
-    return f;
-  };
-  shoulder.add(elbow);
-  object.add(shoulder);
-  object.userData.arm = true;
-  return { object, shoulder, elbow, fingers: [finger(-1), finger(1)], working: false, worked: 0, raised: 0 };
+// The turn that makes a figure look up or down the page.
+function facing(faces: 1 | -1): number {
+  return (-faces * Math.PI) / 2;
 }
 
 export interface Show {
@@ -336,7 +333,7 @@ export interface Show {
   left?: ReadonlySet<string>;
 }
 
-// The moving stock. show takes a layout and brings every wagon, arm and
+// The moving stock. show takes a layout and brings every wagon, figure and
 // count to where it has them; tick moves what is on its way or at work.
 export class Stock {
   readonly root = new THREE.Group();
@@ -344,9 +341,11 @@ export class Stock {
   beads: THREE.Object3D[] = [];
 
   private readonly wagons = new Map<string, Wagon>();
-  private readonly arms = new Map<string, Robot>();
-  // No motion asked for, or a picture that does not move: an arm at work
-  // stands bent over its wagon.
+  private readonly walkers = new Map<string, Walker>();
+  // The figures as the last layout had them: who is at which bead.
+  private crew: Person[] = [];
+  // No motion asked for, or a picture that does not move: a figure stands
+  // in the middle of what it does, at work with its hand at the wagon.
   private calm = false;
   private readonly leaving = new Set<Mover>();
   // The seconds ticked so far, and when the last goods started, by line and
@@ -357,9 +356,11 @@ export class Stock {
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private layout: Layout;
 
+  // sheds are the buildings draw made: a crew's carries where its sign is.
   constructor(
     l: Layout,
     private readonly kit: Kit,
+    private sheds: THREE.Object3D[] = [],
   ) {
     this.layout = l;
     // The wire, lit: over the slate one, and seen only after a hook.
@@ -415,52 +416,118 @@ export class Stock {
       this.send(wagon, out ? exit(wagon.stop) : [wagon.stop.at], { size: [1, 0], last: true, ...(out ? {} : { seconds: TWEEN_MIN }) }, how.tween);
     }
 
+    // A scrub knows nothing of who stood where: the first at home goes out.
+    this.crew = people(l, how.tween ? this.crew : []);
     const placed = new Set<string>();
-    for (const a of l.arms) {
-      placed.add(a.key);
-      let arm = this.arms.get(a.key);
-      if (!arm) {
-        arm = robot();
-        this.arms.set(a.key, arm);
-        this.root.add(arm.object);
+    for (const p of this.crew) {
+      placed.add(p.key);
+      let walker = this.walkers.get(p.key);
+      if (!walker) {
+        walker = this.figure(p);
+        this.walkers.set(p.key, walker);
+        this.root.add(walker.object);
+      } else if (walker.person.at.x !== p.at.x || walker.person.at.z !== p.at.z) {
+        const way = walk(walker.person, p);
+        const time = walkSeconds(measure(way));
+        walker.stride = stride(measure(way), time);
+        walker.steps = [walker.person, p].filter((q) => q.platform !== undefined).map((q) => ({ at: q.at, gate: q.gate }));
+        this.send(walker, way, { seconds: time }, how.tween);
       }
-      arm.object.position.set(a.at.x, PLATFORM_HEIGHT, a.at.z);
-      // Its +x is the way to its wagon.
-      arm.object.rotation.y = (-a.reach * Math.PI) / 2;
-      const working = a.bead !== undefined;
-      // A session's work starts with the reach.
-      if (working && !arm.working) arm.worked = 0;
-      arm.working = working;
-      if (!how.tween) arm.raised = working ? 1 : 0;
-      // Only an arm at work has a bead to name.
-      arm.object.userData.bead = a.bead;
-      this.bend(arm);
+      walker.person = p;
+      // Only a figure at work has a bead to name.
+      walker.object.userData.bead = p.bead;
+      this.stand(walker, how.tween ? 0 : Infinity);
     }
-    // An arm goes only with its platform, or with its group's limit.
-    for (const [key, arm] of this.arms) {
+    // A figure goes only with its place: its group's building, or its limit.
+    for (const [key, walker] of this.walkers) {
       if (placed.has(key)) continue;
-      this.arms.delete(key);
-      this.root.remove(arm.object);
+      this.walkers.delete(key);
+      this.root.remove(walker.object);
     }
 
     this.counts.clear();
     for (const c of l.counts) {
       this.counts.add(label(`+${c.more}${c.of === "beads" ? "" : ` ${c.of}`}`, "count", c.at.x, 1.6, c.at.z, [1, 0.5]));
     }
-    const working = [...this.arms.values()].filter((a) => a.working);
+    for (const { userData } of this.sheds) {
+      const s = userData.shed as Shed;
+      const at = userData.sign as [number, number, number] | undefined;
+      if (at) this.counts.add(label(sign(s, atWork(l, s.group)), "group", ...at, [0, s.away > 0 ? 0 : 1]));
+    }
+    const working = [...this.walkers.values()].filter((w) => w.person.bead !== undefined);
     this.beads = [...this.wagons.values(), ...working].map((m) => m.object);
   }
 
   set still(still: boolean) {
     this.calm = still;
-    for (const arm of this.arms.values()) this.bend(arm);
+    for (const walker of this.walkers.values()) this.stand(walker, 0);
   }
 
-  private bend(arm: Robot) {
-    const pose = armPose(arm.worked, arm.raised, this.calm);
-    arm.shoulder.rotation.z = -pose.shoulder;
-    arm.elbow.rotation.z = -pose.elbow;
-    arm.fingers.forEach((f, i) => (f.rotation.z = (i === 0 ? 1 : -1) * (0.1 + 0.5 * pose.claw)));
+  // The buildings of a picture drawn again: the next show writes their signs.
+  house(sheds: THREE.Object3D[]) {
+    this.sheds = sheds;
+  }
+
+  // A figure for a person, standing where the person does.
+  private figure(p: Person): Walker {
+    const { object, clips } = this.kit.figure(p.outfit, hash(p.key));
+    const walker: Walker = { object, size: 1, person: p, heading: facing(p.faces), steps: [], actions: {}, stride: 1 };
+    if (Object.keys(clips).length > 0) {
+      walker.mixer = new THREE.AnimationMixer(object);
+      for (const [name, clip] of Object.entries(clips) as [Clip, THREE.AnimationClip][]) walker.actions[name] = walker.mixer.clipAction(clip);
+    }
+    object.position.set(p.at.x, 0, p.at.z);
+    object.userData.crew = true;
+    return walker;
+  }
+
+  // Bring a figure on by a time: along its way, onto or off a platform,
+  // turned the way it goes or to what it works at, and on in what it does.
+  // No time (Infinity) is where and how it ends up, at once.
+  private stand(w: Walker, dt: number) {
+    const at = w.object.position;
+    const was = { x: at.x, z: at.z };
+    if (w.move) {
+      w.move.elapsed += dt;
+      this.pose(w);
+    }
+    const moving = w.move !== undefined;
+    const gone = Math.hypot(at.x - was.x, at.z - was.z);
+    const steps = moving ? w.steps : w.person.platform !== undefined ? [w.person] : [];
+    // Up at a platform's edge, down again by the gate behind it.
+    at.y = Math.max(
+      0,
+      ...steps.map((s) => {
+        const far = Math.hypot(s.gate.x - s.at.x, s.gate.z - s.at.z);
+        return PLATFORM_HEIGHT * Math.min(1, (far - Math.hypot(at.x - s.at.x, at.z - s.at.z)) / STEP);
+      }),
+    );
+    const towards = !moving ? facing(w.person.faces) : gone > 1e-6 ? heading(was, at) : w.heading;
+    w.heading = Number.isFinite(dt) ? turn(w.heading, towards, TURN * dt) : towards;
+    w.object.rotation.y = w.heading;
+
+    const mixer = w.mixer;
+    if (!mixer) return;
+    const now = doing(w.person, moving);
+    const next = w.actions[now];
+    const last = w.playing !== undefined ? w.actions[w.playing] : undefined;
+    // Standing still, a figure stops in the middle of its clip: at work with
+    // its hand at the wagon. A walk moves, as the wagons do.
+    const frozen = this.calm && now !== "walk";
+    if (next && (w.playing !== now || !Number.isFinite(dt) || frozen)) {
+      if (!Number.isFinite(dt) || frozen || !last) {
+        mixer.stopAllAction();
+        next.play();
+        next.time = frozen ? next.getClip().duration / 2 : 0;
+      } else {
+        next.reset().play();
+        last.crossFadeTo(next, FADE, false);
+      }
+      w.playing = now;
+    }
+    // The working loop keeps its own pace; only the walk is as fast as its way.
+    next?.setEffectiveTimeScale(now === "walk" ? w.stride : 1);
+    mixer.update(Number.isFinite(dt) && !frozen ? dt : 0);
   }
 
   // Goods on a peer's line: out to the peer past the yard's edge, or in from
@@ -559,14 +626,10 @@ export class Stock {
       this.pose(m);
       moving = true;
     }
-    for (const arm of this.arms.values()) {
-      const raised = raise(arm.raised, arm.working, dt);
-      // Folded, or standing bent: nothing to move.
-      if (raised === arm.raised && (raised === 0 || this.calm)) continue;
-      arm.raised = raised;
-      if (Number.isFinite(dt)) arm.worked += dt;
-      this.bend(arm);
-      moving = true;
+    for (const walker of this.walkers.values()) {
+      this.stand(walker, dt);
+      // A figure with clips is never still, unless it was asked to be.
+      if (walker.move || (walker.mixer && !this.calm)) moving = true;
     }
     if (this.lit.visible) {
       this.lit.material.opacity -= dt / FLASH;
@@ -577,8 +640,13 @@ export class Stock {
   }
 }
 
-// The tip of a wagon, or of the arm that works it.
-export function describe(bead: Bead, arm: boolean): string {
+// The tip of a building: its group, what runs it and how many at once.
+export function house(s: Shed): string {
+  return `${s.group}\n${s.runner === "" ? "no group of this yard" : `${s.runner} · limit ${s.limit}`}`;
+}
+
+// The tip of a wagon, or of the figure that works it.
+export function describe(bead: Bead, crew: boolean): string {
   const where = `${bead.depot} · ${bead.type} · ${bead.stage}${bead.hold === true ? " · held" : ""}`;
-  return arm ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
+  return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
 }

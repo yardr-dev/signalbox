@@ -11,9 +11,9 @@ import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
-import { describe, draw, Stock } from "./scene";
+import { describe, draw, house, Stock } from "./scene";
 import "./style.css";
-import type { Slots } from "./layout";
+import type { Shed, Slots } from "./layout";
 import type { Log, YardEvent } from "./replay";
 import type { Bead, Yard } from "./yard";
 
@@ -107,7 +107,7 @@ async function start() {
   // there; a replay opens at its start.
   const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
   if (api) first?.follow();
-  const stock = new Stock(plan(first ? first.state.beads : yard.beads), kit);
+  const stock = new Stock(plan(first ? first.state.beads : yard.beads), kit, picture.sheds);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.grass);
@@ -190,7 +190,8 @@ async function start() {
     labels.render(scene, camera);
   };
 
-  // A wagon, or the arm at work on it, says under the pointer which bead it is.
+  // A wagon, or the figure at work on it, says under the pointer which bead
+  // it is; a building which group's it is.
   const ray = new THREE.Raycaster();
   const point = (e: PointerEvent) => {
     const box = host.getBoundingClientRect();
@@ -198,13 +199,13 @@ async function start() {
       new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1),
       camera,
     );
-    let hit: THREE.Object3D | null = ray.intersectObjects(stock.beads, true)[0]?.object ?? null;
-    while (hit && !hit.userData.bead) hit = hit.parent;
+    let hit: THREE.Object3D | null = ray.intersectObjects([...stock.beads, ...picture.sheds], true)[0]?.object ?? null;
+    while (hit && !hit.userData.bead && !hit.userData.shed) hit = hit.parent;
     if (!hit) {
       tip.style.display = "none";
       return;
     }
-    tip.textContent = describe(hit.userData.bead as Bead, hit.userData.arm === true);
+    tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true);
     tip.style.display = "block";
     tip.style.left = `${Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
     tip.style.top = `${Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
@@ -215,7 +216,7 @@ async function start() {
 
   // Drawn again on the next frame, and on every frame while anything moves.
   let stale = true;
-  // A reader who asked for less motion sees the arms at work standing bent.
+  // A reader who asked for less motion sees the figures standing, not at it.
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
   stock.still = calm.matches;
   calm.addEventListener("change", () => {
@@ -354,6 +355,7 @@ async function start() {
           scene.remove(picture.root);
           picture = draw(plan(yard.beads), kit);
           scene.add(picture.root);
+          stock.house(picture.sheds);
         }
         stock.show(plan(player.state.beads), { tween: before.live });
         stale = true;

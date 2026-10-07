@@ -1,16 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { PEER_LENGTH, PEER_RAIL_Z, RETURN_Z, SIDING_Z, type Point } from "../src/layout";
+import { PEER_LENGTH, PEER_RAIL_Z, RETURN_Z, SIDING_Z, type Person, type Point } from "../src/layout";
 import {
   along,
-  ARM_BACK,
-  ARM_BENT,
-  ARM_CYCLE,
-  ARM_FOLD,
-  ARM_FOLDED,
-  ARM_LIFTED,
-  ARM_PHASES,
-  armPose,
   brake,
+  doing,
   exit,
   goods,
   GOODS_END,
@@ -19,15 +12,23 @@ import {
   GOODS_SECONDS,
   GOODS_STAND,
   goodsSeconds,
+  heading,
   headway,
   measure,
   pull,
-  raise,
   route,
   RUN_OUT,
   seconds,
+  stride,
+  STRIDE_MAX,
+  turn,
   TWEEN_MAX,
   TWEEN_MIN,
+  walk,
+  WALK_MAX,
+  WALK_MIN,
+  WALK_SPEED,
+  walkSeconds,
   type Stop,
 } from "../src/motion";
 
@@ -164,60 +165,62 @@ describe("a peer's goods", () => {
   });
 });
 
-describe("a robot arm", () => {
-  const close = (a: object, b: object) => {
-    for (const [k, v] of Object.entries(b)) expect((a as Record<string, number>)[k], k).toBeCloseTo(v as number, 9);
-  };
-  const { reach, hold, lift } = ARM_PHASES;
+describe("a figure's way", () => {
+  const place = { x: 4, z: 13 };
+  const idle: Person = { key: "hut#0", outfit: "builder", group: "builders", at: place, gate: { x: 4, z: 12.3 }, faces: 1 };
+  const bead = { id: "a", title: "a", type: "task", stage: "new", depot: "d", priority: 2, created_at: "" };
+  const at = (x: number, platform = "d/default/new"): Person => ({ ...idle, at: { x, z: 11.1 }, gate: { x, z: 12.3 }, faces: -1, platform, bead });
 
-  test("idle it stands folded and still, at any time", () => {
-    for (const t of [0, 0.7, ARM_CYCLE / 2, 100]) expect(armPose(t, 0)).toEqual(ARM_FOLDED);
+  test("a start walks it out: from its place to the ground, along it, and onto the platform at its wagon", () => {
+    expect(walk(idle, at(15))).toEqual([place, { x: 4, z: 12.3 }, { x: 15, z: 12.3 }, { x: 15, z: 11.1 }]);
   });
 
-  test("at work: reach, hold, lift, back, in 2 to 3 seconds, and again", () => {
-    expect(ARM_CYCLE).toBeGreaterThanOrEqual(2);
-    expect(ARM_CYCLE).toBeLessThanOrEqual(3);
-    close(armPose(0, 1), ARM_BACK);
-    // Reached: bent over the wagon, the claw open; held: there still, the claw shut.
-    close(armPose(reach * ARM_CYCLE, 1), ARM_BENT);
-    close(armPose(hold * ARM_CYCLE, 1), { ...ARM_BENT, claw: 0 });
-    const holding = armPose(((reach + hold) / 2) * ARM_CYCLE, 1);
-    close(holding, { shoulder: ARM_BENT.shoulder, elbow: ARM_BENT.elbow, claw: 0.5 });
-    close(armPose(lift * ARM_CYCLE, 1), ARM_LIFTED);
-    close(armPose(ARM_CYCLE, 1), ARM_BACK);
-    close(armPose(7 * ARM_CYCLE + 0.4, 1), armPose(0.4, 1));
+  test("an end walks it back the same way", () => {
+    expect(walk(at(15), idle)).toEqual([...walk(idle, at(15))].reverse());
   });
 
-  test("eased: slow away from a pose and slow into the next", () => {
-    const early = armPose(0.1 * reach * ARM_CYCLE, 1).elbow - ARM_BACK.elbow;
-    const half = armPose(0.5 * reach * ARM_CYCLE, 1).elbow - ARM_BACK.elbow;
-    const whole = ARM_BENT.elbow - ARM_BACK.elbow;
-    expect(half).toBeCloseTo(whole / 2, 9);
-    expect(early).toBeLessThan(0.1 * whole);
-    expect(early).toBeGreaterThan(0);
+  test("to another wagon of its platform along the edge; to another platform over the ground", () => {
+    expect(walk(at(15), at(12.05))).toEqual([{ x: 15, z: 11.1 }, { x: 12.05, z: 11.1 }]);
+    const far = { ...at(27, "d/default/review"), at: { x: 27, z: 55.1 }, gate: { x: 27, z: 56.3 } };
+    expect(walk(at(15), far)).toEqual([{ x: 15, z: 11.1 }, { x: 15, z: 12.3 }, far.gate, far.at]);
+    // Level with its gate already: no step on the spot.
+    expect(walk(idle, at(4))).toEqual([place, { x: 4, z: 12.3 }, { x: 4, z: 11.1 }]);
   });
 
-  test("no motion: at work is the bent pose, whatever the time", () => {
-    for (const t of [0, 0.3, 1.9, 50]) expect(armPose(t, 1, true)).toEqual(ARM_BENT);
-    expect(armPose(1, 0, true)).toEqual(ARM_FOLDED);
+  test("a walk takes a second or two, however far the hut is", () => {
+    expect(WALK_MIN).toBe(TWEEN_MAX);
+    expect(walkSeconds(0.5)).toBe(1);
+    expect(walkSeconds(measure(walk(idle, at(8))))).toBeCloseTo(5.9 / WALK_SPEED);
+    expect(walkSeconds(1.5 * WALK_SPEED)).toBe(1.5);
+    expect(walkSeconds(400)).toBe(WALK_MAX);
+    expect(WALK_MAX).toBe(2);
   });
 
-  test("it follows the session: unfolds when one starts, folds when it ends", () => {
-    expect(raise(0, false, 1)).toBe(0);
-    expect(raise(0, true, ARM_FOLD / 2)).toBeCloseTo(0.5, 9);
-    expect(raise(0.5, true, ARM_FOLD)).toBe(1);
-    expect(raise(1, true, 0.016)).toBe(1);
-    expect(raise(1, false, ARM_FOLD / 4)).toBeCloseTo(0.75, 9);
-    expect(raise(0.2, false, ARM_FOLD)).toBe(0);
-    // A scrub puts everything at its end.
-    expect(raise(0, true, Infinity)).toBe(1);
-    expect(raise(1, false, Infinity)).toBe(0);
-    // Half unfolded it is between folded and its work.
-    const work = armPose(0.4, 1);
-    close(armPose(0.4, 0.5), {
-      shoulder: (ARM_FOLDED.shoulder + work.shoulder) / 2,
-      elbow: (ARM_FOLDED.elbow + work.elbow) / 2,
-      claw: (ARM_FOLDED.claw + work.claw) / 2,
-    });
+  test("the legs keep the pace of the way, up to a run", () => {
+    expect(stride(WALK_SPEED, 1)).toBe(1);
+    expect(stride(1.5 * WALK_SPEED, 1)).toBe(1.5);
+    // A short way in its least second is still a walk, not a slow one.
+    expect(stride(0.5, 1)).toBe(1);
+    expect(stride(400, WALK_MAX)).toBe(STRIDE_MAX);
+  });
+
+  test("it looks the way it goes, and turns the short way round", () => {
+    expect(heading({ x: 0, z: 0 }, { x: 3, z: 0 })).toBeCloseTo(0);
+    expect(heading({ x: 0, z: 0 }, { x: 0, z: -3 })).toBeCloseTo(Math.PI / 2);
+    expect(Math.abs(heading({ x: 3, z: 0 }, { x: 0, z: 0 }))).toBeCloseTo(Math.PI);
+    expect(turn(0, 1, 0.25)).toBe(0.25);
+    expect(turn(0, 1, 2)).toBe(1);
+    // From just short of a half turn to just past it: on, not back round.
+    expect(turn(3, -3, 0.1)).toBeCloseTo(3.1);
+    expect(turn(-3, 3, 0.1)).toBeCloseTo(-3.1);
+    // No time is the end of the turn, at once.
+    expect(turn(0, 2.5, Infinity)).toBe(2.5);
+  });
+
+  test("it walks on its way, works at a bead, and is idle at home", () => {
+    expect(doing(idle, false)).toBe("idle");
+    expect(doing(at(15), true)).toBe("walk");
+    expect(doing(idle, true)).toBe("walk");
+    expect(doing(at(15), false)).toBe("work");
   });
 });

@@ -2,12 +2,13 @@
 
 Watch a yardr yard as a railway. A depot is a station yard, a flow its track,
 each stage a platform; a bead is a wagon that rolls on when it advances, a
-train pulls its wagons, a session is a robot arm at work on its wagon, a
-review is a signal, decide and held are sidings, a peer is a line to another yard with
+train pulls its wagons, a session is a figure who walks out of its group's
+hut to work on its wagon, a review is a signal, decide and held are sidings, a peer is a line to another yard with
 mail riding as goods. The picture is drawn from the yard's structure
 (`yardr --json`) and moves on its events (`yardr events --json`).
 
-Built as a web page: TypeScript, Three.js, Vite, with Kenney's CC0 train kit.
+Built as a web page: TypeScript, Three.js, Vite, with Kenney's CC0 kits: the
+Train Kit, City Kit Industrial and Mini Characters.
 
 Developed in a yardr yard; `.yardr/` holds its flow, roles and merge gate.
 
@@ -18,7 +19,7 @@ Developed in a yardr yard; `.yardr/` holds its flow, roles and merge gate.
     npm run build      # the page as static files in dist/, for any static server
     npm run live       # the page following the yard this machine runs
     npm run check      # types
-    npm test           # the tests of the layout, the replay, the motion and the serve script
+    npm test           # the tests of the layout, the replay, the motion, the scene and the serve script
 
 The page replays a day of one yard from its event log, and follows a yard as
 it runs when the serve script serves it.
@@ -41,13 +42,21 @@ Without `events.json` the page is the still picture of `yard.json`.
 A wagon appears at the backlog when its bead is made, rolls to the next
 platform when it advances (into a siding over the points, back along the
 return line), and past the buffer when it reaches the flow's last stage. A
-platform whose group runs sessions has robot arms along its edge, one beside
-each wagon slot, as many as the group's limit and the platform's three slots
-allow; the shed beside it is the group's name and limit. While a session
-runs, the arm at its wagon works it (reach, hold, lift, back, every 2.6
-seconds) and says under the pointer which bead and group; the others stand
-folded. With `prefers-reduced-motion` an arm at work stands bent over its
-wagon. A held bead stands in the siding. A peer's
+group has a building beside a platform it is routed to: people a station, a
+group whose sessions are scripts a works, at each of their platforms. A
+group that runs sessions in panes is a crew, and has one building for all
+its platforms, at the first of them: builders a site hut and yellow hard
+hats, reviewers an office and white ones. The crew stand idle in a row out
+from the door, a place for each session the group may run, and the sign
+counts who is out (`yardr-builders · 1 of 3 out`), so an empty place is a
+session at work. When a session starts, the first figure at home walks over
+the ground to the platform its bead stands at (a second or two, however
+far), turns to the wagon and works on it, and says under the pointer which
+bead and group; when the session ends it walks back. A scrub puts everyone
+where they were then, at once. With `prefers-reduced-motion` the figures
+stand still where they are, a hand at the wagon. A building says under the
+pointer its group, runner and limit. The yard's crew members stand before
+their signal boxes. A held bead stands in the siding. A peer's
 message is a goods wagon on the peer's line, named by its kind and its peer:
 out from the yard's end past the edge of the yard, or in from there, a few
 seconds either way, each on its own rail. A hook is a flash of the wire.
@@ -97,7 +106,7 @@ machine's on a Tailscale net, for a phone on the same net.
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the committed snapshot and its replay.
 
-![The page following this yard, closer in: Live on the bar, a wagon at new with its arm at work](docs/live.png)
+![The page following this yard, closer in: Live on the bar, two builders before their hut and the third at work on a wagon at signalbox's new](docs/live.png)
 
 ## Where things are
 
@@ -122,10 +131,17 @@ of this is there, and the page is the committed snapshot and its replay.
   last; an element with a slot in `layout.json` keeps it, so a yard that grows
   or is listed in another order keeps what it had where it was. The mapping
   from yard to railway is decided here.
-- `src/kit.ts`: the models, behind `loadKit`. Kenney's Train Kit
-  (`public/kit/`, CC0, with its licence) has the rails, wagons and locomotives;
-  platforms, sheds, signals, signal boxes and robot arms are boxes in six
-  colours. The kit's diesel is kept for engines to come and not drawn.
+- `src/kit.ts`: the models, behind `loadKit`, all Kenney's and CC0, each
+  pack's subset with its licence in `public/kit/`: the Train Kit (rails,
+  wagons, locomotives), City Kit Industrial in `city/` (the hut is
+  `building-i`, the office `building-p`, the works `building-m`, the station
+  `building-s`) and Mini Characters in `people/` (builders `character-male-e`
+  and `character-female-f`, reviewers `character-male-a`, crew members
+  `character-male-c`; the clips `idle`, `walk` and, for work,
+  `interact-right`). A hard hat is two boxes on the head bone. A model that
+  does not load is a box, a figure two. Platforms, signals and signal boxes
+  are boxes in six colours. The kit's diesel is kept for engines to come and
+  not drawn.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not
@@ -135,7 +151,9 @@ of this is there, and the page is the committed snapshot and its replay.
 - `src/player.ts`: the replay's clock and speed, and, live, a window that
   grows at its end. `src/motion.ts`: the way a wagon takes between two
   places, and how long it takes (a second at most, at any speed; a peer's goods four at
-1x and never under two), and how a robot arm stands at a time of its work.
+1x and never under two), a figure's way between its place and its wagon, and
+  what it does there.
 - `src/scene.ts` draws a layout: `draw` what stands still, `Stock` the wagons
-  and arms, which it moves from one state to the next. `src/main.ts` is the
+  and figures, which it moves from one state to the next, each figure with a
+  mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the
   page: camera, pan and zoom, labels, the bead under the pointer, the bar.

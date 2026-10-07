@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import window from "../public/events.json";
 import snapshot from "../public/yard.json";
-import { layout } from "../src/layout";
+import { layout, people } from "../src/layout";
 import { Player } from "../src/player";
 import { line, opening, outgrown, SHOWN, state, step, STRUCTURE, world, type Log, type State, type YardEvent } from "../src/replay";
 import type { Bead, Yard } from "../src/yard";
@@ -64,12 +64,12 @@ describe("the reducer", () => {
     expect(run([event("closed", "signalbox-a")]).beads).toEqual([]);
   });
 
-  test("after a session start the arm at its wagon is at work, and idle when the session ends", () => {
+  test("after a session start a figure is at work at its wagon, and none when the session ends", () => {
     const claimed = run([event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" })]);
     expect(at(claimed, "signalbox-a")).toMatchObject({ working: true, group: "yardr-builders" });
-    const crews = (s: State) => layout({ ...one, beads: s.beads }).arms.filter((a) => a.bead !== undefined);
+    const crews = (s: State) => people(layout({ ...one, beads: s.beads })).filter((p) => p.bead !== undefined);
     expect(crews(start)).toEqual([]);
-    expect(crews(claimed)).toMatchObject([{ bead: { id: "signalbox-a" }, slot: 0 }]);
+    expect(crews(claimed)).toMatchObject([{ bead: { id: "signalbox-a" }, platform: "signalbox/default/new", group: "yardr-builders" }]);
     // The start that follows a claim says nothing new.
     const started = run([event("started", "signalbox-a", { session: "s1" })], claimed);
     expect(started).toBe(claimed);
@@ -81,7 +81,7 @@ describe("the reducer", () => {
     expect(crews(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], claimed))).toEqual([]);
   });
 
-  test("a start with no claim before it sets the arm to work too", () => {
+  test("a start with no claim before it sets a figure to work too", () => {
     const owned = { beads: [bead("signalbox-a", { group: "yardr-builders" })], sessions: {} };
     expect(at(run([event("started", "signalbox-a", { session: "s1" })], owned), "signalbox-a")!.working).toBe(true);
   });
@@ -250,7 +250,7 @@ describe("live", () => {
       }
       expect(passed).toEqual(log.events.slice(k));
       // And as the replay of the whole window ends: the same wagons at the
-      // same stages, with the same arms at work.
+      // same stages, with the same sessions at work.
       const brief = (b: Bead) => `${b.id} ${b.stage} ${b.working === true} ${b.hold === true}`;
       expect(p.state.beads.map(brief).sort(), `from ${k}`).toEqual(state(yard, log).beads.map(brief).sort());
       expect(p.clock).toBe(p.to);

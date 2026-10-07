@@ -1,7 +1,41 @@
 import { describe, expect, test } from "vitest";
 import remembered from "../public/layout.json";
 import snapshot from "../public/yard.json";
-import { ARM_Z, DEPOT_PITCH, FIRST_TRACK_Z, FLOW_PITCH, layout, PEER_PITCH, PEER_Z, place, positions, shedGroups, SLOT_PITCH, SLOTS, STAGE_PITCH, travelOrder } from "../src/layout";
+import {
+  atWork,
+  BOX_FRONT_Z,
+  CREW_Z,
+  DEPOT_PITCH,
+  FIRST_TRACK_Z,
+  FLOW_PITCH,
+  GROUND_Z,
+  layout,
+  PEER_PITCH,
+  PEER_Z,
+  people,
+  place,
+  PLACE_PITCH,
+  PLACE_X,
+  PLACE_Z,
+  PLACES_DRAWN,
+  PLATFORM_LENGTH,
+  PLATFORM_Z,
+  positions,
+  SHED_PITCH,
+  SHED_WIDTH,
+  SHED_Z,
+  shedGroups,
+  shedKind,
+  SIDING_PLATFORM_Z,
+  SIDING_SHED_Z,
+  SLOT_PITCH,
+  SLOTS,
+  STAGE_PITCH,
+  TAIL_PITCH,
+  TAIL_X,
+  travelOrder,
+  WORK_Z,
+} from "../src/layout";
 import type { Bead, Flow, Yard } from "../src/yard";
 
 // The committed snapshot is the fixture: this yard, as scripts/snapshot.sh
@@ -215,7 +249,7 @@ describe("the mapping", () => {
     expect(at("new").signal).toBe(false);
   });
 
-  test("a shed for every group flow show names at a stage, with the group's bays", () => {
+  test("a building for every group flow show names at a stage, of the group's kind", () => {
     for (const { depot, flows } of yard.flows) {
       for (const flow of flows) {
         for (const stage of flow.stages) {
@@ -224,87 +258,181 @@ describe("the mapping", () => {
         }
       }
     }
-    const builders = l.sheds.find((s) => s.key === "signalbox/default/new/yardr-builders")!;
-    expect(builders.people).toBe(false);
-    expect(builders.bays.length).toBe(3);
-    expect(l.sheds.find((s) => s.key === "yardr/default/backlog/backlog")).toMatchObject({ people: true, bays: [] });
-    // The label route's group stands after the plain one.
-    expect(l.sheds.filter((s) => s.platform === "yardr/default/review").map((s) => s.group)).toEqual(["yardr-reviewers", "brakeman-reviews"]);
+    const group = (name: string, runner: string) => ({ name, runner, limit: 1 });
+    expect(shedKind(group("backlog", "manual"))).toBe("station");
+    expect(shedKind(group("yardr-builders", "herdr"))).toBe("hut");
+    expect(shedKind(group("yardr-reviewers", "herdr"))).toBe("office");
+    expect(shedKind(group("night-shift", "herdr"))).toBe("hut");
+    expect(shedKind(group("signalbox-assembly", "exec"))).toBe("works");
+    // A group a route names and the yard does not list: aiquokka-landing.
+    expect(shedKind(undefined)).toBe("works");
+    expect(l.sheds.find((s) => s.key === "yardr/default/backlog/backlog")).toMatchObject({ kind: "station", runner: "manual", places: [] });
+    expect(l.sheds.find((s) => s.key === "signalbox/default/approved/signalbox-assembly")).toMatchObject({ kind: "works", runner: "exec", limit: 1, places: [] });
+    // The label route's group stands after the plain one: its plot is the second.
+    expect(shedGroups(yard, "yardr", yard.flows.find((f) => f.depot === "yardr")!.flows[0]!, "review")).toEqual(["yardr-reviewers", "brakeman-reviews"]);
+    const plot = (key: string) => l.sheds.find((s) => s.key === key)!.at.x - l.platforms.find((p) => p.key === key.slice(0, key.lastIndexOf("/")))!.at.x;
+    expect(plot("yardr/default/review/brakeman-reviews") - plot("yardr/default/backlog/backlog")).toBeCloseTo(SHED_PITCH);
   });
 
-  test("a platform has an arm for each session its groups may run, one beside each wagon slot; a platform of people has none", () => {
-    // yardr-builders: herdr, limit 3.
-    const platform = l.platforms.find((p) => p.key === "signalbox/default/new")!;
-    const arms = l.arms.filter((a) => a.platform === platform.key);
-    expect(arms.map((a) => a.slot)).toEqual([0, 1, 2]);
-    arms.forEach((a, k) => {
-      expect(a.key).toBe(`${platform.key}#${k}`);
-      // On the platform's edge to its track, level with slot k.
-      expect(a.at).toEqual({ x: platform.front.x - k * SLOT_PITCH, z: platform.at.z - ARM_Z });
-      expect(a.reach).toBe(-1);
+  test("a crew has one building, at the first platform of its group, with a place for each session it may run", () => {
+    // yardr-builders (herdr, limit 3) is routed to new in every depot; aiquokka has the first board.
+    const builders = l.sheds.filter((s) => s.group === "yardr-builders");
+    expect(builders.map((s) => s.key)).toEqual(["aiquokka/aiquokka/new/yardr-builders"]);
+    expect(builders[0]).toMatchObject({ kind: "hut", limit: 3 });
+    expect(l.sheds.filter((s) => s.group === "yardr-reviewers").map((s) => [s.key, s.kind])).toEqual([["aiquokka/aiquokka/review/yardr-reviewers", "office"]]);
+    // A station and a works stand at every platform routed to them.
+    expect(l.sheds.filter((s) => s.group === "backlog").length).toBeGreaterThan(1);
+
+    // The places: in a row out from the door, on the platform's side of the building's middle.
+    const hut = builders[0]!;
+    expect(hut.places.map((p) => p.key)).toEqual([0, 1, 2].map((p) => `${hut.key}#${p}`));
+    hut.places.forEach((p, k) => {
+      expect(p.at.x).toBeCloseTo(hut.at.x + SHED_WIDTH / 2 + PLACE_X + k * PLACE_PITCH);
+      expect(p.at.z).toBeCloseTo(hut.at.z - PLACE_Z);
     });
-    // An exec group of limit 1: one arm.
-    expect(l.arms.filter((a) => a.platform === "signalbox/default/approved").map((a) => a.slot)).toEqual([0]);
-    // backlog and decisions are manual, limit 50, with beads marked working.
-    for (const stage of ["backlog", "decide"]) {
-      expect(l.arms.filter((a) => a.platform === `yardr/default/${stage}`), stage).toEqual([]);
-    }
-    expect(yard.beads.some((b) => b.stage === "backlog" && b.working === true)).toBe(true);
-    // A siding's platform lies beyond its stub: its arms reach the other way.
+    // Beyond three, a second row on the other side; beyond six, no more places.
     const grown = copy();
-    grown.groups.find((g) => g.name === "decisions")!.runner = "herdr";
-    const siding = layout(grown).arms.filter((a) => a.platform === "yardr/default/decide");
-    expect(siding.length).toBe(SLOTS);
-    expect(siding[0]).toMatchObject({ reach: 1, at: { z: l.platforms.find((p) => p.key === "yardr/default/decide")!.at.z + ARM_Z } });
+    grown.groups.find((g) => g.name === "yardr-builders")!.limit = 8;
+    const wide = layout(grown).sheds.find((s) => s.key === hut.key)!;
+    expect(wide.limit).toBe(8);
+    expect(wide.places.length).toBe(PLACES_DRAWN);
+    expect(wide.places.slice(0, 3)).toEqual(hut.places);
+    expect(wide.places[3]!.at).toEqual({ x: hut.places[0]!.at.x, z: hut.at.z + PLACE_Z });
+    // The first platform is the one of the lowest slots, not the first listed.
+    const turned = copy();
+    turned.depots.reverse();
+    turned.flows.reverse();
+    expect(layout(turned, remembered).sheds.filter((s) => s.group === "yardr-builders").map((s) => s.key)).toEqual([hut.key]);
   });
 
-  test("a group's limit beyond the platform's wagon slots adds no arm; two groups at a platform share its arms", () => {
+  test("a figure for every place: at work beside its wagon's slot while a session runs, else idle at its place", () => {
     const grown = copy();
-    grown.groups.find((g) => g.name === "yardr-builders")!.limit = 6;
-    grown.groups.find((g) => g.name === "signalbox-assembly")!.limit = 2;
-    grown.groups.push({ name: "auditors", runner: "herdr", limit: 1 });
-    grown.routes.push({ stage: "approved", depot: "signalbox", label: "audit", group: "auditors", priority: 20 });
-    const g = layout(grown);
-    expect(g.arms.filter((a) => a.platform === "signalbox/default/new").length).toBe(SLOTS);
-    expect(g.sheds.find((s) => s.key === "signalbox/default/new/yardr-builders")!.bays.length).toBe(6);
-    expect(g.arms.filter((a) => a.platform === "signalbox/default/approved").length).toBe(3);
-  });
-
-  test("the arm at a wagon's slot works it while its session runs; the others stand idle", () => {
-    const grown = copy();
-    grown.beads = grown.beads.filter((b) => !(b.depot === "signalbox" && b.stage === "new"));
+    grown.beads = grown.beads.filter((b) => b.group !== "yardr-builders" && !(b.depot === "signalbox" && b.stage === "new"));
     grown.beads.push(bead("signalbox-idle", { depot: "signalbox", group: "yardr-builders", created_at: "2099-01-01T00:00:00Z" }));
     grown.beads.push(bead("signalbox-work", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2099-01-02T00:00:00Z" }));
     const g = layout(grown);
+    const platform = g.platforms.find((p) => p.key === "signalbox/default/new")!;
     const wagon = g.vehicles.find((v) => v.key === "signalbox-work")!;
-    const arms = g.arms.filter((a) => a.platform === "signalbox/default/new");
-    expect(arms.map((a) => a.bead?.id)).toEqual([undefined, "signalbox-work", undefined]);
-    expect(arms[1]!.at.x).toBe(wagon.at.x);
-    // Every session of this yard whose wagon is drawn at a platform with arms.
-    const worked = l.arms.filter((a) => a.bead !== undefined);
-    expect(worked.map((a) => a.bead!.id).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
-    for (const a of worked) expect(a.at.x).toBe(l.vehicles.find((v) => v.key === a.bead!.id)!.at.x);
-    // Nothing but wagons and locomotives stands on the rails, and a shed's bay holds nothing.
-    expect(Object.keys(g).sort()).toEqual(["arms", "boards", "boxes", "counts", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire"]);
-    expect(Object.keys(g.sheds.flatMap((s) => s.bays)[0]!).sort()).toEqual(["at", "key"]);
+    expect(g.work).toEqual([
+      {
+        key: "signalbox-work",
+        bead: wagon.bead,
+        group: "yardr-builders",
+        platform: platform.key,
+        slot: 1,
+        // On the platform's edge to its track, level with its wagon; the gate behind the platform.
+        at: { x: wagon.at.x, z: platform.at.z - WORK_Z },
+        gate: { x: wagon.at.x, z: platform.at.z - PLATFORM_Z + SHED_Z - GROUND_Z },
+        reach: -1,
+      },
+    ]);
+    const hut = g.sheds.find((s) => s.group === "yardr-builders")!;
+    const crew = people(g).filter((p) => p.group === "yardr-builders");
+    expect(crew.map((p) => p.key)).toEqual(hut.places.map((p) => p.key));
+    // The first at home goes: it looks at its wagon. The others look down the page.
+    expect(crew[0]).toEqual({ key: hut.places[0]!.key, outfit: "builder", group: "yardr-builders", at: g.work[0]!.at, gate: g.work[0]!.gate, faces: -1, platform: platform.key, bead: wagon.bead });
+    for (const k of [1, 2]) {
+      expect(crew[k]).toEqual({ key: hut.places[k]!.key, outfit: "builder", group: "yardr-builders", at: hut.places[k]!.at, gate: { x: hut.places[k]!.at.x, z: hut.at.z - GROUND_Z }, faces: 1 });
+    }
+    expect(people(g).filter((p) => p.group === "yardr-reviewers").map((p) => p.outfit)).toEqual(["reviewer", "reviewer", "reviewer"]);
+
+    // Every session of this yard's crews: both of yardr-builders, each at its wagon.
+    expect(l.work.map((w) => w.key).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
+    for (const w of l.work) expect(w.at.x).toBe(l.vehicles.find((v) => v.key === w.key)!.at.x);
+    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire", "work"]);
   });
 
-  test("a bead people work at a platform with arms is no arm's", () => {
+  test("the places taken are the limit less the sessions at work, and the sign's count is the sessions", () => {
+    const at = (sessions: number) => {
+      const grown = copy();
+      grown.beads = grown.beads.filter((b) => b.group !== "yardr-builders");
+      const depots = ["signalbox", "yardr", "yardr.dev"];
+      for (let n = 0; n < sessions; n++) grown.beads.push(bead(`w${n}`, { depot: depots[n % 3]!, group: "yardr-builders", working: true, created_at: `2000-01-0${n + 1}T00:00:00Z` }));
+      return layout(grown);
+    };
+    for (const sessions of [0, 1, 2, 3]) {
+      const g = at(sessions);
+      const hut = g.sheds.find((s) => s.group === "yardr-builders")!;
+      const crew = people(g).filter((p) => p.group === "yardr-builders");
+      const home = hut.places.filter((place) => crew.some((p) => p.at.x === place.at.x && p.at.z === place.at.z));
+      expect(home.length, `${sessions} sessions`).toBe(hut.limit - sessions);
+      expect(atWork(g, "yardr-builders")).toBe(sessions);
+      expect(atWork(g, "yardr-reviewers")).toBe(0);
+      // Two sessions are two figures: no two of a crew stand in one spot.
+      expect(new Set(crew.map((p) => `${p.at.x}/${p.at.z}`)).size).toBe(crew.length);
+      expect(new Set(crew.filter((p) => p.bead).map((p) => p.key)).size).toBe(sessions);
+    }
+    // A fourth session of a crew of three has no figure, and is counted.
+    const over = at(4);
+    expect(people(over).filter((p) => p.bead !== undefined).length).toBe(3);
+    expect(atWork(over, "yardr-builders")).toBe(4);
+  });
+
+  test("a session keeps its figure: the end of another sends that one home and no one else anywhere", () => {
+    const grown = copy();
+    grown.beads = grown.beads.filter((b) => b.group !== "yardr-builders");
+    const a = bead("signalbox-a", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2000-01-01T00:00:00Z" });
+    const b = bead("yardr-b", { depot: "yardr", group: "yardr-builders", working: true, created_at: "2000-01-02T00:00:00Z" });
+    const both = layout({ ...grown, beads: [...grown.beads, a, b] });
+    const before = people(both);
+    const worker = (crew: ReturnType<typeof people>, id: string) => crew.find((p) => p.bead?.id === id)?.key;
+    expect(worker(before, "signalbox-a")).not.toBe(worker(before, "yardr-b"));
+
+    // a's session ends: b's figure stays b's, and a's is at its place again.
+    const one = layout({ ...grown, beads: [...grown.beads, { ...a, working: false }, b] });
+    const after = people(one, before);
+    expect(worker(after, "yardr-b")).toBe(worker(before, "yardr-b"));
+    const home = after.find((p) => p.key === worker(before, "signalbox-a"))!;
+    expect(home.bead).toBeUndefined();
+    expect(home.at).toEqual(one.sheds.find((s) => s.group === "yardr-builders")!.places.find((p) => p.key === home.key)!.at);
+    // A scrub knows no before: the first at home is b's.
+    expect(worker(people(one), "yardr-b")).toBe(one.sheds.find((s) => s.group === "yardr-builders")!.places[0]!.key);
+    // A new session takes the first figure at home, not b's.
+    const again = people(both, after);
+    expect(worker(again, "yardr-b")).toBe(worker(before, "yardr-b"));
+    expect(worker(again, "signalbox-a")).toBe(worker(before, "signalbox-a"));
+  });
+
+  test("a siding's platform lies beyond its stub: a figure there reaches the other way", () => {
+    const grown = copy();
+    grown.groups.find((g) => g.name === "decisions")!.runner = "herdr";
+    grown.beads = grown.beads.filter((b) => !(b.depot === "yardr" && b.stage === "decide"));
+    grown.beads.push(bead("yardr-ask", { stage: "decide", group: "decisions", working: true }));
+    const g = layout(grown);
+    const platform = g.platforms.find((p) => p.key === "yardr/default/decide")!;
+    expect(g.work.find((w) => w.key === "yardr-ask")).toMatchObject({ reach: 1, at: { z: platform.at.z + WORK_Z }, gate: { z: platform.at.z - (SIDING_PLATFORM_Z - SIDING_SHED_Z) + GROUND_Z } });
+  });
+
+  test("a bead people work, and one a script works, is no figure's", () => {
     const grown = copy();
     grown.beads = grown.beads.filter((b) => !(b.depot === "yardr" && b.stage === "review"));
-    // brakeman-reviews is manual, and has a shed at yardr's review beside yardr-reviewers'.
+    // brakeman-reviews is manual, with a station at yardr's review; signalbox-assembly is exec.
     grown.beads.push(bead("yardr-read", { stage: "review", group: "brakeman-reviews", working: true }));
-    const arms = layout(grown).arms.filter((a) => a.platform === "yardr/default/review");
-    expect(arms.length).toBe(3);
-    expect(arms.map((a) => a.bead)).toEqual([undefined, undefined, undefined]);
+    grown.beads.push(bead("signalbox-land", { depot: "signalbox", stage: "approved", group: "signalbox-assembly", working: true }));
+    const g = layout(grown);
+    expect(g.work.filter((w) => w.key === "yardr-read" || w.key === "signalbox-land")).toEqual([]);
+    // backlog and decisions are manual, limit 50, with beads marked working.
+    expect(yard.beads.some((b) => b.stage === "backlog" && b.working === true)).toBe(true);
+    expect(l.work.filter((w) => w.platform.endsWith("/backlog") || w.platform.endsWith("/decide"))).toEqual([]);
   });
 
-  test("a session on a bead that is only counted moves no arm", () => {
+  test("a session on a bead that is only counted has its figure at the platform's left end", () => {
     const grown = copy();
     for (let n = 0; n < SLOTS; n++) grown.beads.push(bead(`signalbox-old${n}`, { depot: "signalbox", created_at: `2000-01-0${n + 1}T00:00:00Z` }));
+    grown.beads.push(bead("signalbox-late", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2099-01-09T00:00:00Z" }));
     const g = layout(grown);
     expect(g.vehicles.find((v) => v.key === "signalbox-sys1")).toBeUndefined();
-    expect(g.arms.filter((a) => a.platform === "signalbox/default/new").map((a) => a.bead)).toEqual([undefined, undefined, undefined]);
+    const platform = g.platforms.find((p) => p.key === "signalbox/default/new")!;
+    const tail = g.work.filter((w) => w.platform === platform.key);
+    expect(tail.map((w) => [w.key, w.slot])).toEqual([["signalbox-sys1", undefined], ["signalbox-late", undefined]]);
+    tail.forEach((w, n) => expect(w.at.x - (platform.at.x - PLATFORM_LENGTH / 2)).toBeCloseTo(TAIL_X + n * TAIL_PITCH));
+    expect(people(g).filter((p) => p.platform === platform.key).length).toBe(2);
+  });
+
+  test("the yard's crew members stand before their signal boxes", () => {
+    const crew = people(l).filter((p) => p.outfit === "crew");
+    expect(crew.map((p) => p.key)).toEqual(yard.crew.map((c) => `crew/${c.name}`));
+    crew.forEach((p, c) => expect(p).toEqual({ key: p.key, outfit: "crew", at: { x: l.boxes[c]!.at.x, z: CREW_Z + BOX_FRONT_Z }, gate: { x: l.boxes[c]!.at.x, z: CREW_Z + BOX_FRONT_Z }, faces: 1 }));
   });
 
   test("a held bead stands in its flow's siding, whatever its stage", () => {
