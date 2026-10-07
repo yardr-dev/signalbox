@@ -144,3 +144,62 @@ export function along(path: Point[], part: number): Pose {
   }
   return pose;
 }
+
+// A robot arm, as scene.ts bends it: the upper arm's lean from upright
+// towards its wagon, the forearm's bend on from the upper arm (both in
+// radians), and how far the claw is open, 0 to 1.
+export interface ArmPose {
+  shoulder: number;
+  elbow: number;
+  claw: number;
+}
+
+// Idle: folded back over the platform, away from the rails.
+export const ARM_FOLDED: ArmPose = { shoulder: 0.1, elbow: -2.7, claw: 0 };
+// At work: drawn back, bent over its wagon, and lifted off it.
+export const ARM_BACK: ArmPose = { shoulder: -0.45, elbow: 1.1, claw: 1 };
+export const ARM_BENT: ArmPose = { shoulder: -0.05, elbow: 2.1, claw: 1 };
+export const ARM_LIFTED: ArmPose = { shoulder: -0.2, elbow: 1.5, claw: 0 };
+// The seconds of one working cycle, and where in it (0 to 1) each part ends:
+// reach down to the wagon, hold there while the claw closes, lift, back.
+export const ARM_CYCLE = 2.6;
+export const ARM_PHASES = { reach: 0.3, hold: 0.5, lift: 0.75 } as const;
+// The seconds an arm takes to unfold when its session starts, and to fold
+// when it ends.
+export const ARM_FOLD = 0.6;
+
+function between(a: ArmPose, b: ArmPose, t: number): ArmPose {
+  const k = ease(Math.min(1, Math.max(0, t)));
+  return {
+    shoulder: a.shoulder + (b.shoulder - a.shoulder) * k,
+    elbow: a.elbow + (b.elbow - a.elbow) * k,
+    claw: a.claw + (b.claw - a.claw) * k,
+  };
+}
+
+// How an arm stands: t is the seconds it has worked, raised how far it is
+// unfolded for work (0 idle, 1 at work). still is for a reader who asked
+// for no motion, and for a picture that does not move: at work is then the
+// bent pose, whatever the time.
+export function armPose(t: number, raised: number, still = false): ArmPose {
+  if (raised <= 0) return ARM_FOLDED;
+  const { reach, hold, lift } = ARM_PHASES;
+  const part = (((t / ARM_CYCLE) % 1) + 1) % 1;
+  const closed = { ...ARM_BENT, claw: 0 };
+  const work = still
+    ? ARM_BENT
+    : part < reach
+      ? between(ARM_BACK, ARM_BENT, part / reach)
+      : part < hold
+        ? between(ARM_BENT, closed, (part - reach) / (hold - reach))
+        : part < lift
+          ? between(closed, ARM_LIFTED, (part - hold) / (lift - hold))
+          : between(ARM_LIFTED, ARM_BACK, (part - lift) / (1 - lift));
+  return raised >= 1 ? work : between(ARM_FOLDED, work, raised);
+}
+
+// How far an arm is unfolded a time later: up while its session runs, down
+// when it is over.
+export function raise(raised: number, working: boolean, dt: number): number {
+  return Math.min(1, Math.max(0, raised + ((working ? 1 : -1) * dt) / ARM_FOLD));
+}

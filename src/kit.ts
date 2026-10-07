@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 // The picture's own colours, for what the kit has no model for (ground,
-// platforms, buildings, signals) and for a model that is missing.
+// platforms, buildings, signals, robot arms) and for a model that is missing.
 export const palette = {
   grass: 0x9bc27a,
   ballast: 0xd8cdb4,
@@ -21,7 +21,7 @@ export const palette = {
 // Lamps are the one thing outside the six.
 export const lamp = { clear: 0x3fd46b, stop: 0xe0453a } as const;
 
-export type Part = "rail" | "wagon" | "locomotive" | "crew";
+export type Part = "rail" | "wagon" | "locomotive";
 
 export interface Kit {
   // A fresh copy of a part. Wagons come in several kinds; pick is any number
@@ -42,7 +42,8 @@ const files: Record<Part, string[]> = {
     "train-carriage-wood",
   ],
   locomotive: ["train-locomotive-a"],
-  crew: ["train-diesel-a"],
+  // train-diesel-a stays in public/kit for the engines to come; nothing
+  // draws it yet.
 };
 
 // Length, height, width of the box that stands in for a part.
@@ -50,7 +51,6 @@ const boxes: Record<Part, [number, number, number, number]> = {
   rail: [1, 0.12, 0.8, palette.slate],
   wagon: [2.7, 1.3, 1.2, palette.brick],
   locomotive: [2.6, 1.6, 1.3, palette.slate],
-  crew: [2.4, 1.5, 1.2, palette.cream],
 };
 
 function box(part: Part): THREE.Object3D {

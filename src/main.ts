@@ -190,7 +190,7 @@ async function start() {
     labels.render(scene, camera);
   };
 
-  // A wagon or a crew under the pointer says which bead it is.
+  // A wagon, or the arm at work on it, says under the pointer which bead it is.
   const ray = new THREE.Raycaster();
   const point = (e: PointerEvent) => {
     const box = host.getBoundingClientRect();
@@ -204,7 +204,7 @@ async function start() {
       tip.style.display = "none";
       return;
     }
-    tip.textContent = describe(hit.userData.bead as Bead, hit.userData.crew === true);
+    tip.textContent = describe(hit.userData.bead as Bead, hit.userData.arm === true);
     tip.style.display = "block";
     tip.style.left = `${Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
     tip.style.top = `${Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
@@ -215,6 +215,13 @@ async function start() {
 
   // Drawn again on the next frame, and on every frame while anything moves.
   let stale = true;
+  // A reader who asked for less motion sees the arms at work standing bent.
+  const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
+  stock.still = calm.matches;
+  calm.addEventListener("change", () => {
+    stock.still = calm.matches;
+    stale = true;
+  });
   controls.addEventListener("change", () => (stale = true));
   window.addEventListener("resize", () => {
     size();
@@ -416,6 +423,8 @@ async function start() {
     requestAnimationFrame(frame);
     noted();
   } else {
+    // Nothing runs the frames of a still picture.
+    stock.still = true;
     controls.addEventListener("change", render);
     window.addEventListener("resize", render);
     note.textContent = `${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`;

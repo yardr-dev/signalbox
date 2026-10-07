@@ -3,9 +3,9 @@
 // Every element is placed by its slot in its parent and by constants, never
 // by how much else there is: the board of a depot, the track of a flow in its
 // depot, the platform of a stage in its flow, the line of a peer; and by its
-// index shed n of its stage, bay b of its shed, crew member c. So the same
-// structure gives the same picture. Only extents grow: a track's length, a
-// board's size.
+// index shed n of its stage, bay b of its shed, arm k of its platform, crew
+// member c. So the same structure gives the same picture. Only extents grow:
+// a track's length, a board's size.
 //
 // A slot is given once (place, below) and remembered: public/layout.json
 // holds the slots given so far, and an element in that file keeps its slot
@@ -50,6 +50,10 @@ export const BAYS_DRAWN = 6;
 export const BAY_WIDTH = 1.2;
 export const BAY_DEPTH = 1.8;
 export const SHED_PITCH = 5;
+
+// A robot arm's base: this far from the platform's middle towards its track,
+// on the platform's edge.
+export const ARM_Z = 0.4;
 
 // Down the page. A board has room for three flows whatever it holds (the
 // default, the trains', the wagons'), so a flow added to a depot moves no
@@ -112,8 +116,6 @@ export interface Platform {
 export interface Bay {
   key: string;
   at: Point;
-  // The bead its crew is out working.
-  crew?: Bead;
 }
 
 export interface Shed {
@@ -130,18 +132,18 @@ export interface Shed {
   bays: Bay[];
 }
 
-// A session at work: the crew of a bay, out beside the wagon it works.
-export interface Crew {
+// A robot arm on a platform's edge, beside wagon slot k: where a session
+// does its work.
+export interface Arm {
   key: string;
-  bead: Bead;
-  // Its bay, where it comes from and goes back to.
-  home: Point;
-  // Which way on z its bay faces away from the track.
-  away: 1 | -1;
-  // Where it stands: on the platform beside its wagon, or in its bay when
-  // the wagon is not drawn.
+  platform: string;
+  slot: number;
+  // Its base.
   at: Point;
-  out: boolean;
+  // Which way on z its wagon stands from it.
+  reach: 1 | -1;
+  // The bead it works: the one at its slot, while a session runs on it.
+  bead?: Bead;
 }
 
 // A bead on a track: a wagon, or the locomotive of a train.
@@ -182,7 +184,7 @@ export interface Layout {
   sidings: Track[];
   platforms: Platform[];
   sheds: Shed[];
-  crews: Crew[];
+  arms: Arm[];
   vehicles: Vehicle[];
   counts: Count[];
   boxes: SignalBox[];
@@ -302,7 +304,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
     sidings: [],
     platforms: [],
     sheds: [],
-    crews: [],
+    arms: [],
     vehicles: [],
     counts: [],
     boxes: [],
@@ -386,11 +388,11 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         const slot = (s: number): Point => ({ x: front.x - s * SLOT_PITCH, z: rail });
         const count = { x: x - PLATFORM_LENGTH / 2, z: rail };
         const train = trains[0];
-        // Where each bead drawn here stands.
-        const drawn = new Map<string, Point>();
+        // The bead drawn in each slot here.
+        const drawn: Bead[] = [];
         const stand = (v: Vehicle) => {
           out.vehicles.push(v);
-          drawn.set(v.key, v.at);
+          drawn.push(v.bead);
         };
         if (train !== undefined) {
           stand({ key: train.id, bead: train, kind: "locomotive", platform: key, at: slot(0) });
@@ -419,9 +421,10 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         }
 
         // Sheds stand beyond the platform, away from the track; their bays
-        // fill rows of three, each row further out. A bay's crew is out
-        // while its session runs.
+        // fill rows of three, each row further out.
         const away: 1 | -1 = siding ? -1 : 1;
+        // The sessions the groups here may run at once.
+        let sessions = 0;
         shedGroups(yard, depot.name, flow, stage.stage).forEach((name, n) => {
           const group = groups.get(name);
           const people = group?.runner === "manual";
@@ -430,29 +433,37 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
             x: x - PLATFORM_LENGTH / 2 + BAY_WIDTH / 2 + n * SHED_PITCH,
             z: z + (siding ? SIDING_SHED_Z : SHED_Z),
           };
-          const crews = people ? [] : standing.filter((b) => b.group === name && b.working === true);
+          if (!people) sessions += limit;
           const bays: Bay[] = [];
           for (let b = 0; b < (people ? 0 : Math.min(limit, BAYS_DRAWN)); b++) {
-            const crew = crews[b];
-            const home = {
-              x: at.x + (b % BAY_COLUMNS) * BAY_WIDTH,
-              z: at.z + away * Math.floor(b / BAY_COLUMNS) * BAY_DEPTH,
-            };
-            bays.push({ key: `${key}/${name}#${b}`, at: home, ...(crew !== undefined ? { crew } : {}) });
-            if (crew === undefined) continue;
-            // Out on the platform, level with its wagon.
-            const wagon = drawn.get(crew.id);
-            out.crews.push({
-              key: `${key}/${name}/${crew.id}`,
-              bead: crew,
-              home,
-              away,
-              at: wagon !== undefined ? { x: wagon.x, z: platformZ } : home,
-              out: wagon !== undefined,
+            bays.push({
+              key: `${key}/${name}#${b}`,
+              at: {
+                x: at.x + (b % BAY_COLUMNS) * BAY_WIDTH,
+                z: at.z + away * Math.floor(b / BAY_COLUMNS) * BAY_DEPTH,
+              },
             });
           }
           out.sheds.push({ key: `${key}/${name}`, group: name, platform: key, at, away, people, limit, bays });
         });
+
+        // An arm for every session the platform's groups may run, each beside
+        // a wagon slot, as far as the platform has slots: a group of people
+        // has none. The arm at a slot works the wagon there while a session
+        // runs on its bead; a bead people work beside the sessions' (a
+        // label's route to a manual group) is no arm's.
+        const session = (b: Bead | undefined) => b?.working === true && groups.get(b.group ?? "")?.runner !== "manual";
+        for (let k = 0; k < Math.min(sessions, SLOTS); k++) {
+          const worked = session(drawn[k]) ? drawn[k] : undefined;
+          out.arms.push({
+            key: `${key}#${k}`,
+            platform: key,
+            slot: k,
+            at: { x: slot(k).x, z: platformZ - away * ARM_Z },
+            reach: away === 1 ? -1 : 1,
+            ...(worked !== undefined ? { bead: worked } : {}),
+          });
+        }
       });
     });
 
@@ -495,7 +506,7 @@ export function positions(l: Layout): Map<string, Point> {
     put("shed", e.key, e.at);
     e.bays.forEach((b) => put("bay", b.key, b.at));
   });
-  l.crews.forEach((e) => put("crew", e.key, e.at));
+  l.arms.forEach((e) => put("arm", e.key, e.at));
   l.vehicles.forEach((e) => put("vehicle", e.key, e.at));
   l.counts.forEach((e) => put("count", e.key, e.at));
   l.boxes.forEach((e) => put("box", e.key, e.at));

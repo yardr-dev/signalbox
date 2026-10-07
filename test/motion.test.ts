@@ -2,6 +2,14 @@ import { describe, expect, test } from "vitest";
 import { PEER_LENGTH, PEER_RAIL_Z, RETURN_Z, SIDING_Z, type Point } from "../src/layout";
 import {
   along,
+  ARM_BACK,
+  ARM_BENT,
+  ARM_CYCLE,
+  ARM_FOLD,
+  ARM_FOLDED,
+  ARM_LIFTED,
+  ARM_PHASES,
+  armPose,
   brake,
   exit,
   goods,
@@ -14,6 +22,7 @@ import {
   headway,
   measure,
   pull,
+  raise,
   route,
   RUN_OUT,
   seconds,
@@ -152,5 +161,63 @@ describe("a peer's goods", () => {
         if (mail && reply) expect(Math.abs(mail.z - reply.z)).toBe(2 * PEER_RAIL_Z);
       }
     }
+  });
+});
+
+describe("a robot arm", () => {
+  const close = (a: object, b: object) => {
+    for (const [k, v] of Object.entries(b)) expect((a as Record<string, number>)[k], k).toBeCloseTo(v as number, 9);
+  };
+  const { reach, hold, lift } = ARM_PHASES;
+
+  test("idle it stands folded and still, at any time", () => {
+    for (const t of [0, 0.7, ARM_CYCLE / 2, 100]) expect(armPose(t, 0)).toEqual(ARM_FOLDED);
+  });
+
+  test("at work: reach, hold, lift, back, in 2 to 3 seconds, and again", () => {
+    expect(ARM_CYCLE).toBeGreaterThanOrEqual(2);
+    expect(ARM_CYCLE).toBeLessThanOrEqual(3);
+    close(armPose(0, 1), ARM_BACK);
+    // Reached: bent over the wagon, the claw open; held: there still, the claw shut.
+    close(armPose(reach * ARM_CYCLE, 1), ARM_BENT);
+    close(armPose(hold * ARM_CYCLE, 1), { ...ARM_BENT, claw: 0 });
+    const holding = armPose(((reach + hold) / 2) * ARM_CYCLE, 1);
+    close(holding, { shoulder: ARM_BENT.shoulder, elbow: ARM_BENT.elbow, claw: 0.5 });
+    close(armPose(lift * ARM_CYCLE, 1), ARM_LIFTED);
+    close(armPose(ARM_CYCLE, 1), ARM_BACK);
+    close(armPose(7 * ARM_CYCLE + 0.4, 1), armPose(0.4, 1));
+  });
+
+  test("eased: slow away from a pose and slow into the next", () => {
+    const early = armPose(0.1 * reach * ARM_CYCLE, 1).elbow - ARM_BACK.elbow;
+    const half = armPose(0.5 * reach * ARM_CYCLE, 1).elbow - ARM_BACK.elbow;
+    const whole = ARM_BENT.elbow - ARM_BACK.elbow;
+    expect(half).toBeCloseTo(whole / 2, 9);
+    expect(early).toBeLessThan(0.1 * whole);
+    expect(early).toBeGreaterThan(0);
+  });
+
+  test("no motion: at work is the bent pose, whatever the time", () => {
+    for (const t of [0, 0.3, 1.9, 50]) expect(armPose(t, 1, true)).toEqual(ARM_BENT);
+    expect(armPose(1, 0, true)).toEqual(ARM_FOLDED);
+  });
+
+  test("it follows the session: unfolds when one starts, folds when it ends", () => {
+    expect(raise(0, false, 1)).toBe(0);
+    expect(raise(0, true, ARM_FOLD / 2)).toBeCloseTo(0.5, 9);
+    expect(raise(0.5, true, ARM_FOLD)).toBe(1);
+    expect(raise(1, true, 0.016)).toBe(1);
+    expect(raise(1, false, ARM_FOLD / 4)).toBeCloseTo(0.75, 9);
+    expect(raise(0.2, false, ARM_FOLD)).toBe(0);
+    // A scrub puts everything at its end.
+    expect(raise(0, true, Infinity)).toBe(1);
+    expect(raise(1, false, Infinity)).toBe(0);
+    // Half unfolded it is between folded and its work.
+    const work = armPose(0.4, 1);
+    close(armPose(0.4, 0.5), {
+      shoulder: (ARM_FOLDED.shoulder + work.shoulder) / 2,
+      elbow: (ARM_FOLDED.elbow + work.elbow) / 2,
+      claw: (ARM_FOLDED.claw + work.claw) / 2,
+    });
   });
 });

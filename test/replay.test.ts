@@ -64,12 +64,12 @@ describe("the reducer", () => {
     expect(run([event("closed", "signalbox-a")]).beads).toEqual([]);
   });
 
-  test("after a session start the bay's crew is out, and back when the session ends", () => {
+  test("after a session start the arm at its wagon is at work, and idle when the session ends", () => {
     const claimed = run([event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" })]);
     expect(at(claimed, "signalbox-a")).toMatchObject({ working: true, group: "yardr-builders" });
-    const crews = (s: State) => layout({ ...one, beads: s.beads }).crews;
+    const crews = (s: State) => layout({ ...one, beads: s.beads }).arms.filter((a) => a.bead !== undefined);
     expect(crews(start)).toEqual([]);
-    expect(crews(claimed)).toMatchObject([{ bead: { id: "signalbox-a" }, out: true }]);
+    expect(crews(claimed)).toMatchObject([{ bead: { id: "signalbox-a" }, slot: 0 }]);
     // The start that follows a claim says nothing new.
     const started = run([event("started", "signalbox-a", { session: "s1" })], claimed);
     expect(started).toBe(claimed);
@@ -81,7 +81,7 @@ describe("the reducer", () => {
     expect(crews(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], claimed))).toEqual([]);
   });
 
-  test("a start with no claim before it brings the crew out too", () => {
+  test("a start with no claim before it sets the arm to work too", () => {
     const owned = { beads: [bead("signalbox-a", { group: "yardr-builders" })], sessions: {} };
     expect(at(run([event("started", "signalbox-a", { session: "s1" })], owned), "signalbox-a")!.working).toBe(true);
   });
@@ -250,7 +250,7 @@ describe("live", () => {
       }
       expect(passed).toEqual(log.events.slice(k));
       // And as the replay of the whole window ends: the same wagons at the
-      // same stages, with the same crews out.
+      // same stages, with the same arms at work.
       const brief = (b: Bead) => `${b.id} ${b.stage} ${b.working === true} ${b.hold === true}`;
       expect(p.state.beads.map(brief).sort(), `from ${k}`).toEqual(state(yard, log).beads.map(brief).sort());
       expect(p.clock).toBe(p.to);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import remembered from "../public/layout.json";
 import snapshot from "../public/yard.json";
-import { DEPOT_PITCH, FIRST_TRACK_Z, FLOW_PITCH, layout, PEER_PITCH, PEER_Z, place, positions, shedGroups, SLOT_PITCH, SLOTS, STAGE_PITCH, travelOrder } from "../src/layout";
+import { ARM_Z, DEPOT_PITCH, FIRST_TRACK_Z, FLOW_PITCH, layout, PEER_PITCH, PEER_Z, place, positions, shedGroups, SLOT_PITCH, SLOTS, STAGE_PITCH, travelOrder } from "../src/layout";
 import type { Bead, Flow, Yard } from "../src/yard";
 
 // The committed snapshot is the fixture: this yard, as scripts/snapshot.sh
@@ -232,25 +232,79 @@ describe("the mapping", () => {
     expect(l.sheds.filter((s) => s.platform === "yardr/default/review").map((s) => s.group)).toEqual(["yardr-reviewers", "brakeman-reviews"]);
   });
 
-  test("a running session is a crew in a bay of its group's shed", () => {
-    const working = yard.beads.filter((b) => b.working === true && yard.groups.find((g) => g.name === b.group)?.runner !== "manual");
-    const crews = l.sheds.flatMap((s) => s.bays).filter((b) => b.crew !== undefined);
-    expect(crews.map((b) => b.crew!.id).sort()).toEqual(working.map((b) => b.id).sort());
+  test("a platform has an arm for each session its groups may run, one beside each wagon slot; a platform of people has none", () => {
+    // yardr-builders: herdr, limit 3.
+    const platform = l.platforms.find((p) => p.key === "signalbox/default/new")!;
+    const arms = l.arms.filter((a) => a.platform === platform.key);
+    expect(arms.map((a) => a.slot)).toEqual([0, 1, 2]);
+    arms.forEach((a, k) => {
+      expect(a.key).toBe(`${platform.key}#${k}`);
+      // On the platform's edge to its track, level with slot k.
+      expect(a.at).toEqual({ x: platform.front.x - k * SLOT_PITCH, z: platform.at.z - ARM_Z });
+      expect(a.reach).toBe(-1);
+    });
+    // An exec group of limit 1: one arm.
+    expect(l.arms.filter((a) => a.platform === "signalbox/default/approved").map((a) => a.slot)).toEqual([0]);
+    // backlog and decisions are manual, limit 50, with beads marked working.
+    for (const stage of ["backlog", "decide"]) {
+      expect(l.arms.filter((a) => a.platform === `yardr/default/${stage}`), stage).toEqual([]);
+    }
+    expect(yard.beads.some((b) => b.stage === "backlog" && b.working === true)).toBe(true);
+    // A siding's platform lies beyond its stub: its arms reach the other way.
+    const grown = copy();
+    grown.groups.find((g) => g.name === "decisions")!.runner = "herdr";
+    const siding = layout(grown).arms.filter((a) => a.platform === "yardr/default/decide");
+    expect(siding.length).toBe(SLOTS);
+    expect(siding[0]).toMatchObject({ reach: 1, at: { z: l.platforms.find((p) => p.key === "yardr/default/decide")!.at.z + ARM_Z } });
   });
 
-  test("its crew is out on the platform beside its wagon, and has its bay to go back to", () => {
+  test("a group's limit beyond the platform's wagon slots adds no arm; two groups at a platform share its arms", () => {
     const grown = copy();
-    grown.beads.push(bead("signalbox-work", { depot: "signalbox", group: "yardr-builders", working: true }));
+    grown.groups.find((g) => g.name === "yardr-builders")!.limit = 6;
+    grown.groups.find((g) => g.name === "signalbox-assembly")!.limit = 2;
+    grown.groups.push({ name: "auditors", runner: "herdr", limit: 1 });
+    grown.routes.push({ stage: "approved", depot: "signalbox", label: "audit", group: "auditors", priority: 20 });
+    const g = layout(grown);
+    expect(g.arms.filter((a) => a.platform === "signalbox/default/new").length).toBe(SLOTS);
+    expect(g.sheds.find((s) => s.key === "signalbox/default/new/yardr-builders")!.bays.length).toBe(6);
+    expect(g.arms.filter((a) => a.platform === "signalbox/default/approved").length).toBe(3);
+  });
+
+  test("the arm at a wagon's slot works it while its session runs; the others stand idle", () => {
+    const grown = copy();
+    grown.beads = grown.beads.filter((b) => !(b.depot === "signalbox" && b.stage === "new"));
+    grown.beads.push(bead("signalbox-idle", { depot: "signalbox", group: "yardr-builders", created_at: "2099-01-01T00:00:00Z" }));
+    grown.beads.push(bead("signalbox-work", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2099-01-02T00:00:00Z" }));
     const g = layout(grown);
     const wagon = g.vehicles.find((v) => v.key === "signalbox-work")!;
-    const platform = g.platforms.find((p) => p.key === "signalbox/default/new")!;
-    const crew = g.crews.find((c) => c.bead.id === "signalbox-work")!;
-    expect(crew).toMatchObject({ out: true, at: { x: wagon.at.x, z: platform.at.z } });
-    const bay = g.sheds.flatMap((s) => s.bays).find((b) => b.crew?.id === "signalbox-work")!;
-    expect(bay.key.startsWith("signalbox/default/new/yardr-builders#")).toBe(true);
-    expect(crew.home).toEqual(bay.at);
-    // No session, no crew.
-    expect(l.crews.find((c) => c.bead.id === "signalbox-work")).toBeUndefined();
+    const arms = g.arms.filter((a) => a.platform === "signalbox/default/new");
+    expect(arms.map((a) => a.bead?.id)).toEqual([undefined, "signalbox-work", undefined]);
+    expect(arms[1]!.at.x).toBe(wagon.at.x);
+    // Every session of this yard whose wagon is drawn at a platform with arms.
+    const worked = l.arms.filter((a) => a.bead !== undefined);
+    expect(worked.map((a) => a.bead!.id).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
+    for (const a of worked) expect(a.at.x).toBe(l.vehicles.find((v) => v.key === a.bead!.id)!.at.x);
+    // Nothing but wagons and locomotives stands on the rails, and a shed's bay holds nothing.
+    expect(Object.keys(g).sort()).toEqual(["arms", "boards", "boxes", "counts", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire"]);
+    expect(Object.keys(g.sheds.flatMap((s) => s.bays)[0]!).sort()).toEqual(["at", "key"]);
+  });
+
+  test("a bead people work at a platform with arms is no arm's", () => {
+    const grown = copy();
+    grown.beads = grown.beads.filter((b) => !(b.depot === "yardr" && b.stage === "review"));
+    // brakeman-reviews is manual, and has a shed at yardr's review beside yardr-reviewers'.
+    grown.beads.push(bead("yardr-read", { stage: "review", group: "brakeman-reviews", working: true }));
+    const arms = layout(grown).arms.filter((a) => a.platform === "yardr/default/review");
+    expect(arms.length).toBe(3);
+    expect(arms.map((a) => a.bead)).toEqual([undefined, undefined, undefined]);
+  });
+
+  test("a session on a bead that is only counted moves no arm", () => {
+    const grown = copy();
+    for (let n = 0; n < SLOTS; n++) grown.beads.push(bead(`signalbox-old${n}`, { depot: "signalbox", created_at: `2000-01-0${n + 1}T00:00:00Z` }));
+    const g = layout(grown);
+    expect(g.vehicles.find((v) => v.key === "signalbox-sys1")).toBeUndefined();
+    expect(g.arms.filter((a) => a.platform === "signalbox/default/new").map((a) => a.bead)).toEqual([undefined, undefined, undefined]);
   });
 
   test("a held bead stands in its flow's siding, whatever its stage", () => {

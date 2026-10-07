@@ -1,7 +1,7 @@
 // Draws a layout: the kit's rails, wagons and locomotives, and boxes in the
 // palette for the rest. Nothing here decides where a thing is; layout.ts did.
 // draw is what stands still: the structure, the same through a replay. Stock
-// is what moves: wagons, crews and counts, shown again for every state.
+// is what moves: wagons, robot arms and counts, shown again for every state.
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
@@ -18,7 +18,24 @@ import {
   type Point,
   type Shed,
 } from "./layout";
-import { along, brake, ease, exit, goods, goodsSeconds, GOODS_STAND, headway, measure, pull, route, seconds, TWEEN_MIN, type Stop } from "./motion";
+import {
+  along,
+  armPose,
+  brake,
+  ease,
+  exit,
+  goods,
+  goodsSeconds,
+  GOODS_STAND,
+  headway,
+  measure,
+  pull,
+  raise,
+  route,
+  seconds,
+  TWEEN_MIN,
+  type Stop,
+} from "./motion";
 import type { Bead } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
@@ -28,8 +45,11 @@ const PLATFORM_WIDTH = 1.4;
 const WALL_HEIGHT = 0.6;
 const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
-const CREW_SCALE = 0.7;
-const BAY_Y = 0.08;
+// A robot arm: its base, and the lengths of its two segments and its claw.
+const ARM_BASE = 0.3;
+const ARM_UPPER = 1.5;
+const ARM_FORE = 1;
+const ARM_CLAW = 0.3;
 // A peer's goods by the kind of the message: the kit's wagon and its size. A
 // ping is the lighter wagon: the kit has no empty flat, so it is the box van
 // small.
@@ -128,8 +148,8 @@ function signal(x: number, z: number): THREE.Object3D {
   return post;
 }
 
-// A group of people: a station building. A group that runs sessions: an
-// engine shed, open above so its crews show, a stall per bay.
+// A group of people: a station building. A group that runs sessions: a
+// shed open above, a stall per bay. Its sessions work at the platform.
 function shed(s: Shed): THREE.Object3D {
   const g = new THREE.Group();
   if (s.people) {
@@ -270,11 +290,43 @@ interface Wagon extends Mover {
   stop: Stop;
 }
 
-interface Engine extends Mover {
-  // Where it is, or is going.
-  at: Point;
-  home: Point;
-  away: 1 | -1;
+// A robot arm, built bending towards +x: the base stands, the upper arm
+// turns at the shoulder, the forearm at the elbow, the claw's two fingers at
+// its end.
+interface Robot {
+  object: THREE.Group;
+  shoulder: THREE.Group;
+  elbow: THREE.Group;
+  fingers: [THREE.Group, THREE.Group];
+  // Whether a session runs on the wagon at its slot, the seconds it has
+  // worked, and how far it is unfolded (motion.ts: armPose).
+  working: boolean;
+  worked: number;
+  raised: number;
+}
+
+function robot(): Robot {
+  const object = new THREE.Group();
+  object.add(block(palette.slate, 0.6, ARM_BASE, 0.6, 0, 0, 0));
+  const shoulder = new THREE.Group();
+  shoulder.position.y = ARM_BASE;
+  shoulder.add(block(palette.slate, 0.34, 0.34, 0.38, 0, -0.17, 0));
+  shoulder.add(block(palette.brick, 0.24, ARM_UPPER, 0.24, 0, 0, 0));
+  const elbow = new THREE.Group();
+  elbow.position.y = ARM_UPPER;
+  elbow.add(block(palette.slate, 0.3, 0.3, 0.32, 0, -0.15, 0));
+  elbow.add(block(palette.brick, 0.18, ARM_FORE, 0.18, 0, 0, 0));
+  const finger = (side: number) => {
+    const f = new THREE.Group();
+    f.position.set(side * 0.06, ARM_FORE, 0);
+    f.add(block(palette.cream, 0.07, ARM_CLAW, 0.16, 0, 0, 0));
+    elbow.add(f);
+    return f;
+  };
+  shoulder.add(elbow);
+  object.add(shoulder);
+  object.userData.arm = true;
+  return { object, shoulder, elbow, fingers: [finger(-1), finger(1)], working: false, worked: 0, raised: 0 };
 }
 
 export interface Show {
@@ -284,15 +336,18 @@ export interface Show {
   left?: ReadonlySet<string>;
 }
 
-// The moving stock. show takes a layout and brings every wagon, crew and
-// count to where it has them; tick moves what is on its way.
+// The moving stock. show takes a layout and brings every wagon, arm and
+// count to where it has them; tick moves what is on its way or at work.
 export class Stock {
   readonly root = new THREE.Group();
   // What the pointer can ask about, each with userData.bead.
   beads: THREE.Object3D[] = [];
 
   private readonly wagons = new Map<string, Wagon>();
-  private readonly crews = new Map<string, Engine>();
+  private readonly arms = new Map<string, Robot>();
+  // No motion asked for, or a picture that does not move: an arm at work
+  // stands bent over its wagon.
+  private calm = false;
   private readonly leaving = new Set<Mover>();
   // The seconds ticked so far, and when the last goods started, by line and
   // direction: the next keep their headway.
@@ -360,49 +415,52 @@ export class Stock {
       this.send(wagon, out ? exit(wagon.stop) : [wagon.stop.at], { size: [1, 0], last: true, ...(out ? {} : { seconds: TWEEN_MIN }) }, how.tween);
     }
 
-    const out = new Set<string>();
-    for (const c of l.crews) {
-      out.add(c.key);
-      const y = c.out ? PLATFORM_HEIGHT : BAY_Y;
-      // In its bay it stands nose to the track; out, along its wagon.
-      const turn = c.out ? 0 : (c.away * Math.PI) / 2;
-      let crew = this.crews.get(c.key);
-      if (!crew) {
-        const object = this.kit.make("crew");
-        object.userData.crew = true;
-        crew = { object, size: CREW_SCALE, at: c.home, home: c.home, away: c.away };
-        this.crews.set(c.key, crew);
-        this.root.add(object);
-        object.position.set(c.home.x, BAY_Y, c.home.z);
-        object.rotation.y = (c.away * Math.PI) / 2;
-        object.scale.setScalar(CREW_SCALE);
+    const placed = new Set<string>();
+    for (const a of l.arms) {
+      placed.add(a.key);
+      let arm = this.arms.get(a.key);
+      if (!arm) {
+        arm = robot();
+        this.arms.set(a.key, arm);
+        this.root.add(arm.object);
       }
-      crew.home = c.home;
-      if (crew.at.x !== c.at.x || crew.at.z !== c.at.z) {
-        const at = crew.object.position;
-        this.send(crew, [{ x: at.x, z: at.z }, c.at], { y: [at.y, y], turn: [crew.object.rotation.y, turn] }, how.tween);
-      }
-      crew.at = c.at;
-      crew.object.userData.bead = c.bead;
+      arm.object.position.set(a.at.x, PLATFORM_HEIGHT, a.at.z);
+      // Its +x is the way to its wagon.
+      arm.object.rotation.y = (-a.reach * Math.PI) / 2;
+      const working = a.bead !== undefined;
+      // A session's work starts with the reach.
+      if (working && !arm.working) arm.worked = 0;
+      arm.working = working;
+      if (!how.tween) arm.raised = working ? 1 : 0;
+      // Only an arm at work has a bead to name.
+      arm.object.userData.bead = a.bead;
+      this.bend(arm);
     }
-    for (const [key, crew] of this.crews) {
-      if (out.has(key)) continue;
-      this.crews.delete(key);
-      // The session is over: back into its bay, and out of sight there.
-      const at = crew.object.position;
-      this.send(
-        crew,
-        [{ x: at.x, z: at.z }, crew.home],
-        { y: [at.y, BAY_Y], turn: [crew.object.rotation.y, (crew.away * Math.PI) / 2], last: true },
-        how.tween,
-      );
+    // An arm goes only with its platform, or with its group's limit.
+    for (const [key, arm] of this.arms) {
+      if (placed.has(key)) continue;
+      this.arms.delete(key);
+      this.root.remove(arm.object);
     }
 
     this.counts.clear();
     for (const c of l.counts) {
       this.counts.add(label(`+${c.more}${c.of === "beads" ? "" : ` ${c.of}`}`, "count", c.at.x, 1.6, c.at.z, [1, 0.5]));
     }
-    this.beads = [...this.wagons.values(), ...this.crews.values()].map((m) => m.object);
+    const working = [...this.arms.values()].filter((a) => a.working);
+    this.beads = [...this.wagons.values(), ...working].map((m) => m.object);
+  }
+
+  set still(still: boolean) {
+    this.calm = still;
+    for (const arm of this.arms.values()) this.bend(arm);
+  }
+
+  private bend(arm: Robot) {
+    const pose = armPose(arm.worked, arm.raised, this.calm);
+    arm.shoulder.rotation.z = -pose.shoulder;
+    arm.elbow.rotation.z = -pose.elbow;
+    arm.fingers.forEach((f, i) => (f.rotation.z = (i === 0 ? 1 : -1) * (0.1 + 0.5 * pose.claw)));
   }
 
   // Goods on a peer's line: out to the peer past the yard's edge, or in from
@@ -495,10 +553,19 @@ export class Stock {
     if (Number.isFinite(dt)) this.clock += dt;
     else this.started.clear();
     let moving = false;
-    for (const m of [...this.wagons.values(), ...this.crews.values(), ...this.leaving]) {
+    for (const m of [...this.wagons.values(), ...this.leaving]) {
       if (!m.move) continue;
       m.move.elapsed += dt;
       this.pose(m);
+      moving = true;
+    }
+    for (const arm of this.arms.values()) {
+      const raised = raise(arm.raised, arm.working, dt);
+      // Folded, or standing bent: nothing to move.
+      if (raised === arm.raised && (raised === 0 || this.calm)) continue;
+      arm.raised = raised;
+      if (Number.isFinite(dt)) arm.worked += dt;
+      this.bend(arm);
       moving = true;
     }
     if (this.lit.visible) {
@@ -510,7 +577,8 @@ export class Stock {
   }
 }
 
-export function describe(bead: Bead, crew: boolean): string {
+// The tip of a wagon, or of the arm that works it.
+export function describe(bead: Bead, arm: boolean): string {
   const where = `${bead.depot} · ${bead.type} · ${bead.stage}${bead.hold === true ? " · held" : ""}`;
-  return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
+  return arm ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
 }
