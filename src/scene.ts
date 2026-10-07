@@ -19,7 +19,6 @@ import {
   seats,
   SHED_WIDTH,
   SIDING_Z,
-  type Coupling,
   type Layout,
   type Person,
   type Point,
@@ -28,6 +27,7 @@ import {
   type Shed,
   type Tower,
   type Vehicle,
+  type Wait,
   type Weather,
 } from "./layout";
 import {
@@ -103,16 +103,6 @@ const MARK_X = 1.15;
 // The lamp of a wagon that waits: left of its middle, this far over its roof.
 const WAIT_X = 0.55;
 const WAIT_Y = 0.3;
-// A chain between two wagons: how thick it and its hooks are, and where a
-// hook takes hold of a wagon, from its middle: along it towards the other
-// wagon, and on its side to the other one, or to the platform when both
-// stand on one rail. It lies as low as it is seen there: on the platform's
-// edge, not under it.
-const CHAIN = 0.07;
-const HOOK = 0.2;
-const HOOK_X = 1.2;
-const HOOK_Z = 0.68;
-const CHAIN_Y = PLATFORM_HEIGHT + 0.02;
 // A works' lamp: on a post this far right of its building's middle, clear of
 // the wall, and this high. Where its smoke leaves a building that has no
 // chimney to say so: over its middle, this high.
@@ -320,31 +310,6 @@ function lantern(light: THREE.Material, top: number): THREE.Object3D {
   bulb.position.set(-WAIT_X, top + WAIT_Y + 0.12, 0);
   g.add(bulb);
   return g;
-}
-
-// A chain: a thin dark line and a hook at each end, laid by lay.
-const link = new THREE.BoxGeometry(1, CHAIN, CHAIN);
-const hook = new THREE.BoxGeometry(HOOK, HOOK, HOOK);
-function chain(): THREE.Object3D {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(link, material(iron)), new THREE.Mesh(hook, material(iron)), new THREE.Mesh(hook, material(iron)));
-  return g;
-}
-
-// Where a chain takes hold of the wagon at from, on its way to the one at to.
-function hold(from: Point, to: Point): Point {
-  return { x: from.x + Math.max(-HOOK_X, Math.min(HOOK_X, to.x - from.x)), z: from.z + (to.z < from.z ? -HOOK_Z : HOOK_Z) };
-}
-
-// Lay a chain between two wagons, where they stand now.
-function lay(chain: THREE.Object3D, one: Point, other: Point) {
-  const [line, ...hooks] = chain.children as [THREE.Object3D, THREE.Object3D, THREE.Object3D];
-  const ends = [hold(one, other), hold(other, one)] as const;
-  const [a, b] = ends;
-  line.position.set((a.x + b.x) / 2, CHAIN_Y + HOOK / 2, (a.z + b.z) / 2);
-  line.scale.x = Math.max(Math.hypot(b.x - a.x, b.z - a.z), 1e-3);
-  line.rotation.y = Math.atan2(a.z - b.z, b.x - a.x);
-  hooks.forEach((h, i) => h.position.set(ends[i]!.x, CHAIN_Y + HOOK / 2, ends[i]!.z));
 }
 
 // A works' chimney and its lamp. The fire was lit so many seconds ago and
@@ -696,10 +661,6 @@ export class Stock {
   private blink = 0;
   // The lamps of the wagons that wait: amber, and lit steadily.
   private readonly amber = new THREE.MeshBasicMaterial({ color: lamp.wait });
-  // The chains, each with the keys of the two wagons it lies between: laid
-  // again whenever either moves.
-  private readonly chains = new THREE.Group();
-  private links: { waits: string; on: string; object: THREE.Object3D }[] = [];
   // The works' chimneys and lamps, by their buildings' keys.
   private readonly fumes = new THREE.Group();
   private readonly stacks = new Map<string, Stack>();
@@ -721,7 +682,7 @@ export class Stock {
     );
     this.lit.position.set(wire.at.x + wire.length / 2, POLE_HEIGHT - 0.17, wire.at.z);
     this.lit.visible = false;
-    this.root.add(this.counts, this.posts, this.chains, this.fumes, this.lit);
+    this.root.add(this.counts, this.posts, this.fumes, this.lit);
     this.show(l, { tween: false });
   }
 
@@ -750,8 +711,6 @@ export class Stock {
       this.land(this.engines.get(track)?.queue.snap() ?? []);
       gave.add(track);
     };
-    const waits = new Map<string, Coupling[]>();
-    for (const c of l.couplings) waits.set(c.waits, [...(waits.get(c.waits) ?? []), c]);
     for (const v of l.vehicles) {
       standing.add(v.key);
       const platform = platforms.get(v.platform);
@@ -799,10 +758,8 @@ export class Stock {
       wagon.track = on;
       wagon.object.userData.bead = v.bead;
       wagon.object.userData.age = v.age;
-      const waiting = waits.get(v.key) ?? [];
-      wagon.object.userData.waits = waiting.map(awaits);
-      // A chain says it where there is one: the lamp is for the others.
-      this.mark(wagon, v, waiting.some((c) => !c.chained));
+      wagon.object.userData.waits = (v.waits ?? []).map(awaits);
+      this.mark(wagon, v);
     }
     for (const [key, wagon] of this.wagons) {
       if (standing.has(key)) continue;
@@ -904,17 +861,6 @@ export class Stock {
       this.send(walker, [{ x, z }], { turn: [walker.heading, walker.heading], size: [1, 0], seconds: TWEEN_MIN, last: true }, true);
     }
 
-    this.chains.clear();
-    this.links = l.couplings
-      .filter((c) => c.chained)
-      .map((c) => {
-        const object = chain();
-        object.userData.coupling = c.key;
-        this.chains.add(object);
-        return { waits: c.waits, on: c.on, object };
-      });
-    this.hang();
-
     this.posts.clear();
     for (const post of l.lamps) this.posts.add(beacon(this.light, post.at.x, PLATFORM_HEIGHT, post.at.z, PLATFORM_LAMP_Y));
     this.lamps = l.lamps.length + l.vehicles.filter((v) => v.lamp).length;
@@ -942,21 +888,12 @@ export class Stock {
     for (const at of this.stacks.values()) this.fume(at, 0);
   }
 
-  // Lay every chain between its two wagons, where they are now: it follows
-  // them behind a shunter. None for a wagon that is not there.
-  private hang() {
-    for (const { waits, on, object } of this.links) {
-      const [a, b] = [waits, on].map((key) => this.wagons.get(key)?.object);
-      object.visible = a !== undefined && b !== undefined && a.visible && b.visible;
-      if (a && b) lay(object, { x: a.position.x, z: a.position.z }, { x: b.position.x, z: b.position.z });
-    }
-  }
-
   // What a wagon wears for what is wrong with its bead: chocks and a flag
   // for a hold, a lamp for a fault; for a long wait on a person: dull
-  // paint, rust, then moss on top; and for a wait on a bead it has no chain
-  // to (waits): a small amber lamp. Nothing for a wagon that is well.
-  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp" | "weather">, waits = false) {
+  // paint, rust, then moss on top; and for a wait on another bead: a small
+  // amber lamp. Nothing for a wagon that is well.
+  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp" | "weather" | "waits">) {
+    const waits = v.waits !== undefined;
     const marked = `${v.chocked === true}/${v.lamp === true}/${v.weather ?? ""}/${waits}`;
     if ((wagon.marked ?? "false/false//false") === marked) return;
     wagon.marked = marked;
@@ -1329,7 +1266,6 @@ export class Stock {
       this.drive(engine);
       if (engine.queue.busy) moving = true;
     }
-    this.hang();
     // No chocks under a wagon that rolls, or that a shunter has.
     for (const [key, wagon] of this.wagons) {
       if (wagon.chocks) wagon.chocks.visible = !wagon.move && !this.hauled(key);
@@ -1422,10 +1358,10 @@ export function waited(stage: string, days: number): string {
   return `in ${stage} ${whole < 1 ? "under a day" : whole === 1 ? "1 day" : `${whole} days`}`;
 }
 
-// What a wagon waits for, in words, with the board that is on: "waits for
-// yardr-xyz (aiquokka)".
-export function awaits(c: Coupling): string {
-  return `waits for ${c.on} (${c.depot})`;
+// What a wagon waits for, in words, with where that stands: "waits for
+// yardr-xyz (aiquokka · review)".
+export function awaits(w: Wait): string {
+  return `waits for ${w.on} (${w.depot} · ${w.stage})`;
 }
 
 // The tip of a wagon, or of the figure that works it or sits by it. age is

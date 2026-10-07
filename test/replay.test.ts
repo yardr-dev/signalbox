@@ -559,7 +559,7 @@ describe("the works of the replay", () => {
 
 // Who waits for whom: signalbox-b in backlog for signalbox-a at new, on one
 // board, and for yardr-x on another.
-describe("the couplings of the replay", () => {
+describe("the waits of the replay", () => {
   const beads = [bead("signalbox-a"), bead("signalbox-b", { stage: "backlog" }), bead("yardr-x", { depot: "yardr" })];
   const three: Yard = { ...yard, beads };
   const none: Log = { taken_at: yard.taken_at, beads: [], events: [] };
@@ -567,21 +567,22 @@ describe("the couplings of the replay", () => {
   const from: State = { beads, sessions: {}, edges: [], works: {} };
   const go = (events: YardEvent[], s: State = from) => events.reduce((s, e) => step(s, e, w3), s);
   const blocks = (kind: string, waits: string, on: string) => event(kind, waits, { from: on, kind: "blocks" });
-  const couplings = (s: State) => layout({ ...three, beads: s.beads, edges: s.edges }).couplings.map((c) => [c.waits, c.on, c.chained]);
+  // Who has a lamp, and for whom.
+  const lamps = (s: State) => layout({ ...three, beads: s.beads, edges: s.edges }).vehicles.flatMap((v) => (v.waits ?? []).map((w) => [v.key, w.on]));
 
-  test("a blocks edge added is a chain on one board and a lamp across two; removed, it is gone", () => {
-    const chained = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
-    expect(chained.edges).toEqual([{ from: "signalbox-a", to: "signalbox-b" }]);
-    expect(couplings(chained)).toEqual([["signalbox-b", "signalbox-a", true]]);
-    const both = go([blocks("dep_added", "signalbox-b", "yardr-x")], chained);
-    expect(couplings(both)).toEqual([
-      ["signalbox-b", "signalbox-a", true],
-      ["signalbox-b", "yardr-x", false],
+  test("a blocks edge added is a lamp, on one board and across two alike; removed, it is gone", () => {
+    const one = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
+    expect(one.edges).toEqual([{ from: "signalbox-a", to: "signalbox-b" }]);
+    expect(lamps(one)).toEqual([["signalbox-b", "signalbox-a"]]);
+    const both = go([blocks("dep_added", "signalbox-b", "yardr-x")], one);
+    expect(lamps(both)).toEqual([
+      ["signalbox-b", "signalbox-a"],
+      ["signalbox-b", "yardr-x"],
     ]);
     // Said again, it is the same state.
     expect(go([blocks("dep_added", "signalbox-b", "yardr-x")], both)).toBe(both);
     const less = go([blocks("dep_removed", "signalbox-b", "signalbox-a")], both);
-    expect(couplings(less)).toEqual([["signalbox-b", "yardr-x", false]]);
+    expect(lamps(less)).toEqual([["signalbox-b", "yardr-x"]]);
     expect(go([blocks("dep_removed", "signalbox-b", "signalbox-a")], less)).toBe(less);
     // The beads are as they were.
     expect(less.beads).toBe(from.beads);
@@ -595,27 +596,27 @@ describe("the couplings of the replay", () => {
     expect(go([blocks("dep_added", "signalbox-zzzz", "signalbox-a")])).toBe(from);
   });
 
-  test("closing the blocker clears the chain and puts the lamp out; the wagon that waited stands as it did", () => {
+  test("closing a blocker takes its wait, and the last one puts the lamp out; the wagon that waited stands as it did", () => {
     const both = go([blocks("dep_added", "signalbox-b", "signalbox-a"), blocks("dep_added", "signalbox-b", "yardr-x")]);
-    const unchained = go([event("closed", "signalbox-a")], both);
-    expect(couplings(unchained)).toEqual([["signalbox-b", "yardr-x", false]]);
-    const free = go([event("closed", "yardr-x")], unchained);
+    const less = go([event("closed", "signalbox-a")], both);
+    expect(lamps(less)).toEqual([["signalbox-b", "yardr-x"]]);
+    const free = go([event("closed", "yardr-x")], less);
     expect(free.edges).toEqual([]);
-    expect(couplings(free)).toEqual([]);
+    expect(lamps(free)).toEqual([]);
     expect(free.beads).toEqual([bead("signalbox-b", { stage: "backlog" })]);
   });
 
   test("a blocker past the buffer is waited for no more, before its close and after", () => {
-    const chained = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
-    const landed = go([event("advanced", "signalbox-a", { from: "approved", to: "merged" })], chained);
-    expect(couplings(landed)).toEqual([]);
+    const waiting = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
+    const landed = go([event("advanced", "signalbox-a", { from: "approved", to: "merged" })], waiting);
+    expect(lamps(landed)).toEqual([]);
     // The close finds no wagon, and still takes the edge.
     expect(go([event("closed", "signalbox-a")], landed).edges).toEqual([]);
   });
 
   test("a wagon that closes waits for nothing", () => {
-    const chained = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
-    expect(go([event("closed", "signalbox-b")], chained).edges).toEqual([]);
+    const waiting = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
+    expect(go([event("closed", "signalbox-b")], waiting).edges).toEqual([]);
   });
 
   test("the window's start: an edge it adds is not there yet, one it removes is, any other is the snapshot's", () => {

@@ -638,20 +638,10 @@ describe("the shunters of the stock", () => {
   });
 });
 
-describe("the couplings of the stock", () => {
+describe("the lamps of the wagons that wait", () => {
   const bead = (id: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type: "task", stage: "backlog", depot: "signalbox", priority: 2, created_at: "2000-01-01T00:00:00Z", ...over });
   const at = (beads: Bead[], edges: Edge[]) => layout({ ...yard, beads, edges });
   const wagon = (stock: Stock, id: string) => stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id && o.userData.crew !== true)!;
-  // The chains that are seen, each as its key and its two hooks.
-  const chains = (stock: Stock) => {
-    const seen: { key: string; hooks: THREE.Vector3[]; line: THREE.Object3D }[] = [];
-    stock.root.traverse((o) => {
-      if (typeof o.userData.coupling !== "string" || !o.visible) return;
-      const [line, ...hooks] = o.children;
-      seen.push({ key: o.userData.coupling, hooks: hooks.map((h) => h.position), line: line! });
-    });
-    return seen;
-  };
   const amber = (o: THREE.Object3D) => {
     let n = 0;
     o.traverse((part) => {
@@ -659,71 +649,83 @@ describe("the couplings of the stock", () => {
     });
     return n;
   };
+  // What the stock draws that is no wagon's own: a line between two wagons
+  // would be one more of these.
+  const loose = (stock: Stock) => {
+    let n = 0;
+    stock.root.traverse((o) => {
+      if (o instanceof THREE.Mesh) n++;
+    });
+    return n - stock.root.children.filter((o) => o.userData.bead !== undefined).reduce((sum, o) => sum + meshes(o), 0);
+  };
+  const meshes = (o: THREE.Object3D) => {
+    let n = 0;
+    o.traverse((part) => {
+      if (part instanceof THREE.Mesh) n++;
+    });
+    return n;
+  };
   const a = bead("signalbox-a", { stage: "new" });
   const b = bead("signalbox-b");
   const waits = [{ from: "signalbox-a", to: "signalbox-b" }];
 
-  test("a wagon that waits for one on its board has a chain to it: a thin dark line with a hook at each end, and no lamp", () => {
+  test("across platforms of one board: an amber lamp on the wagon that waits, and no line between the two", () => {
     const stock = new Stock(at([a, b], waits), kit);
-    const [chain] = chains(stock);
-    expect(chains(stock).length).toBe(1);
-    expect(chain!.key).toBe("signalbox-a>signalbox-b");
-    expect(((chain!.line as THREE.Mesh).material as THREE.MeshStandardMaterial).color.getHex()).toBe(iron);
-    // A hook at each wagon, within its length and beside it; the line is as long as from one to the other.
     const [waiting, blocker] = [wagon(stock, "signalbox-b"), wagon(stock, "signalbox-a")];
-    const [first, second] = chain!.hooks;
-    expect(Math.abs(first!.x - waiting.position.x)).toBeLessThan(1.35);
-    expect(Math.abs(second!.x - blocker.position.x)).toBeLessThan(1.35);
-    expect(Math.abs(first!.z - waiting.position.z)).toBeLessThan(1);
-    expect(chain!.line.scale.x).toBeCloseTo(first!.distanceTo(second!));
-    expect(amber(waiting)).toBe(0);
-    expect(tip(waiting.userData.bead as Bead, false, undefined, waiting.userData.waits as string[])).toContain("\nwaits for signalbox-a (signalbox)");
+    expect(amber(waiting)).toBe(1);
+    expect(amber(blocker)).toBe(0);
+    // The edge adds the lamp to its wagon and nothing else to the yard.
+    expect(loose(stock)).toBe(loose(new Stock(at([a, b], []), kit)));
+    expect(tip(waiting.userData.bead as Bead, false, undefined, waiting.userData.waits as string[])).toContain("\nwaits for signalbox-a (signalbox · new)");
     expect(tip(blocker.userData.bead as Bead, false, undefined, blocker.userData.waits as string[])).not.toContain("waits for");
+    // The lamp is lit and still: the picture comes to a stand.
+    expect(stock.tick(0.1)).toBe(false);
   });
 
-  test("the chain follows its wagons when a shunter moves one", () => {
+  test("at one platform: the same lamp, and no line", () => {
+    const beside = { ...a, stage: "backlog" };
+    const stock = new Stock(at([beside, b], waits), kit);
+    expect(amber(wagon(stock, "signalbox-b"))).toBe(1);
+    expect(amber(wagon(stock, "signalbox-a"))).toBe(0);
+    expect(loose(stock)).toBe(loose(new Stock(at([beside, b], []), kit)));
+    expect(wagon(stock, "signalbox-b").userData.waits).toEqual(["waits for signalbox-a (signalbox · backlog)"]);
+  });
+
+  test("the lamp stays lit and its tip follows the blocker when a shunter moves it", () => {
     const stock = new Stock(at([a, b], waits), kit);
-    const blocker = wagon(stock, "signalbox-a");
-    const from = blocker.position.x;
+    const waiting = wagon(stock, "signalbox-b");
     stock.show(at([{ ...a, stage: "review" }, b], waits), { tween: true });
-    // Somewhere on its way behind the shunter, the hook is still at the wagon.
-    let moved = false;
-    for (let n = 0; stock.tick(0.02); n++) {
-      if (n > 5000) throw new Error("the stock never came to a stand");
-      const hook = chains(stock)[0]!.hooks[1]!;
-      expect(Math.abs(hook.x - blocker.position.x)).toBeLessThan(1.35);
-      if (blocker.position.x !== from) moved = true;
-    }
-    expect(moved).toBe(true);
-    expect(blocker.position.x).toBeGreaterThan(from);
-    expect(Math.abs(chains(stock)[0]!.hooks[1]!.x - blocker.position.x)).toBeLessThan(1.35);
+    expect(amber(waiting)).toBe(1);
+    expect(waiting.userData.waits).toEqual(["waits for signalbox-a (signalbox · review)"]);
   });
 
-  test("a wagon that waits for one on another board has a small amber lamp, and its tip names the bead and the board", () => {
+  test("a wagon that waits for one on another board has the same lamp, and its tip names the bead, the board and the stage", () => {
     const far = bead("yardr-x", { depot: "yardr" });
     const edges = [{ from: "yardr-x", to: "signalbox-b" }];
     const l = at([far, b], edges);
     const stock = new Stock(l, kit);
     const waiting = wagon(stock, "signalbox-b");
-    expect(chains(stock)).toEqual([]);
     expect(amber(waiting)).toBe(1);
     expect(amber(wagon(stock, "yardr-x"))).toBe(0);
-    expect(awaits(l.couplings[0]!)).toBe("waits for yardr-x (yardr)");
-    expect(tip(waiting.userData.bead as Bead, false, 9, waiting.userData.waits as string[])).toBe("signalbox-b\nsignalbox-b\nsignalbox · task · backlog\nin backlog 9 days\nwaits for yardr-x (yardr)");
-    // The lamp is lit and still: the picture comes to a stand.
+    expect(awaits({ on: "yardr-x", depot: "yardr", stage: "backlog" })).toBe("waits for yardr-x (yardr · backlog)");
+    expect(tip(waiting.userData.bead as Bead, false, 9, waiting.userData.waits as string[])).toBe("signalbox-b\nsignalbox-b\nsignalbox · task · backlog\nin backlog 9 days\nwaits for yardr-x (yardr · backlog)");
     expect(stock.tick(0.1)).toBe(false);
-
-    // The blocker closes: the lamp goes out, and the tip says no more of it.
-    stock.show(at([b], edges), { tween: true });
-    expect(amber(waiting)).toBe(0);
-    expect(waiting.userData.waits).toEqual([]);
   });
 
-  test("closing the blocker takes the chain away", () => {
+  test("a wagon that waits for two has one lamp, and a line of its tip for each", () => {
+    const far = bead("yardr-x", { depot: "yardr" });
+    const stock = new Stock(at([a, far, b], [...waits, { from: "yardr-x", to: "signalbox-b" }]), kit);
+    const waiting = wagon(stock, "signalbox-b");
+    expect(amber(waiting)).toBe(1);
+    expect(waiting.userData.waits).toEqual(["waits for signalbox-a (signalbox · new)", "waits for yardr-x (yardr · backlog)"]);
+  });
+
+  test("closing the blocker puts the lamp out, and the tip says no more of it", () => {
     const stock = new Stock(at([a, b], waits), kit);
+    const waiting = wagon(stock, "signalbox-b");
     stock.show(at([b], waits), { tween: true });
-    expect(chains(stock)).toEqual([]);
-    expect(amber(wagon(stock, "signalbox-b"))).toBe(0);
+    expect(amber(waiting)).toBe(0);
+    expect(waiting.userData.waits).toEqual([]);
   });
 });
 
