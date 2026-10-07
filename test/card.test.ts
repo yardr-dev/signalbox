@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ASKING, brief, card, missing, NEEDS_LIVE, type Detail } from "../src/card";
+import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, type Detail } from "../src/card";
 import type { Bead } from "../src/yard";
 
 // The yard's times as they are, so the card's text is the same everywhere.
@@ -25,6 +25,7 @@ describe("the card", () => {
         ["type", "task"],
         ["stage", "new"],
         ["group", "builders · session at work"],
+        ["fault", "none"],
         ["hold", "held"],
         ["priority", "P2"],
         ["labels", "web, ui"],
@@ -54,10 +55,39 @@ describe("the card", () => {
     expect(Object.fromEntries(closed.facts).group).toBe("builders · closed");
   });
 
+  test("a fault is named as the tip names it, and when; no session is said only of a bead with none and no fault", () => {
+    const at = "2099-01-02T00:48:00Z";
+    const of = (more: Partial<Detail["bead"]>) => Object.fromEntries(card({ bead: { ...bead, working: false, ...more }, notes: [] }, when).facts);
+    // Its last session failed: the figure that sits by the wagon.
+    expect(of({ fault: { kind: "failed", at } })).toMatchObject({ group: "builders", fault: `session failed <${at}>` });
+    expect(of({ fault: { kind: "stalled", at } }).fault).toBe(`session stalled <${at}>`);
+    expect(of({ fault: { kind: "gave_up", at } }).fault).toBe(`session gave up <${at}>`);
+    expect(of({ fault: { kind: "ended_question", at } }).fault).toBe(`session ended with question <${at}>`);
+    // The yard's word on the bead itself is no session's, and a time nobody knows is not said.
+    expect(of({ group: undefined, fault: { kind: "move_refused", at: "" } })).toMatchObject({ group: "none", fault: "move refused" });
+    // A session at work on it, and none: no fault.
+    expect(of({ working: true })).toMatchObject({ group: "builders · session at work", fault: "none" });
+    expect(of({})).toMatchObject({ group: "builders · no session", fault: "none" });
+    // A refused move with a session at work on the bead: both are said.
+    expect(of({ working: true, fault: { kind: "move_refused", at } })).toMatchObject({ group: "builders · session at work", fault: `move refused <${at}>` });
+    // The card shown first, from the page's bead, says the same.
+    expect(brief({ ...bead, working: false, fault: { kind: "failed", at } }, when, ASKING).facts).toEqual(card({ bead: { ...bead, working: false, fault: { kind: "failed", at } }, notes: [] }, when).facts);
+  });
+
+  test("the yard's answer takes the fault the page shows, which the log alone may know", () => {
+    const at = "2099-01-02T00:48:00Z";
+    const answer: Detail = { bead: { ...bead, working: false, status: "open", fault: { kind: "died", at } }, notes: [] };
+    // Nothing on the wagon: the answer as it is.
+    expect(agreed(answer, bead)).toBe(answer);
+    const shown = { ...bead, fault: { kind: "move_refused", at } };
+    expect(agreed({ ...answer, bead: { ...bead, status: "open" } }, shown).bead).toEqual({ ...bead, status: "open", fault: shown.fault });
+    expect(agreed(answer, shown).bead.fault).toEqual(shown.fault);
+  });
+
   test("from the snapshot alone: what it has, and why there are no notes", () => {
     const c = brief(bead, when, NEEDS_LIVE);
     expect(c).toMatchObject({ id: "signalbox-a", title: "Click a wagon", body: "", notes: [], remark: "notes need the live page" });
-    expect(c.facts.map(([what]) => what)).toEqual(["depot", "type", "stage", "group", "hold", "priority", "labels", "created"]);
+    expect(c.facts.map(([what]) => what)).toEqual(["depot", "type", "stage", "group", "fault", "hold", "priority", "labels", "created"]);
     expect(brief(bead, when, ASKING).remark).toBe(ASKING);
   });
 

@@ -154,12 +154,13 @@ function beadOf(b: Raw, left: Raw = {}): Raw {
 // One bead for its card (src/card.ts), from what the view answers for the
 // bead's page (/beads/<id>): the snapshot's bead, whether it is closed, when
 // it last changed, its body and its notes. A note is its author, time and
-// text; the page also has the flow, the bead's edges, its sessions and where
-// its stage file lies.
+// text. The page's sessions are the bead's own, all of them: what the last
+// one left is the bead's fault, as in the snapshot. The page also has the
+// flow, the bead's edges and where its stage file lies.
 export function cardOf(raw: Raw): Detail {
   const bead = record(raw.bead);
   const detail = {
-    bead: { ...beadOf(bead), ...pick(bead, ["status", "updated_at", "body"]) },
+    bead: { ...beadOf(bead, faults(list(raw.sessions)).get(bead.id)), ...pick(bead, ["status", "updated_at", "body"]) },
     notes: list(raw.notes).map((n) => pick(n, ["author", "at", "text"])),
   };
   return detail as unknown as Detail;

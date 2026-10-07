@@ -210,6 +210,23 @@ describe("the projection", () => {
       },
       notes: [{ author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "what changed" }],
     });
+    // Its last session failed, and nothing since: the fault the snapshot has
+    // (yardOf), and the group whose session it was.
+    const idle = { ...primed.bead, session: null };
+    const session = (state: string, started_at: string, more: Raw = {}): Raw => ({ id: "4wbdbdwypgzzjr5vgfwr", bead: "signalbox-a", group: "builders", state, started_at, handle: { brief: SECRET }, error: SECRET, ...more });
+    const failed = [session("failed", "2099-01-01T02:00:00Z", { ended_at: "2099-01-01T02:30:00Z" }), session("done", "2099-01-01T01:00:00Z", { ended_at: "2099-01-01T01:30:00Z" })];
+    const left = cardOf({ ...primed, bead: idle, sessions: failed }).bead;
+    expect(left).toMatchObject({ working: false, group: "builders", fault: { kind: "failed", at: "2099-01-01T02:30:00Z" } });
+    // The card shown first is the snapshot's bead: the two agree.
+    const [shown] = yardOf({ ...lists, beads: [idle], sessions: failed }, "t").beads;
+    expect(left).toEqual({ ...shown, status: "open", updated_at: "2099-01-02T00:00:00Z", body: SECRET });
+    // A session at work on it now is the news: no fault, whatever came before.
+    const running = cardOf({ ...primed, sessions: [...failed, session("running", "2099-01-01T03:00:00Z")] }).bead;
+    expect(running.working).toBe(true);
+    expect(running.fault).toBeUndefined();
+    // Listed as running, though the bead names no session: no fault either.
+    expect(cardOf({ ...primed, bead: idle, sessions: [...failed, session("running", "2099-01-01T03:00:00Z")] }).bead.fault).toBeUndefined();
+    expect(JSON.stringify(cardOf({ ...primed, bead: { ...idle, body: "" }, sessions: failed }))).not.toMatch(/secret/);
     // What is not a bead with notes is an empty card, not an error.
     expect(cardOf({})).toEqual({ bead: { working: false }, notes: [] });
   });

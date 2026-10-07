@@ -11,12 +11,12 @@ import {
   atWork,
   BOARD_X,
   coal,
+  faulted,
   HEADSHUNT,
   left,
   PEER_RAIL_Z,
   people,
   PLATFORM_LENGTH,
-  seats,
   SHED_WIDTH,
   SIDING_Z,
   type Layout,
@@ -1355,10 +1355,8 @@ const hour = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-di
 export function wrong(bead: Bead): string | undefined {
   const said: string[] = bead.hold === true ? ["held"] : [];
   if (bead.fault) {
-    const { kind, at } = bead.fault;
-    const what = kind.startsWith("ended_") ? `ended with ${kind.slice(6)}` : kind.replaceAll("_", " ");
-    const when = Date.parse(at);
-    said.push(`${seats(bead.fault) ? "session " : ""}${what}${Number.isNaN(when) ? "" : ` ${hour.format(when)}`}`);
+    const when = Date.parse(bead.fault.at);
+    said.push(`${faulted(bead.fault)}${Number.isNaN(when) ? "" : ` ${hour.format(when)}`}`);
   }
   return said.length > 0 ? said.join(" · ") : undefined;
 }

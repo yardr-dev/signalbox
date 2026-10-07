@@ -202,6 +202,14 @@ export function seats(fault: Fault | undefined): fault is Fault {
   return fault !== undefined && !OF_BEAD.includes(fault.kind);
 }
 
+// A fault in words, as the tip and the card say it: "session gave up",
+// "session ended with question", "move refused".
+export function faulted(fault: Fault): string {
+  const { kind } = fault;
+  const what = kind.startsWith("ended_") ? `ended with ${kind.slice(6)}` : kind.replaceAll("_", " ");
+  return `${seats(fault) ? "session " : ""}${what}`;
+}
+
 // How a wagon looks that has waited on a person: its paint dull from this
 // many days at its stage, rusted, then moss on top. Under the first it is
 // fresh.

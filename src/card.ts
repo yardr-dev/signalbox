@@ -3,6 +3,7 @@
 // script for the bead and draws what these functions return; on a page with
 // no serve script the card is built from the snapshot's bead alone.
 
+import { faulted } from "./layout";
 import type { Bead } from "./yard";
 
 export interface Note {
@@ -41,12 +42,17 @@ export type When = (iso: string) => string;
 
 function facts(bead: Detail["bead"], when: When): [string, string][] {
   const closed = bead.status === "closed";
-  const session = bead.working === true ? "session at work" : closed ? "closed" : "no session";
+  const { fault } = bead;
+  // A session that came to no good end is not at work, and not none either:
+  // the fault's row says what became of it.
+  const session = bead.working === true ? "session at work" : closed ? "closed" : fault === undefined ? "no session" : undefined;
   const rows: [string, string][] = [
     ["depot", bead.depot],
     ["type", bead.type],
     ["stage", bead.stage],
-    ["group", `${bead.group ?? "none"} · ${session}`],
+    ["group", [bead.group ?? "none", ...(session !== undefined ? [session] : [])].join(" · ")],
+    // In the tip's words, and when in the card's: a fault may be days old.
+    ["fault", fault === undefined ? "none" : `${faulted(fault)}${fault.at === "" ? "" : ` ${when(fault.at)}`}`],
     ["hold", bead.hold === true ? "held" : "no"],
     ["priority", `P${bead.priority}`],
     ["labels", bead.labels && bead.labels.length > 0 ? bead.labels.join(", ") : "none"],
@@ -77,6 +83,14 @@ export function card(detail: Detail, when: When): Card {
     notes,
     remark: notes.length === 0 ? "no notes" : "",
   };
+}
+
+// The yard's answer with the fault the page shows on the bead, where it shows
+// one. The answer's fault is how the bead's last session ended; a stall, a
+// refused move or a stranded bead is in the log alone, which the page has
+// followed and the answer has not: the card names what the wagon wears.
+export function agreed(detail: Detail, shown: Bead): Detail {
+  return shown.fault === undefined ? detail : { ...detail, bead: { ...detail.bead, fault: shown.fault } };
 }
 
 // The card of a bead as the snapshot has it, and why it has no more.

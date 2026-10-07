@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
+import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { loadKit } from "./kit";
 import { layout } from "./layout";
 import { css, dress, palette, SHADE } from "./palette";
@@ -379,7 +379,7 @@ async function start() {
       const response = await fetch(`${base}api/bead/${encodeURIComponent(bead.id)}`);
       if (response.status === 404) next = missing(bead.id);
       else if (!response.ok) throw new Error(`api/bead: ${response.status}`);
-      else next = card((await response.json()) as Detail, when);
+      else next = card(agreed((await response.json()) as Detail, bead), when);
     } catch {
       next = brief(bead, when, NO_ANSWER);
     }
