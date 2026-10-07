@@ -48,12 +48,10 @@ export const RETURN_Z = -1.3;
 // its door on the right, down the line: the yard is seen from below, and a
 // door to the platform would be behind the building, its crew with it. The
 // crew stand idle before the door in rows of three out from it, a place for
-// each session the group may run; at most six are drawn (the limit is on
-// its sign).
+// each session the group may run.
 export const SHED_PITCH = 5;
 export const SHED_WIDTH = 2.5;
 export const PLACE_FILES = 3;
-export const PLACES_DRAWN = 6;
 export const PLACE_PITCH = 0.85;
 // From the door to the first place of a row, and from the building's middle
 // to a row: the first on the platform's side, the second on the other.
@@ -489,13 +487,13 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
           const limit = group?.limit ?? 0;
           const at = { x: x - PLATFORM_LENGTH / 2 + SHED_WIDTH / 2 + n * SHED_PITCH, z: middle };
           const places: Place[] = [];
-          const row = kind === "hut" || kind === "office" ? Math.min(limit, PLACES_DRAWN) : 0;
+          const row = kind === "hut" || kind === "office" ? limit : 0;
           for (let p = 0; p < row; p++) {
             places.push({
               key: `${key}/${name}#${p}`,
               at: {
                 x: at.x + SHED_WIDTH / 2 + PLACE_X + (p % PLACE_FILES) * PLACE_PITCH,
-                z: at.z + away * (p < PLACE_FILES ? -PLACE_Z : PLACE_Z),
+                z: at.z + away * (Math.floor(p / PLACE_FILES) === 0 ? -PLACE_Z : PLACE_Z + (Math.floor(p / PLACE_FILES) - 1) * PLACE_PITCH),
               },
             });
           }

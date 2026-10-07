@@ -17,7 +17,6 @@ import {
   PLACE_PITCH,
   PLACE_X,
   PLACE_Z,
-  PLACES_DRAWN,
   PLATFORM_LENGTH,
   PLATFORM_Z,
   positions,
@@ -290,14 +289,16 @@ describe("the mapping", () => {
       expect(p.at.x).toBeCloseTo(hut.at.x + SHED_WIDTH / 2 + PLACE_X + k * PLACE_PITCH);
       expect(p.at.z).toBeCloseTo(hut.at.z - PLACE_Z);
     });
-    // Beyond three, a second row on the other side; beyond six, no more places.
+    // Beyond three, a second row on the other side; further rows extend away.
     const grown = copy();
     grown.groups.find((g) => g.name === "yardr-builders")!.limit = 8;
     const wide = layout(grown).sheds.find((s) => s.key === hut.key)!;
     expect(wide.limit).toBe(8);
-    expect(wide.places.length).toBe(PLACES_DRAWN);
+    expect(wide.places.length).toBe(wide.limit);
     expect(wide.places.slice(0, 3)).toEqual(hut.places);
     expect(wide.places[3]!.at).toEqual({ x: hut.places[0]!.at.x, z: hut.at.z + PLACE_Z });
+    expect(wide.places[6]!.at).toEqual({ x: hut.places[0]!.at.x, z: hut.at.z + PLACE_Z + PLACE_PITCH });
+    expect(new Set(wide.places.map((p) => `${p.at.x}/${p.at.z}`)).size).toBe(wide.limit);
     // The first platform is the one of the lowest slots, not the first listed.
     const turned = copy();
     turned.depots.reverse();
