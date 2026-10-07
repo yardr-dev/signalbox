@@ -32,6 +32,8 @@ const FAR = 14;
 const MARGIN = 28;
 // Pixels a pointer may move between down and up and still have clicked.
 const SLOP = 5;
+// A place on the page, as a pointer's event gives it.
+type Spot = Pick<PointerEvent, "clientX" | "clientY">;
 
 const base = import.meta.env.BASE_URL;
 const host = document.getElementById("yard")!;
@@ -240,26 +242,38 @@ async function start() {
   // A wagon, or the figure at work on it, says under the pointer which bead
   // it is; a building which group's it is.
   const ray = new THREE.Raycaster();
-  const under = (e: PointerEvent) => {
+  const under = (at: Spot) => {
     const box = host.getBoundingClientRect();
     ray.setFromCamera(
-      new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1),
+      new THREE.Vector2(((at.clientX - box.left) / box.width) * 2 - 1, -((at.clientY - box.top) / box.height) * 2 + 1),
       camera,
     );
     let hit: THREE.Object3D | null = ray.intersectObjects([...stock.beads, ...picture.sheds], true)[0]?.object ?? null;
     while (hit && !hit.userData.bead && !hit.userData.shed) hit = hit.parent;
     return hit;
   };
-  const point = (e: PointerEvent) => {
-    const hit = under(e);
+  // Where the pointer last was: what stands there changes while it is still.
+  let last: Spot | undefined;
+  const tell = (at: Spot) => {
+    const hit = under(at);
     if (!hit) {
       tip.style.display = "none";
       return;
     }
     tip.textContent = hit.userData.shed ? house(hit.userData.shed as Shed) : describe(hit.userData.bead as Bead, hit.userData.crew === true, hit.userData.age as number | undefined, hit.userData.waits as string[] | undefined);
     tip.style.display = "block";
-    tip.style.left = `${Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
-    tip.style.top = `${Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
+    tip.style.left = `${Math.min(at.clientX + 14, window.innerWidth - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${Math.min(at.clientY + 14, window.innerHeight - tip.offsetHeight - 8)}px`;
+  };
+  const point = (e: PointerEvent) => {
+    last = { clientX: e.clientX, clientY: e.clientY };
+    tell(last);
+  };
+  // The yard moved on under a pointer that did not: the tip says what is
+  // there now, or goes when nothing is. A hidden tip stays hidden until the
+  // pointer moves.
+  const retell = () => {
+    if (last && tip.style.display === "block") tell(last);
   };
   host.addEventListener("pointermove", point);
   host.addEventListener("pointerdown", point);
@@ -345,6 +359,7 @@ async function start() {
     const present = (how: Show) => {
       stock.show(plan(player.state, player.clock), how);
       aged = player.clock;
+      retell();
     };
     document.body.classList.add("replay");
     bar.hidden = false;
@@ -548,6 +563,8 @@ async function start() {
       if (moving || stale) {
         stale = false;
         render();
+        // What was under the pointer may have rolled or walked away.
+        retell();
       }
       requestAnimationFrame(frame);
     };
