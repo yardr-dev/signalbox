@@ -50,8 +50,7 @@ const night: Record<Tone, number> = {
 // The tones as they are now: dress changes them.
 export const palette: Record<Tone, number> = { ...day };
 
-// Lamps and hard hats: a hat is what tells a crew from the top of the yard,
-// hi-vis for builders, white for reviewers.
+// Lamps carry the signal's meaning; the people and their hats stay neutral.
 // wait is the amber of a wagon that waits for another bead, out a lamp that
 // is not lit.
 export const lamp = { clear: 0x2fc46b, stop: 0xe5484d, wait: 0xffb224, out: 0x4b525b } as const;
@@ -66,7 +65,7 @@ export const livery: Record<string, number> = { claude: 0xf0763f, codex: 0x12b88
 export function liveried(provider: string): number {
   return Object.hasOwn(livery, provider) ? livery[provider]! : palette.slate;
 }
-export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
+export const hat = { builder: "roof", reviewer: "wall" } as const satisfies Record<"builder" | "reviewer", Tone>;
 // A lamp that flashes is dark between, and a wheel chock is its own orange.
 export const fault = { dark: 0x4a1512, chock: 0xf58a1f } as const;
 

@@ -35,7 +35,8 @@ buildings off-white under grey roofs, thin labels on white pills, one sun and
 one soft shadow. No model wears its texture: each face is one colour of the
 palette, by how light the kit had painted it. Nothing is saturated but what
 says something: a lamp (green, amber, red), a provider's band on its silo, a
-fault's lamp, flag and chocks, a crew's hard hat. `src/palette.ts` is the one
+fault's lamp, flag and chocks. People and their hats stay neutral.
+`src/palette.ts` is the one
 place that names a colour of the picture, the labels' ink and pill too: its
 tones are the greys and creams, one set by day and one by night, and the
 colours that mean something are the same in both. Night is the same picture on
@@ -44,6 +45,14 @@ reader's system is dark; Night on the bar says otherwise, and the browser
 remembers that until it is what the system says anyway. The camera looks down
 at an angle and is orthographic, as it was: nothing grows smaller with
 distance, so the yard reads as a map.
+
+Before (the old page used the same picture in both system settings):
+
+![The first view before the flat treatment](docs/look-before.png)
+
+After, by day:
+
+![The first view after the flat treatment, by day](docs/yard.png)
 
 ![The first view by night](docs/look-night.png)
 
@@ -90,7 +99,7 @@ group has a building beside a platform it is routed to: people a station, a
 group whose sessions are scripts a works, at each of their platforms. A
 group that runs sessions in panes is a crew, and has one building on each
 board it is routed to, at the first of its platforms there: builders a site
-hut and yellow hard hats, reviewers an office and white ones. A figure
+hut and grey hard hats, reviewers an office and white ones. A figure
 walks from its own board's building and back, never from one board to
 another. Every building has its door to
 its platform; a crew stand idle in a row from the door's corner down the

@@ -311,7 +311,7 @@ function boxFigure(outfit: Outfit): Figure {
 // top of the head, which ends 0.33 above the bone, and a crown on it. It is
 // one part by the name of HAT: a figure that sits has it off.
 export const HAT = "hat";
-function wear(figure: THREE.Object3D, colour: number) {
+function wear(figure: THREE.Object3D, colour: Tone) {
   const head = figure.getObjectByName("head");
   if (!head) return;
   const shell = block(colour, 0.36, 0.07, 0.34, 0.3);

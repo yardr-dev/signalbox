@@ -173,8 +173,9 @@ describe("the palette", () => {
     for (const dark of [false, true]) {
       dress(dark);
       for (const [tone, colour] of Object.entries(palette)) expect(chroma(colour), `${tone} ${dark ? "by night" : "by day"}`).toBeLessThan(0.12);
+      for (const tone of Object.values(hat)) expect(chroma(palette[tone]), `hat ${tone}`).toBeLessThan(0.12);
     }
-    const bold = [lamp.clear, lamp.stop, lamp.wait, ...Object.values(livery), tint.chock, hat.builder];
+    const bold = [lamp.clear, lamp.stop, lamp.wait, ...Object.values(livery), tint.chock];
     for (const colour of bold) expect(chroma(colour), colour.toString(16)).toBeGreaterThan(0.5);
   });
 
