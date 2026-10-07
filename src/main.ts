@@ -512,10 +512,11 @@ async function start() {
     const frame = (now: number) => {
       const dt = Math.min((now - before) / 1000, 0.1);
       before = now;
+      const playing = player.playing;
       run(dt);
       const moving = stock.tick(dt);
       // A shunter took wagons on or let go of them in this frame.
-      if (stock.coupled > 0) sound.play("clank");
+      if (playing && stock.coupled > 0) sound.play("clank");
       stock.coupled = 0;
       if (moving || stale) {
         stale = false;
