@@ -82,7 +82,7 @@ come behind an engine of the peer's, which goes home when they have gone.
 One train runs each way at a time, and the next waits out of sight. A hook
 is a flash of the wire.
 
-![Mid-replay: the shunter of yardr's default track pulling a wagon from review to approved](docs/replay.png)
+![Mid-replay: the shunter of yardr's default track pulling a wagon from new to review, two builders at work at new, and a reviewer on the way down from the office to the wagon](docs/replay.png)
 
 ## Following a yard as it runs
 
