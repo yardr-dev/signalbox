@@ -1,0 +1,730 @@
+{
+  "taken_at": "2026-10-07T08:08:55Z",
+  "depots": [
+    {
+      "name": "aiquokka",
+      "kind": "git",
+      "base": "main"
+    },
+    {
+      "name": "signalbox",
+      "kind": "git",
+      "base": "main"
+    },
+    {
+      "name": "yardr",
+      "kind": "git",
+      "base": "main"
+    },
+    {
+      "name": "yardr.dev",
+      "kind": "git",
+      "base": "main"
+    }
+  ],
+  "flows": [
+    {
+      "depot": "aiquokka",
+      "flows": [
+        {
+          "name": "aiquokka",
+          "stages": [
+            {
+              "stage": "backlog",
+              "group": "backlog",
+              "human": true
+            },
+            {
+              "stage": "new",
+              "group": "yardr-builders"
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            },
+            {
+              "stage": "review",
+              "group": "yardr-reviewers"
+            },
+            {
+              "stage": "approved",
+              "group": "aiquokka-landing"
+            },
+            {
+              "stage": "merged",
+              "terminal": true
+            }
+          ]
+        },
+        {
+          "name": "pr-review",
+          "type": "pr-review",
+          "stages": [
+            {
+              "stage": "review",
+              "group": "yardr-reviewers"
+            },
+            {
+              "stage": "done",
+              "terminal": true
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depot": "signalbox",
+      "flows": [
+        {
+          "name": "default",
+          "stages": [
+            {
+              "stage": "backlog",
+              "group": "backlog",
+              "human": true
+            },
+            {
+              "stage": "new",
+              "group": "yardr-builders"
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            },
+            {
+              "stage": "review",
+              "group": "yardr-reviewers"
+            },
+            {
+              "stage": "approved",
+              "group": "signalbox-assembly"
+            },
+            {
+              "stage": "merged",
+              "terminal": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depot": "yardr",
+      "flows": [
+        {
+          "name": "default",
+          "stages": [
+            {
+              "stage": "backlog",
+              "group": "backlog",
+              "human": true
+            },
+            {
+              "stage": "new",
+              "group": "yardr-builders"
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            },
+            {
+              "stage": "review",
+              "group": "yardr-reviewers"
+            },
+            {
+              "stage": "approved",
+              "group": "yardr-refinery"
+            },
+            {
+              "stage": "merged",
+              "terminal": true
+            }
+          ]
+        },
+        {
+          "name": "yardr.train",
+          "type": "train",
+          "stages": [
+            {
+              "stage": "backlog",
+              "group": "backlog",
+              "human": true
+            },
+            {
+              "stage": "open",
+              "group": "yardr-integrators"
+            },
+            {
+              "stage": "review",
+              "group": "yardr-reviewers"
+            },
+            {
+              "stage": "merge"
+            },
+            {
+              "stage": "approved",
+              "group": "yardr-refinery"
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            },
+            {
+              "stage": "in-pr"
+            },
+            {
+              "stage": "merged",
+              "terminal": true
+            },
+            {
+              "stage": "land"
+            }
+          ]
+        },
+        {
+          "name": "type/wagon",
+          "type": "wagon",
+          "stages": [
+            {
+              "stage": "backlog",
+              "group": "backlog",
+              "human": true
+            },
+            {
+              "stage": "new",
+              "group": "yardr-builders"
+            },
+            {
+              "stage": "approved",
+              "group": "yardr-refinery"
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            },
+            {
+              "stage": "merged",
+              "terminal": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depot": "yardr.dev",
+      "flows": [
+        {
+          "name": "default",
+          "stages": [
+            {
+              "stage": "backlog",
+              "group": "backlog",
+              "human": true
+            },
+            {
+              "stage": "new",
+              "group": "yardr-builders"
+            },
+            {
+              "stage": "decide",
+              "group": "decisions",
+              "human": true
+            },
+            {
+              "stage": "review",
+              "group": "yardr-reviewers"
+            },
+            {
+              "stage": "approved",
+              "group": "yardr.dev-assembly"
+            },
+            {
+              "stage": "merged",
+              "terminal": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "aiquokka-landing",
+      "runner": "exec",
+      "limit": 1
+    },
+    {
+      "name": "backlog",
+      "runner": "manual",
+      "limit": 50,
+      "members": [
+        "mckean",
+        "yardmaster"
+      ]
+    },
+    {
+      "name": "brakeman-reviews",
+      "runner": "manual",
+      "limit": 3,
+      "members": [
+        "brakeman",
+        "yardmaster"
+      ]
+    },
+    {
+      "name": "decisions",
+      "runner": "manual",
+      "limit": 50,
+      "members": [
+        "mckean",
+        "yardmaster"
+      ]
+    },
+    {
+      "name": "signalbox-assembly",
+      "runner": "exec",
+      "limit": 1
+    },
+    {
+      "name": "yardr-builders",
+      "runner": "herdr",
+      "limit": 3
+    },
+    {
+      "name": "yardr-integrators",
+      "runner": "exec",
+      "limit": 1
+    },
+    {
+      "name": "yardr-refinery",
+      "runner": "exec",
+      "limit": 1
+    },
+    {
+      "name": "yardr-reviewers",
+      "runner": "herdr",
+      "limit": 3
+    },
+    {
+      "name": "yardr.dev-assembly",
+      "runner": "exec",
+      "limit": 1
+    }
+  ],
+  "routes": [
+    {
+      "stage": "open",
+      "type": "train",
+      "depot": "yardr",
+      "group": "yardr-integrators",
+      "priority": 10
+    },
+    {
+      "stage": "review",
+      "depot": "yardr",
+      "label": "brakeman-review",
+      "group": "brakeman-reviews",
+      "priority": 10
+    },
+    {
+      "stage": "review",
+      "type": "pr-review",
+      "depot": "aiquokka",
+      "group": "yardr-reviewers",
+      "priority": 0
+    },
+    {
+      "stage": "decide",
+      "type": "pr-review",
+      "depot": "aiquokka",
+      "group": "decisions",
+      "priority": 0
+    },
+    {
+      "stage": "new",
+      "depot": "aiquokka",
+      "group": "yardr-builders",
+      "priority": 0
+    },
+    {
+      "stage": "review",
+      "depot": "aiquokka",
+      "group": "yardr-reviewers",
+      "priority": 0
+    },
+    {
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "priority": 0
+    },
+    {
+      "stage": "new",
+      "depot": "yardr",
+      "group": "yardr-builders",
+      "priority": 0
+    },
+    {
+      "stage": "review",
+      "depot": "yardr",
+      "group": "yardr-reviewers",
+      "priority": 0
+    },
+    {
+      "stage": "approved",
+      "depot": "yardr",
+      "group": "yardr-refinery",
+      "priority": 0
+    },
+    {
+      "stage": "decide",
+      "depot": "yardr",
+      "group": "decisions",
+      "priority": 0
+    },
+    {
+      "stage": "backlog",
+      "depot": "signalbox",
+      "group": "backlog",
+      "priority": 0
+    },
+    {
+      "stage": "new",
+      "depot": "signalbox",
+      "group": "yardr-builders",
+      "priority": 0
+    },
+    {
+      "stage": "review",
+      "depot": "signalbox",
+      "group": "yardr-reviewers",
+      "priority": 0
+    },
+    {
+      "stage": "approved",
+      "depot": "signalbox",
+      "group": "signalbox-assembly",
+      "priority": 0
+    },
+    {
+      "stage": "decide",
+      "depot": "signalbox",
+      "group": "decisions",
+      "priority": 0
+    },
+    {
+      "stage": "backlog",
+      "depot": "yardr.dev",
+      "group": "backlog",
+      "priority": 0
+    },
+    {
+      "stage": "new",
+      "depot": "yardr.dev",
+      "group": "yardr-builders",
+      "priority": 0
+    },
+    {
+      "stage": "review",
+      "depot": "yardr.dev",
+      "group": "yardr-reviewers",
+      "priority": 0
+    },
+    {
+      "stage": "approved",
+      "depot": "yardr.dev",
+      "group": "yardr.dev-assembly",
+      "priority": 0
+    },
+    {
+      "stage": "decide",
+      "depot": "yardr.dev",
+      "group": "decisions",
+      "priority": 0
+    },
+    {
+      "stage": "backlog",
+      "depot": "aiquokka",
+      "group": "backlog",
+      "priority": 0
+    },
+    {
+      "stage": "decide",
+      "depot": "aiquokka",
+      "group": "decisions",
+      "priority": 0
+    },
+    {
+      "stage": "approved",
+      "depot": "aiquokka",
+      "group": "aiquokka-landing",
+      "priority": 0
+    }
+  ],
+  "crew": [
+    {
+      "name": "brakeman",
+      "kind": "kimi",
+      "state": "running",
+      "status": "idle"
+    },
+    {
+      "name": "yardmaster",
+      "kind": "claude",
+      "state": "running",
+      "status": "working"
+    }
+  ],
+  "peers": [
+    {
+      "name": "airy",
+      "send": [
+        "mail",
+        "ping"
+      ],
+      "receive": [
+        "mail",
+        "ping"
+      ]
+    }
+  ],
+  "beads": [
+    {
+      "id": "yardr-nxah",
+      "title": "Design: a live web view of the yard (observe first, then act, then configure)",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "4wbdbdwypgzzjr5vgfwr",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-03T23:03:51.2682Z"
+    },
+    {
+      "id": "yardr-etgr",
+      "title": "Design: OpenTelemetry for the yard (traces per bead, metrics of the line, agents' own telemetry joined in)",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "zd0q2771sfqsmzf2aze6",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-04T20:16:37.756201Z"
+    },
+    {
+      "id": "yardr-xk2g",
+      "title": "The repository has no licence file; release archives ship without one",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "amrxp0dha97jfx5a0qc5",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-04T22:07:37.603631Z"
+    },
+    {
+      "id": "yardr-nx54",
+      "title": "Reviewing a pull request that came from outside (design; first case: McKean/aiquokka)",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "sxz9nj4ppc3ck5d00jvr",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-05T12:49:47.284553Z"
+    },
+    {
+      "id": "yardr-cj66",
+      "title": "A form's \"Your name\" other than the login name leaves the person at the terminal no user of the yard",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "4srx6c6pyp6peaac2r8b",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-05T13:30:40.580181Z"
+    },
+    {
+      "id": "yardr-7mkc",
+      "title": "Design: reach the web view by name without --unsafe (a loopback view behind tailscale serve or another proxy)",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "bc14w9eww14pesskpr84",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-05T19:58:34.65658Z"
+    },
+    {
+      "id": "yardr-csm7",
+      "title": "Research: how yardr compares with the projects closest to it, and what to borrow or deliberately not do",
+      "type": "task",
+      "stage": "decide",
+      "depot": "yardr",
+      "group": "decisions",
+      "session": "gs7ytxva6cqz8kah9z1j",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-06T11:27:38.602064Z"
+    },
+    {
+      "id": "yardr-me78",
+      "title": "Design question: a depot's own working rules added to a role instead of replacing it",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "g6145qvh2h32e4h6xrw0",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-06T17:17:08.168534Z"
+    },
+    {
+      "id": "yardr-ha0y",
+      "title": "Benchmark, part 2: the same sizes and commands against bd on Dolt, in a store of its own",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "n72ak4cjf5b4wfzz5n0s",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-06T19:43:41.922225Z"
+    },
+    {
+      "id": "aiquokka-rpe8",
+      "title": "aiquokka speed: measured, a run is one TLS round trip per provider (0.3 to 0.9 s); what was not measured is the slow paths",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "aiquokka",
+      "group": "backlog",
+      "session": "nzp5t7mjaqpzta7d4wdd",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-06T22:17:24.192592Z"
+    },
+    {
+      "id": "yardr-vsen",
+      "title": "A nudge typed after a long idle spell sits behind Kimi's cache menu and nobody is told",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "dt5dfe3hytqrp883g9er",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-07T00:50:13.560837Z"
+    },
+    {
+      "id": "yardr-qr1v",
+      "title": "Design: yardr runs the applications it builds (staging and deployments)",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "1caz6c2q5yk09xy4tg7y",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-07T05:23:03.364376Z"
+    },
+    {
+      "id": "yardr-nt12",
+      "title": "Design: a peer that cannot be called long-polls the reachable yard instead of pulling every 5 s",
+      "type": "task",
+      "stage": "approved",
+      "depot": "yardr",
+      "group": "yardr-refinery",
+      "session": "e364rjd96enwbnp53t2g",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-07T07:20:36.741177Z"
+    },
+    {
+      "id": "signalbox-w7w5",
+      "title": "signalbox 1: the project skeleton, a snapshot of a yard's structure, and the still picture of it as a railway",
+      "type": "task",
+      "stage": "new",
+      "depot": "signalbox",
+      "group": "yardr-builders",
+      "session": "9c9m6ds0rje9rdtny2nc",
+      "labels": [],
+      "priority": 2,
+      "created_at": "2026-10-07T08:04:35.501454Z"
+    },
+    {
+      "id": "yardr-6yx8",
+      "title": "Design: yards that work together: subscribe to another yard's events, send and receive beads",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "0pvtvv01rsvcdj0p6zyx",
+      "labels": [],
+      "priority": 3,
+      "created_at": "2026-10-04T06:28:40.52032Z"
+    },
+    {
+      "id": "yardr-pekm",
+      "title": "Bead history: previous values on update events, a timeline on the bead page",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "m2jy6x7skrdjw1zqha23",
+      "labels": [],
+      "priority": 3,
+      "created_at": "2026-10-04T11:26:09.360252Z"
+    },
+    {
+      "id": "yardr-s48v",
+      "title": "Design: source adapters as modules outside the core (what is left of yardr-spr3)",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "a9abjn6ttzhq46651m4n",
+      "labels": [],
+      "priority": 3,
+      "created_at": "2026-10-06T06:09:49.228387Z"
+    },
+    {
+      "id": "yardr-0999",
+      "title": "Open questions from the Beads comparison: defer-until, a stage as a BDP status, templates for multi-bead work",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "a9bfeaejtwxpjamnhsex",
+      "labels": [],
+      "priority": 3,
+      "created_at": "2026-10-06T06:09:49.259694Z"
+    },
+    {
+      "id": "yardr-bygh",
+      "title": "A bead that waits long in a manual group for a crew member raises an event",
+      "type": "task",
+      "stage": "backlog",
+      "depot": "yardr",
+      "group": "backlog",
+      "session": "a195s7mwfvd5dx2ea7kg",
+      "labels": [],
+      "priority": 3,
+      "created_at": "2026-10-06T22:10:42.988306Z"
+    }
+  ]
+}
