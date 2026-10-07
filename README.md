@@ -26,6 +26,31 @@ it runs when the serve script serves it.
 
 ![This yard as a railway: four depots, their flows as tracks](docs/yard.png)
 
+## Look
+
+The yard is drawn flat, in the manner of Mini Motorways (Dinosaur Polo Club,
+https://dinopoloclub.com/games/mini-motorways/): a cream ground with nothing
+behind it, the depots as pads a little darker, a track as a warm grey ribbon,
+buildings off-white under grey roofs, thin labels on white pills, one sun and
+one soft shadow. No model wears its texture: each face is one colour of the
+palette, by how light the kit had painted it. Nothing is saturated but what
+says something: a lamp (green, amber, red), a provider's band on its silo, a
+fault's lamp, flag and chocks, a crew's hard hat. `src/palette.ts` is the one
+place that names a colour of the picture, the labels' ink and pill too: its
+tones are the greys and creams, one set by day and one by night, and the
+colours that mean something are the same in both. Night is the same picture on
+a near-black blue with the labels turned round. The page takes it when the
+reader's system is dark; Night on the bar says otherwise, and the browser
+remembers that until it is what the system says anyway. The camera looks down
+at an angle and is orthographic, as it was: nothing grows smaller with
+distance, so the yard reads as a map.
+
+![The first view by night](docs/look-night.png)
+
+![A works whose gate runs, its chimney smoking, and the lamp on the post beside it](docs/look-works.png)
+
+![Two silos, each with its provider's band, and the week's and the five hours' coal beside it](docs/look-silos.png)
+
 ## Replaying a day
 
     npm run snapshot   # YARDR=/path/to/yardr to name the binary
@@ -151,12 +176,12 @@ is the kit's large tank, and the band round it is the provider's colour:
 
 | provider | band |
 | --- | --- |
-| `claude` | orange, `#d97757` |
-| `codex` | OpenAI's green, `#10a37f` |
-| `kimi` | blue, `#2f6fde` |
-| any other | slate, `#4f5a66` |
+| `claude` | orange, `#f0763f` |
+| `codex` | OpenAI's green, `#12b886` |
+| `kimi` | blue, `#3b82f6` |
+| any other | slate, the palette's tone |
 
-The table is `livery` in `src/kit.ts`, by the provider's key. What is left
+The table is `livery` in `src/palette.ts`, by the provider's key. What is left
 stands outside the silo, in two indicators to its right: the coal in the
 first is what is left of the provider's weekly quota, 100 less the percent
 used; the second, lower one is the five-hour window the same way. Under 20
@@ -316,8 +341,14 @@ of this is there, and the page is the committed snapshot and its replay.
   is a material of its own (`TINT`), cut from the faces that lie on the
   palette texture's orange, since the pack's models share the texture: the
   scene puts the provider's colour there, and on the band of a silo's box.
-  Platforms, signals, signal boxes and the silos' indicators are boxes in
-  six colours. The kit's diesel is the shunter.
+  Every other face of a model is sorted the same way (`flat`): the texture
+  is read where the face lies on it, and the face painted in the tone that
+  colour is by its lightness (`toned`), rolling stock a tone darker and rail
+  in the track's. Platforms, signals, signal boxes and the silos' indicators
+  are boxes in the palette's tones. The kit's diesel is the shunter.
+- `src/palette.ts`: every colour of the picture (see Look): the tones by day
+  and by night, the colours that mean something, and `paint`, the one flat
+  material of each. `dress` changes day to night on the paint that is worn.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
   the events: `state(yard, log, n)` is the open beads after the first `n`.
   The window's start is read off the window itself: a bead made in it is not

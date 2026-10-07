@@ -6,45 +6,15 @@
 // ground and is centred, in the Train Kit's units, so another set of models
 // drops in here and nowhere else. A model that does not load is a box of the
 // palette instead, and the page still draws.
+//
+// None is drawn in its own colours: the packs paint a model from a texture
+// they share, and flat sorts its faces into the palette's tones instead
+// (palette.ts), so the yard is one flat picture.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-
-// The picture's own colours, for what the kits have no model for (ground,
-// platforms, signals, signal boxes) and for a model that is missing.
-export const palette = {
-  grass: 0x9bc27a,
-  ballast: 0xd8cdb4,
-  platform: 0xa9abb0,
-  brick: 0xb4533c,
-  slate: 0x4f5a66,
-  cream: 0xeadfb4,
-} as const;
-
-// Lamps and hard hats are outside the six: a hat is what tells a crew from
-// the top of the yard, hi-vis for builders, white for reviewers.
-// wait is the amber of a wagon that waits for another bead, out a lamp that
-// is not lit.
-export const lamp = { clear: 0x3fd46b, stop: 0xe0453a, wait: 0xffb020, out: 0x343b43 } as const;
-// The grey of a works' smoke.
-export const smoke = 0x6c7278;
-// The iron of the coal in a silo's indicators.
-export const iron = 0x2a2d31;
-// A silo's band by the provider whose quota it holds, the key as the yard
-// has it (a group's kind): Claude's orange, OpenAI's green for codex, a blue
-// for kimi, and slate for any other.
-export const livery: Record<string, number> = { claude: 0xd97757, codex: 0x10a37f, kimi: 0x2f6fde };
-export function liveried(provider: string): number {
-  return Object.hasOwn(livery, provider) ? livery[provider]! : palette.slate;
-}
-export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
-// A lamp that flashes is dark between, and a wheel chock is its own orange.
-export const fault = { dark: 0x4a1512, chock: 0xf28c1d } as const;
-
-// What weather does to a wagon that waits: its paint is this much of what it
-// was, and moss is a green of its own.
-export const weathering = { dull: 0xa6a6a0, rusted: 0xb9744a, moss: 0x5d8a3a } as const;
+import { hat, paint, type Tone } from "./palette";
 
 export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
 export type Outfit = "builder" | "reviewer" | "crew";
@@ -124,35 +94,30 @@ const FIGURE_SIZE = 2;
 const FIGURE_HEIGHT = 1.35;
 
 // Length, height, width of the box that stands in for a part.
-const boxes: Record<Part, [number, number, number, number]> = {
-  rail: [1, 0.12, 0.8, palette.slate],
-  wagon: [2.7, 1.3, 1.2, palette.brick],
-  locomotive: [2.6, 1.6, 1.3, palette.slate],
-  shunter: [2.4, 1.6, 1.2, hat.builder],
-  station: [3.2, 1.3, 1.4, palette.cream],
-  hut: [2, 1.4, 2.4, palette.brick],
-  office: [2.9, 1.2, 1.7, palette.cream],
-  works: [2, 2.2, 2.5, palette.slate],
-  silo: [3.6, SILO_HEIGHT, 3.6, palette.cream],
+const boxes: Record<Part, [number, number, number, Tone]> = {
+  rail: [1, 0.12, 0.8, "track"],
+  wagon: [2.7, 1.3, 1.2, "roof"],
+  locomotive: [2.6, 1.6, 1.3, "slate"],
+  shunter: [2.4, 1.6, 1.2, "slate"],
+  station: [3.2, 1.3, 1.4, "wall"],
+  hut: [2, 1.4, 2.4, "wall"],
+  office: [2.9, 1.2, 1.7, "wall"],
+  works: [2, 2.2, 2.5, "pale"],
+  silo: [3.6, SILO_HEIGHT, 3.6, "wall"],
 };
 
 function box(part: Part): THREE.Object3D {
-  const [length, height, width, colour] = boxes[part];
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(length, height, width),
-    new THREE.MeshStandardMaterial({ color: colour, flatShading: true }),
-  );
-  mesh.position.y = height / 2;
-  const group = new THREE.Group().add(mesh);
+  const [length, height, width, tone] = boxes[part];
+  const group = new THREE.Group().add(block(tone, length, height, width, 0));
   if (part === "silo") {
     // A silo's box has the band its provider's colour goes on.
-    const band = block(palette.slate, length + 0.1, height / 4, width + 0.1, height / 4);
+    const band = block("slate", length + 0.1, height / 4, width + 0.1, height / 4);
     band.material = accent();
     return group.add(band);
   }
   if (part !== "works") return group;
   // A works smokes: its box has a stub of a chimney on the roof.
-  const stub = block(palette.brick, STUB, STUB, STUB, height);
+  const stub = block("roof", STUB, STUB, STUB, height);
   stub.position.x = length / 4;
   group.userData[CHIMNEY] = [length / 4, height + STUB, 0];
   return group.add(stub);
@@ -221,21 +186,124 @@ export function banded(model: THREE.Object3D) {
   });
 }
 
-function block(colour: number, width: number, height: number, depth: number, y: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(width, height, depth),
-    new THREE.MeshStandardMaterial({ color: colour, flatShading: true }),
-  );
+// One of the packs' colours as a tone: by how light it is, whatever its hue.
+// White and the palest are a wall, and the darkest slate, so a model keeps
+// its own lights and darks and loses its colours.
+const LIGHT: [above: number, tone: Tone][] = [
+  [0.8, "wall"],
+  [0.55, "pale"],
+  [0.3, "roof"],
+];
+export function toned(red: number, green: number, blue: number): Tone {
+  const light = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  return LIGHT.find(([above]) => light > above)?.[1] ?? "slate";
+}
+
+// A texture's colours by where a corner lies on it, read once for each
+// image. None where the page cannot read it.
+type Texel = (u: number, v: number) => [number, number, number];
+const read = new WeakMap<object, Texel | undefined>();
+function texels(map: THREE.Texture): Texel | undefined {
+  if (read.has(map.source)) return read.get(map.source);
+  let texel: Texel | undefined;
+  try {
+    const image = map.image as CanvasImageSource & { width: number; height: number };
+    const { width, height } = image;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const pen = canvas.getContext("2d", { willReadFrequently: true })!;
+    pen.drawImage(image, 0, 0);
+    const { data } = pen.getImageData(0, 0, width, height);
+    // A model's file has its texture the way up its corners count: v from
+    // the top.
+    const pixel = (t: number, size: number) => Math.min(size - 1, Math.floor((t - Math.floor(t)) * size));
+    texel = (u, v) => {
+      const i = 4 * (pixel(v, height) * width + pixel(u, width));
+      return [data[i]!, data[i + 1]!, data[i + 2]!];
+    };
+  } catch (err) {
+    console.warn("kit: a texture could not be read, its models are one tone", err);
+  }
+  read.set(map.source, texel);
+  return texel;
+}
+
+// The tone of a face of a model, by the colour its texture has there. Glass
+// is the packs' second material, and a tone of its own beside a wall; a
+// model whose texture cannot be read is all of one tone.
+function texture(u: number, v: number, wears: THREE.Material): Tone {
+  if (wears.name.endsWith("specular")) return "pale";
+  const { map } = wears as THREE.MeshStandardMaterial;
+  const texel = map ? texels(map) : undefined;
+  return texel ? toned(...texel(u, v)) : "pale";
+}
+
+// A part's faces by its texture, each part in its own way. Rail is the
+// track's tone with its rails dark on it. What rolls is a tone darker than
+// what stands, so a wagon is seen before a building and on a platform.
+const DARKER: Partial<Record<Tone, Tone>> = { wall: "pale", pale: "roof", roof: "slate" };
+const ROLLS = new Set<Part>(["wagon", "locomotive", "shunter"]);
+function textured(part: Part): (u: number, v: number, wears: THREE.Material) => Tone {
+  return (u, v, wears) => {
+    const tone = texture(u, v, wears);
+    if (part === "rail") return tone === "slate" || tone === "roof" ? "slate" : "track";
+    return ROLLS.has(part) ? (DARKER[tone] ?? tone) : tone;
+  };
+}
+
+// Paint a model flat: every face in the palette's paint of the tone that
+// tone names for it, by the middle of the face on its texture and the
+// material it wore. The faces are sorted by their paint, a material of the
+// mesh for each. A face the scene paints itself (TINT) stays as it is.
+export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: THREE.Material) => Tone = texture) {
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    part.castShadow = part.receiveShadow = true;
+    const geometry = part.geometry as THREE.BufferGeometry;
+    const uv = geometry.getAttribute("uv");
+    const index = geometry.getIndex();
+    const corners = index ? index.count : (geometry.getAttribute("position")?.count ?? 0);
+    const corner = (i: number) => (index ? index.getX(i) : i);
+    const wears = [part.material].flat() as THREE.Material[];
+    const runs = geometry.groups.length > 0 ? geometry.groups : [{ start: 0, count: corners, materialIndex: 0 }];
+    const sorted = new Map<THREE.Material, number[]>();
+    for (const run of runs) {
+      const own = wears[run.materialIndex ?? 0];
+      if (!own) continue;
+      for (let i = run.start; i + 2 < Math.min(run.start + run.count, corners); i += 3) {
+        const face = [corner(i), corner(i + 1), corner(i + 2)];
+        const middle = (of: "getX" | "getY") => (uv ? face.reduce((sum, c) => sum + uv[of](c), 0) / 3 : 0);
+        const wear = own.name === TINT ? own : paint(tone(middle("getX"), middle("getY"), own));
+        const faces = sorted.get(wear) ?? [];
+        sorted.set(wear, faces);
+        faces.push(...face);
+      }
+    }
+    if (sorted.size === 0) return;
+    geometry.setIndex([...sorted.values()].flat());
+    geometry.clearGroups();
+    let start = 0;
+    [...sorted.values()].forEach((faces, n) => {
+      geometry.addGroup(start, faces.length, n);
+      start += faces.length;
+    });
+    part.material = [...sorted.keys()];
+  });
+}
+
+function block(of: Tone | number, width: number, height: number, depth: number, y: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), paint(of));
   mesh.position.y = y + height / 2;
+  mesh.castShadow = mesh.receiveShadow = true;
   return mesh;
 }
 
 // The figure of two boxes: a body in its outfit's colour, and a head.
 function boxFigure(outfit: Outfit): Figure {
   const body = FIGURE_HEIGHT * 0.6;
-  const colour = outfit === "crew" ? palette.slate : hat[outfit];
   const object = new THREE.Group();
-  object.add(block(colour, 0.4, body, 0.55, 0), block(palette.cream, 0.45, FIGURE_HEIGHT - body, 0.45, body));
+  object.add(block(outfit === "crew" ? "slate" : hat[outfit], 0.4, body, 0.55, 0), block("wall", 0.45, FIGURE_HEIGHT - body, 0.45, body));
   return { object, clips: {} };
 }
 
@@ -274,6 +342,7 @@ export async function loadKit(base: string): Promise<Kit> {
     model.scale.setScalar(size);
     const group = new THREE.Group().add(model);
     if (part === "silo") banded(model);
+    flat(model, textured(part));
     const mouth = part === "works" ? chimney(group) : undefined;
     if (mouth) group.userData[CHIMNEY] = mouth;
     return group;
@@ -284,6 +353,7 @@ export async function loadKit(base: string): Promise<Kit> {
     // The pack's figures look along z.
     file.scene.rotation.y = Math.PI / 2;
     file.scene.scale.setScalar(FIGURE_SIZE);
+    flat(file.scene);
     const found: Figure["clips"] = {};
     for (const [clip, name] of Object.entries(clips) as [Clip, string][]) {
       const animation = file.animations.find((a) => a.name === name);

@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { CHIMNEY, fault, HAT, iron, lamp, liveried, palette, SILO_HEIGHT, smoke, TINT, weathering, type Clip, type Kit } from "./kit";
+import { CHIMNEY, HAT, SILO_HEIGHT, TINT, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -53,11 +53,12 @@ import {
   walkSeconds,
   type Stop,
 } from "./motion";
+import { fault, iron, lamp, livery, paint, smoke, tinted, weathering, type Tone } from "./palette";
 import { freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
 import type { Allowance, Bead, Provider, Quota } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
-const GROUND_Y = -0.3;
+export const GROUND_Y = -0.3;
 const PLATFORM_HEIGHT = 0.45;
 const PLATFORM_WIDTH = 1.4;
 // A sign is this far from its building's middle, away from the track.
@@ -128,20 +129,12 @@ export interface Picture {
   towers: THREE.Object3D[];
 }
 
-const materials = new Map<number, THREE.MeshStandardMaterial>();
-function material(colour: number): THREE.MeshStandardMaterial {
-  let m = materials.get(colour);
-  if (!m) {
-    m = new THREE.MeshStandardMaterial({ color: colour, flatShading: true, roughness: 0.95 });
-    materials.set(colour, m);
-  }
-  return m;
-}
-
-// A box standing on y, centred on x and z.
-function block(colour: number, width: number, height: number, depth: number, x: number, y: number, z: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(colour));
+// A box standing on y, centred on x and z, in the palette's paint: of a tone,
+// or of a colour that means something.
+function block(of: Tone | number, width: number, height: number, depth: number, x: number, y: number, z: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), paint(of));
   mesh.position.set(x, y + height / 2, z);
+  mesh.castShadow = mesh.receiveShadow = true;
   return mesh;
 }
 
@@ -187,6 +180,8 @@ class Rails {
     tile.traverse((part) => {
       if (!(part instanceof THREE.Mesh)) return;
       const instances = new THREE.InstancedMesh(part.geometry, part.material, this.at.length);
+      // Rail lies on the ground: a shadow falls on it, and it throws none.
+      instances.receiveShadow = true;
       this.at.forEach((m, i) => instances.setMatrixAt(i, m.clone().multiply(part.matrixWorld)));
       group.add(instances);
     });
@@ -196,15 +191,15 @@ class Rails {
 
 function bufferStop(x: number, z: number): THREE.Object3D {
   const stop = new THREE.Group();
-  stop.add(block(palette.slate, 0.3, 0.9, 1.1, x, 0, z));
-  stop.add(block(lamp.stop, 0.34, 0.3, 1.14, x, 0.55, z));
+  stop.add(block("slate", 0.3, 0.9, 1.1, x, 0, z));
+  stop.add(block("wall", 0.34, 0.3, 1.14, x, 0.55, z));
   return stop;
 }
 
 function signal(x: number, z: number): THREE.Object3D {
   const post = new THREE.Group();
-  post.add(block(palette.slate, 0.16, 2.6, 0.16, x, PLATFORM_HEIGHT, z));
-  post.add(block(palette.slate, 0.5, 0.9, 0.4, x, PLATFORM_HEIGHT + 2.3, z));
+  post.add(block("slate", 0.16, 2.6, 0.16, x, PLATFORM_HEIGHT, z));
+  post.add(block("slate", 0.5, 0.9, 0.4, x, PLATFORM_HEIGHT + 2.3, z));
   const light = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), new THREE.MeshBasicMaterial({ color: lamp.clear }));
   light.position.set(x, PLATFORM_HEIGHT + 2.9, z + 0.22);
   post.add(light);
@@ -239,20 +234,10 @@ function signAt(s: Shed, n: number): [number, number, number] {
   return [x, 0, s.at.z + s.away * (SIGN_Z + (n % 2) * 1.3)];
 }
 
-// A wagon's paint under the weather: the kit's own material with a tint, one
-// for every material and step, shared by the wagons that wear it. Moss lies
-// on rust: a mossy wagon has the rusted paint.
-const weathered = new Map<string, THREE.Material>();
-function tinted(paint: THREE.Material, step: Weather): THREE.Material {
-  const key = `${paint.uuid}/${step === "dull" ? "dull" : "rusted"}`;
-  let m = weathered.get(key);
-  if (!m) {
-    m = paint.clone();
-    const { color } = m as THREE.MeshStandardMaterial;
-    if (color) color.multiply(new THREE.Color(step === "dull" ? weathering.dull : weathering.rusted));
-    weathered.set(key, m);
-  }
-  return m;
+// A wagon's paint under the weather: its own with a tint (palette.ts). Moss
+// lies on rust: a mossy wagon has the rusted paint.
+function weathered(own: THREE.Material, step: Weather): THREE.Material {
+  return tinted(own, step === "dull" ? weathering.dull : weathering.rusted);
 }
 
 // The paint each part of a wagon came with, to tint and to give back.
@@ -263,7 +248,7 @@ function repaint(wagon: THREE.Object3D, step: Weather | undefined) {
     const paint = paints.get(part) ?? (part.material as THREE.Material | THREE.Material[]);
     paints.set(part, paint);
     if (step === undefined) part.material = paint;
-    else part.material = Array.isArray(paint) ? paint.map((p) => tinted(p, step)) : tinted(paint, step);
+    else part.material = Array.isArray(paint) ? paint.map((p) => weathered(p, step)) : weathered(paint, step);
   });
 }
 
@@ -290,7 +275,7 @@ function chocks(): THREE.Object3D {
 // A small red flag on a pole at a wagon's right end, over its roof.
 function flag(): THREE.Object3D {
   const g = new THREE.Group();
-  g.add(block(palette.slate, 0.07, LAMP_Y, 0.07, MARK_X, 0, 0));
+  g.add(block("slate", 0.07, LAMP_Y, 0.07, MARK_X, 0, 0));
   g.add(block(lamp.stop, 0.65, 0.42, 0.05, MARK_X - 0.36, LAMP_Y - 0.42, 0));
   return g;
 }
@@ -299,7 +284,7 @@ function flag(): THREE.Object3D {
 // material: they flash together.
 function beacon(light: THREE.Material, x: number, y: number, z: number, height: number): THREE.Object3D {
   const g = new THREE.Group();
-  g.add(block(palette.slate, 0.1, height, 0.1, x, y, z));
+  g.add(block("slate", 0.1, height, 0.1, x, y, z));
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), light);
   bulb.position.set(x, y + height + 0.2, z);
   g.add(bulb);
@@ -309,7 +294,7 @@ function beacon(light: THREE.Material, x: number, y: number, z: number, height: 
 // A small lamp on a short post over a wagon's roof, which is this high.
 function lantern(light: THREE.Material, top: number): THREE.Object3D {
   const g = new THREE.Group();
-  g.add(block(palette.slate, 0.08, top + WAIT_Y, 0.08, -WAIT_X, 0, 0));
+  g.add(block("slate", 0.08, top + WAIT_Y, 0.08, -WAIT_X, 0, 0));
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), light);
   bulb.position.set(-WAIT_X, top + WAIT_Y + 0.12, 0);
   g.add(bulb);
@@ -353,16 +338,16 @@ export function gateLamp(gate: Gate | undefined): number {
 
 function signalBox(x: number, z: number): THREE.Object3D {
   const g = new THREE.Group();
-  g.add(block(palette.brick, 3, 1.6, 2.2, x, 0, z));
-  g.add(block(palette.cream, 3.3, 1.2, 2.5, x, 1.6, z));
-  g.add(block(palette.slate, 3.8, 0.3, 3, x, 2.8, z));
+  g.add(block("pale", 3, 1.6, 2.2, x, 0, z));
+  g.add(block("wall", 3.3, 1.2, 2.5, x, 1.6, z));
+  g.add(block("roof", 3.8, 0.3, 3, x, 2.8, z));
   return g;
 }
 
 // What fills: a box that stands on its own floor, as high as it is scaled. Its
 // colour is its own, for it changes with what is left.
 function fill(width: number, depth: number, x: number, y: number, z: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 1, depth).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.95 }));
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 1, depth).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ flatShading: true }));
   mesh.position.set(x, y, z);
   mesh.visible = false;
   return mesh;
@@ -381,9 +366,9 @@ interface Silo {
 // at the top and to the reader at the front and the right, so what is in it
 // is seen from above, and how much is not there.
 function gauge(g: THREE.Group, x: number, height: number): THREE.Mesh {
-  g.add(block(palette.slate, 1.1, GAUGE_Y, 0.9, x, 0, 0));
-  g.add(block(palette.cream, 0.95, height, 0.12, x, GAUGE_Y, -0.32));
-  g.add(block(palette.cream, 0.12, height, 0.64, x - 0.415, GAUGE_Y, 0.06));
+  g.add(block("slate", 1.1, GAUGE_Y, 0.9, x, 0, 0));
+  g.add(block("wall", 0.95, height, 0.12, x, GAUGE_Y, -0.32));
+  g.add(block("wall", 0.12, height, 0.64, x - 0.415, GAUGE_Y, 0.06));
   return fill(0.7, 0.55, x, GAUGE_Y, 0.06);
 }
 
@@ -396,11 +381,13 @@ function tower(t: Tower, kit: Kit): THREE.Object3D {
   const g = new THREE.Group();
   g.position.set(t.at.x, 0, t.at.z);
   const tank = kit.make("silo");
-  const paint = material(liveried(t.provider));
+  // As liveried says: slate, as it is by day or by night, for a provider
+  // that has no colour.
+  const band = paint(Object.hasOwn(livery, t.provider) ? livery[t.provider]! : "slate");
   tank.traverse((part) => {
     if (!(part instanceof THREE.Mesh)) return;
     const own = part.material as THREE.Material | THREE.Material[];
-    part.material = Array.isArray(own) ? own.map((m) => (m.name === TINT ? paint : m)) : own.name === TINT ? paint : own;
+    part.material = Array.isArray(own) ? own.map((m) => (m.name === TINT ? band : m)) : own.name === TINT ? band : own;
   });
   const silo: Silo = {
     week: gauge(g, WEEK_X, WEEK),
@@ -423,7 +410,7 @@ function pour(into: THREE.Mesh, height: number, percent: number | undefined) {
   into.visible = percent !== undefined && percent > 0;
   if (percent === undefined) return;
   into.scale.y = Math.max((height * percent) / 100, 1e-3);
-  (into.material as THREE.MeshStandardMaterial).color.setHex(COAL[coal(percent)]);
+  (into.material as THREE.MeshLambertMaterial).color.setHex(COAL[coal(percent)]);
 }
 
 // Fill the silos' indicators with what a quota says is left: the week in the
@@ -458,7 +445,7 @@ export function draw(l: Layout, kit: Kit): Picture {
   const grow = (x: number, z: number, y = 0) => bounds.expandByPoint(new THREE.Vector3(x, y, z));
 
   for (const b of l.boards) {
-    root.add(block(palette.ballast, b.width, -GROUND_Y, b.depth, b.at.x + b.width / 2, GROUND_Y, b.at.z + b.depth / 2));
+    root.add(block("bed", b.width, -GROUND_Y, b.depth, b.at.x + b.width / 2, GROUND_Y, b.at.z + b.depth / 2));
     root.add(label(b.depot, "depot", b.at.x + 1, 0, b.at.z + 2, [0, 0.5]));
     grow(b.at.x, b.at.z);
     grow(b.at.x + b.width, b.at.z + b.depth);
@@ -480,7 +467,7 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   for (const p of l.platforms) {
-    root.add(block(p.terminal ? palette.cream : palette.platform, PLATFORM_LENGTH, PLATFORM_HEIGHT, PLATFORM_WIDTH, p.at.x, 0, p.at.z));
+    root.add(block(p.terminal ? "terminal" : "platform", PLATFORM_LENGTH, PLATFORM_HEIGHT, PLATFORM_WIDTH, p.at.x, 0, p.at.z));
     // On the platform's edge away from its track, at its right end: in the
     // middle it would cover the wagons behind it, further left the sheds' names.
     const edge = p.at.z + (p.siding ? -1 : 1) * (PLATFORM_WIDTH / 2);
@@ -522,10 +509,10 @@ export function draw(l: Layout, kit: Kit): Picture {
 
   // The telegraph wire, on poles.
   const wire = l.wire;
-  root.add(block(palette.slate, wire.length, 0.06, 0.06, wire.at.x + wire.length / 2, POLE_HEIGHT - 0.2, wire.at.z));
+  root.add(block("slate", wire.length, 0.06, 0.06, wire.at.x + wire.length / 2, POLE_HEIGHT - 0.2, wire.at.z));
   for (let x = 0; x <= wire.length; x += POLE_PITCH) {
-    root.add(block(palette.slate, 0.16, POLE_HEIGHT, 0.16, wire.at.x + x, GROUND_Y, wire.at.z));
-    root.add(block(palette.slate, 0.12, 0.12, 1.2, wire.at.x + x, POLE_HEIGHT - 0.3, wire.at.z));
+    root.add(block("slate", 0.16, POLE_HEIGHT, 0.16, wire.at.x + x, GROUND_Y, wire.at.z));
+    root.add(block("slate", 0.12, 0.12, 1.2, wire.at.x + x, POLE_HEIGHT - 0.3, wire.at.z));
   }
   root.add(label("hooks", "wire", wire.at.x + 1, POLE_HEIGHT, wire.at.z, [0, 1]));
   grow(wire.at.x, wire.at.z, POLE_HEIGHT);
@@ -534,10 +521,10 @@ export function draw(l: Layout, kit: Kit): Picture {
     // A rail each way: out on the near one, in on the far one.
     rails.run({ x: p.at.x, z: p.at.z + PEER_RAIL_Z }, p.length);
     rails.run({ x: p.at.x, z: p.at.z - PEER_RAIL_Z }, p.length);
-    root.add(block(palette.ballast, p.length, -GROUND_Y - 0.02, 1.6 + 2 * PEER_RAIL_Z, p.at.x + p.length / 2, GROUND_Y, p.at.z));
+    root.add(block("bed", p.length, -GROUND_Y - 0.02, 1.6 + 2 * PEER_RAIL_Z, p.at.x + p.length / 2, GROUND_Y, p.at.z));
     // The sign, behind the far rail.
-    root.add(block(palette.cream, 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
-    root.add(block(palette.slate, 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 2));
+    root.add(block("wall", 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
+    root.add(block("slate", 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 2));
     root.add(label(`to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 2, [0.5, 1]));
     grow(p.at.x - 2, p.at.z - 3);
   }

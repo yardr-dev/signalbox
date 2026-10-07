@@ -2,9 +2,10 @@
 import * as THREE from "three";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
-import { banded, CHIMNEY, fault as tint, iron, lamp, liveried, livery, loadKit, palette, SILO_HEIGHT, smoke, TINT, weathering, type Kit } from "../src/kit";
+import { banded, CHIMNEY, flat, loadKit, SILO_HEIGHT, TINT, toned, type Kit } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
 import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
+import { dress, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, smoke, tinted, weathering, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
 import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
@@ -105,6 +106,114 @@ describe("a kit whose files are missing", () => {
     const plain = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), own);
     banded(plain);
     expect(plain.material).toBe(own);
+  });
+
+  test("a model is painted flat: its faces sorted by the tone of each, in the palette's paint, and the band left for the scene", () => {
+    // Three faces of one material, as banded leaves a silo: a wall, the
+    // band, and a dark one. The tone is asked for by the middle of a face.
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(new Array(27).fill(0), 3));
+    const wall = [0.1, 0.6];
+    const orange = [0.719, 0.4];
+    const dark = [0.9, 0.9];
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute([...dark, ...dark, 0.9, 0.6, ...orange, ...orange, ...orange, ...wall, ...wall, ...wall], 2));
+    geometry.setIndex([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const own = new THREE.MeshStandardMaterial();
+    const mesh = new THREE.Mesh(geometry, own);
+    const model = new THREE.Group().add(mesh);
+    banded(model);
+    const band = (mesh.material as unknown as THREE.Material[])[1]!;
+    const asked: [number, number, THREE.Material][] = [];
+    flat(model, (u, v, wears) => {
+      asked.push([u, v, wears]);
+      return u > 0.5 ? "slate" : "wall";
+    });
+    expect(mesh.material).toEqual([paint("slate"), paint("wall"), band]);
+    expect(band.name).toBe(TINT);
+    expect([...geometry.getIndex()!.array]).toEqual([0, 1, 2, 6, 7, 8, 3, 4, 5]);
+    expect(geometry.groups).toEqual([
+      { start: 0, count: 3, materialIndex: 0 },
+      { start: 3, count: 3, materialIndex: 1 },
+      { start: 6, count: 3, materialIndex: 2 },
+    ]);
+    // Nobody is asked about the band, and the others by their middles.
+    expect(asked.map(([, , wears]) => wears)).toEqual([own, own]);
+    expect(asked[0]![0]).toBeCloseTo(0.9);
+    expect(asked[0]![1]).toBeCloseTo(0.8);
+    expect(mesh.castShadow && mesh.receiveShadow).toBe(true);
+    // Paint is matt and flat, and one for all that wear a tone.
+    expect(paint("wall")).toBe(paint("wall"));
+    expect(paint("wall")).toBeInstanceOf(THREE.MeshLambertMaterial);
+    expect(paint("wall").flatShading).toBe(true);
+    expect(paint("wall").map).toBeNull();
+  });
+
+  test("a colour of the packs is a tone by how light it is, whatever its hue", () => {
+    expect(toned(255, 255, 255)).toBe("wall");
+    expect(toned(0xd0, 0xe4, 0xff)).toBe("wall");
+    expect(toned(0x90, 0x98, 0xb0)).toBe("pale");
+    expect(toned(0x38, 0x38, 0x40)).toBe("slate");
+    // The red, the green and the blue of the containers: no accent is left.
+    const tones: Tone[] = [toned(0xe0, 0x50, 0x58), toned(0x60, 0xcc, 0x90), toned(0x60, 0x90, 0xd8)];
+    for (const tone of tones) expect(["pale", "roof"]).toContain(tone);
+  });
+});
+
+// How far a colour is from grey: the widest gap between its red, green and
+// blue, of 1.
+const chroma = (colour: number) => {
+  const parts = [colour >> 16, (colour >> 8) & 0xff, colour & 0xff];
+  return (Math.max(...parts) - Math.min(...parts)) / 255;
+};
+
+describe("the palette", () => {
+  afterAll(() => dress(false));
+
+  test("by day and by night the tones are near grey, and only what means something is not", () => {
+    for (const dark of [false, true]) {
+      dress(dark);
+      for (const [tone, colour] of Object.entries(palette)) expect(chroma(colour), `${tone} ${dark ? "by night" : "by day"}`).toBeLessThan(0.12);
+    }
+    const bold = [lamp.clear, lamp.stop, lamp.wait, ...Object.values(livery), tint.chock, hat.builder];
+    for (const colour of bold) expect(chroma(colour), colour.toString(16)).toBeGreaterThan(0.5);
+  });
+
+  test("night is the same picture: the ground dark, the labels turned round, and every tone in its place between the others", () => {
+    const light = (colour: number) => (colour >> 16) + ((colour >> 8) & 0xff) + (colour & 0xff);
+    const order = () => (["slate", "roof", "pale", "wall"] satisfies Tone[]).sort((a, b) => light(palette[b]) - light(palette[a]));
+    dress(false);
+    const day = { ...palette };
+    expect(order()).toEqual(["wall", "pale", "roof", "slate"]);
+    expect(light(day.bed)).toBeLessThan(light(day.ground));
+    expect(light(day.ink)).toBeLessThan(light(day.pill));
+    dress(true);
+    expect(order()).toEqual(["wall", "pale", "roof", "slate"]);
+    expect(light(palette.ground)).toBeLessThan(light(0x202430));
+    expect(light(palette.bed)).toBeGreaterThan(light(palette.ground));
+    expect(light(palette.ink)).toBeGreaterThan(light(palette.pill));
+    for (const tone of Object.keys(day) as Tone[]) expect(palette[tone], tone).not.toBe(day[tone]);
+  });
+
+  test("night changes a tone's paint where it is, and the weathered paint made of it; a lamp's and a provider's stay", () => {
+    dress(false);
+    const wall = paint("wall");
+    const rusted = tinted(wall, weathering.rusted);
+    const stop = paint(lamp.stop);
+    const claude = paint(liveried("claude"));
+    const by = (of: THREE.MeshLambertMaterial) => of.color.clone().multiply(new THREE.Color(weathering.rusted)).getHex();
+    const day = wall.color.getHex();
+    expect((rusted as THREE.MeshLambertMaterial).color.getHex()).toBe(by(wall));
+    dress(true);
+    expect(wall.color.getHex()).toBe(palette.wall);
+    expect(wall.color.getHex()).not.toBe(day);
+    expect(tinted(wall, weathering.rusted)).toBe(rusted);
+    expect((rusted as THREE.MeshLambertMaterial).color.getHex()).toBe(by(wall));
+    expect(stop.color.getHex()).toBe(lamp.stop);
+    expect(claude.color.getHex()).toBe(livery.claude);
+    // A provider with no colour is slate, as slate is now.
+    expect(liveried("grok")).toBe(palette.slate);
+    dress(false);
+    expect(wall.color.getHex()).toBe(day);
   });
 });
 
@@ -932,7 +1041,7 @@ describe("the providers' silos", () => {
     const band = (o: THREE.Object3D) => {
       const found: number[] = [];
       o.traverse((part) => {
-        if (part instanceof THREE.Mesh && part.material instanceof THREE.MeshStandardMaterial && part.material.name !== TINT) found.push(part.material.color.getHex());
+        if (part instanceof THREE.Mesh && part.material instanceof THREE.MeshLambertMaterial && part.material.name !== TINT) found.push(part.material.color.getHex());
       });
       return found;
     };

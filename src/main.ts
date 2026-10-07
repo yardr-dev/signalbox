@@ -8,11 +8,12 @@ import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
-import { loadKit, palette } from "./kit";
+import { loadKit } from "./kit";
 import { layout } from "./layout";
+import { css, dress, palette, SHADE } from "./palette";
 import { Player, SPEEDS } from "./player";
 import { line, outgrown } from "./replay";
-import { describe, draw, fuelled, house, refuel, Stock, type Show } from "./scene";
+import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
 import type { Card, Detail } from "./card";
@@ -25,6 +26,9 @@ import type { Bead, Provider, Quota, Yard } from "./yard";
 const AZIMUTH = THREE.MathUtils.degToRad(22);
 const ELEVATION = THREE.MathUtils.degToRad(40);
 const DISTANCE = 400;
+// Where the sun stands: left of the yard and before it, so a shadow falls to
+// the right and up the page, clear of what throws it.
+const SUN = new THREE.Vector3(-0.55, 1, 0.4).normalize();
 // Pixels per unit of ground below which the sheds' names are hidden.
 const FAR = 14;
 // Pixels between the yard and the edge of the first view. A sign stands over
@@ -45,9 +49,45 @@ const play = document.getElementById("play")!;
 const live = document.getElementById("live")!;
 const speeds = document.getElementById("speeds")!;
 const mute = document.getElementById("sound")!;
+const dusk = document.getElementById("night")!;
 const scrub = document.getElementById("scrub") as HTMLInputElement;
 const clock = document.getElementById("clock")!;
 const current = document.getElementById("event")!;
+
+// Day or night: the reader's system says, until the bar's switch says
+// otherwise; that choice is kept for the next visit, and given up again when
+// it is what the system says anyway. A browser that refuses its storage has
+// the switch all the same.
+const NIGHT = "signalbox.night";
+const system = window.matchMedia("(prefers-color-scheme: dark)");
+function chosen(): boolean | undefined {
+  try {
+    const kept = window.localStorage.getItem(NIGHT);
+    return kept === null ? undefined : kept === "true";
+  } catch {
+    return undefined;
+  }
+}
+function choose(dark: boolean) {
+  try {
+    if (dark === system.matches) window.localStorage.removeItem(NIGHT);
+    else window.localStorage.setItem(NIGHT, String(dark));
+  } catch {
+    // Not kept: the page is as chosen until it is closed.
+  }
+}
+let dark = chosen() ?? system.matches;
+// The palette's tones as they are now, and the three of them the stylesheet
+// draws the page and its labels with.
+function dressed() {
+  dress(dark);
+  const page = document.documentElement;
+  page.dataset.theme = dark ? "dark" : "light";
+  for (const tone of ["ground", "ink", "pill"] as const) page.style.setProperty(`--${tone}`, css(tone));
+  dusk.setAttribute("aria-pressed", String(dark));
+}
+// Before anything is loaded: the page is the ground's colour from the start.
+dressed();
 
 // The yard's events, when the snapshot came with them. Without the file the
 // page is the still picture.
@@ -170,16 +210,40 @@ async function start() {
   if (api) first?.follow();
   const stock = new Stock(plan(first ? first.state : yard, first?.clock), kit, picture.sheds);
 
+  // A flat ground with nothing behind it: the background is the ground, and
+  // all that lies on it is the shadows.
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(palette.grass);
+  const ground = new THREE.Color(palette.ground);
+  scene.background = ground;
   scene.add(picture.root, stock.root);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9a70, 1.9));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-  sun.position.set(-60, 120, 80);
-  scene.add(sun);
+  // One sun and the light of the sky, so that a face that looks up is its
+  // paint exactly, and one the sun does not reach is SHADE of it.
+  scene.add(new THREE.AmbientLight(0xffffff, Math.PI * SHADE));
+  const sun = new THREE.DirectionalLight(0xffffff, (Math.PI * (1 - SHADE)) / SUN.y);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.normalBias = 0.04;
+  const shadows = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 1 - SHADE }));
+  shadows.receiveShadow = true;
+  scene.add(sun, sun.target, shadows);
+  // The sun over the yard as it is drawn: its shadows reach all of it.
+  const shine = () => {
+    const { center, radius } = picture.bounds.getBoundingSphere(new THREE.Sphere());
+    sun.target.position.copy(center);
+    sun.position.copy(center).addScaledVector(SUN, 2 * radius);
+    const reach = sun.shadow.camera;
+    reach.left = reach.bottom = -radius;
+    reach.right = reach.top = radius;
+    reach.far = 4 * radius;
+    reach.updateProjectionMatrix();
+    shadows.position.set(center.x, GROUND_Y, center.z);
+    shadows.scale.setScalar(4 * radius);
+  };
+  shine();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
   host.append(renderer.domElement);
   const labels = new CSS2DRenderer();
   labels.domElement.id = "labels";
@@ -364,6 +428,22 @@ async function start() {
     stale = true;
   });
 
+  // Day and night change the paint where it is: the picture is drawn again,
+  // and nothing in it is built anew.
+  const turned = (to: boolean) => {
+    dark = to;
+    dressed();
+    ground.setHex(palette.ground);
+    render();
+  };
+  dusk.addEventListener("click", () => {
+    choose(!dark);
+    turned(!dark);
+  });
+  system.addEventListener("change", () => {
+    if (chosen() === undefined) turned(system.matches);
+  });
+
   const hint = "drag to pan, scroll or pinch to zoom";
   if (first) {
     let player = first;
@@ -517,6 +597,7 @@ async function start() {
           picture = draw(stands(), kit);
           scene.add(picture.root);
           stock.house(picture.sheds);
+          shine();
         }
         refuel(picture.towers, quota);
         present({ tween: before.live });
