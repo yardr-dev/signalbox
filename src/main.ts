@@ -1,14 +1,18 @@
 // The page: load the yard's snapshot, lay it out, draw it, and let the
-// pointer move the camera over it.
+// pointer move the camera over it. With the yard's events beside the
+// snapshot it plays them: the bar at the bottom is the player's.
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { loadKit, palette } from "./kit";
 import { layout } from "./layout";
-import { describe, draw } from "./scene";
+import { Player, SPEEDS } from "./player";
+import { line } from "./replay";
+import { describe, draw, Stock } from "./scene";
 import "./style.css";
 import type { Slots } from "./layout";
+import type { Log } from "./replay";
 import type { Bead, Yard } from "./yard";
 
 // Where the camera stands from what it looks at: turned a little off the
@@ -23,6 +27,27 @@ const base = import.meta.env.BASE_URL;
 const host = document.getElementById("yard")!;
 const tip = document.getElementById("tip")!;
 const note = document.getElementById("note")!;
+const bar = document.getElementById("bar")!;
+const play = document.getElementById("play")!;
+const speeds = document.getElementById("speeds")!;
+const scrub = document.getElementById("scrub") as HTMLInputElement;
+const clock = document.getElementById("clock")!;
+const current = document.getElementById("event")!;
+
+// The yard's events, when the snapshot came with them. Without the file the
+// page is the still picture.
+async function events(): Promise<Log | undefined> {
+  try {
+    const response = await fetch(`${base}events.json`);
+    const log = response.ok ? ((await response.json()) as Log) : undefined;
+    return log && log.events.length > 0 ? log : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// The yard's clock, in the reader's own time.
+const time = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 async function start() {
   const response = await fetch(`${base}yard.json`);
@@ -32,11 +57,17 @@ async function start() {
   // hold yet is placed after what it does, the same way on every load.
   const remembered = await fetch(`${base}layout.json`);
   const slots = remembered.ok ? ((await remembered.json()) as Partial<Slots>) : {};
-  const picture = draw(layout(yard, slots), await loadKit(base));
+  const kit = await loadKit(base);
+  // The structure stands through a replay; only the beads change.
+  const plan = (beads: Bead[]) => layout({ ...yard, beads }, slots);
+  const picture = draw(plan(yard.beads), kit);
+  const log = await events();
+  const player = log && new Player(yard, log);
+  const stock = new Stock(plan(player ? player.state.beads : yard.beads), kit);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.grass);
-  scene.add(picture.root);
+  scene.add(picture.root, stock.root);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9a70, 1.9));
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(-60, 120, 80);
@@ -123,7 +154,7 @@ async function start() {
       new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1),
       camera,
     );
-    let hit: THREE.Object3D | null = ray.intersectObjects(picture.beads, true)[0]?.object ?? null;
+    let hit: THREE.Object3D | null = ray.intersectObjects(stock.beads, true)[0]?.object ?? null;
     while (hit && !hit.userData.bead) hit = hit.parent;
     if (!hit) {
       tip.style.display = "none";
@@ -138,15 +169,92 @@ async function start() {
   host.addEventListener("pointerdown", point);
   host.addEventListener("pointerleave", () => (tip.style.display = "none"));
 
-  controls.addEventListener("change", render);
+  // Drawn again on the next frame, and on every frame while anything moves.
+  let stale = true;
+  controls.addEventListener("change", () => (stale = true));
   window.addEventListener("resize", () => {
     size();
-    render();
+    stale = true;
   });
   fit();
-  render();
 
-  note.textContent = `${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · drag to pan, scroll or pinch to zoom`;
+  const hint = "drag to pan, scroll or pinch to zoom";
+  if (player) {
+    document.body.classList.add("replay");
+    bar.hidden = false;
+    scrub.max = String(player.to - player.from);
+    const told = () => {
+      play.textContent = player.playing ? "Pause" : "Play";
+      for (const b of speeds.querySelectorAll("button")) b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === player.speed));
+      scrub.value = String(player.clock - player.from);
+      clock.textContent = time.format(player.clock);
+      current.textContent = player.shown ? line(player.shown) : "";
+    };
+    for (const x of SPEEDS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.speed = String(x);
+      b.textContent = `${x}x`;
+      b.addEventListener("click", () => {
+        player.speed = x;
+        told();
+      });
+      speeds.append(b);
+    }
+    play.addEventListener("click", () => {
+      // At the end of the window, play starts the day again.
+      if (!player.playing && player.clock >= player.to) seek(player.from);
+      player.playing = !player.playing;
+      told();
+    });
+    // A scrub is a new state, not a move: everything stands where it was then.
+    const seek = (clock: number) => {
+      player.seek(clock);
+      stock.show(plan(player.state.beads), { tween: false });
+      stale = true;
+      told();
+    };
+    scrub.addEventListener("input", () => seek(player.from + Number(scrub.value)));
+    told();
+
+    const run = (dt: number) => {
+      if (!player.playing) return;
+      const passed = player.advance(dt);
+      for (const e of passed) {
+        if (e.kind === "hook") stock.flash();
+        const peer = e.data?.peer;
+        if (peer !== undefined && e.kind === "peer_message_sent") stock.goods(peer, "out");
+        if (peer !== undefined && e.kind === "peer_message_received") stock.goods(peer, "in");
+      }
+      if (passed.length > 0) {
+        // A bead an advance took out of the state went past the buffer.
+        const left = new Set(passed.filter((e) => e.kind === "advanced").map((e) => e.bead ?? ""));
+        stock.show(plan(player.state.beads), { tween: true, left });
+      }
+      told();
+    };
+    // The frames: the replay's clock, what is on its way, and the picture
+    // when either changed it. A frame after a long pause (a hidden tab)
+    // counts as a short one, so the day does not jump.
+    let before = performance.now();
+    const frame = (now: number) => {
+      const dt = Math.min((now - before) / 1000, 0.1);
+      before = now;
+      run(dt);
+      if (stock.tick(dt) || stale) {
+        stale = false;
+        render();
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    note.textContent = `${yard.depots.length} depots · ${log.events.length} events, ${time.format(player.from)} to ${time.format(player.to)} · ${hint}`;
+  } else {
+    controls.addEventListener("change", render);
+    window.addEventListener("resize", render);
+    note.textContent = `${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`;
+  }
+  render();
   // For whoever drives the page from outside (a screenshot, a test).
   document.body.dataset.ready = "true";
 }

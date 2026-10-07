@@ -84,6 +84,8 @@ export interface Bead {
   group?: string;
   // Whether a running session is working the bead now.
   working?: boolean;
+  // Held: set aside until someone lets it go on.
+  hold?: boolean;
   // The train a wagon belongs to.
   train?: string;
   labels?: string[];

@@ -39,6 +39,9 @@ export const SHED_Z = 3.4;
 export const SIDING_Z = -2.6;
 export const SIDING_PLATFORM_Z = -4.1;
 export const SIDING_SHED_Z = -6;
+// The return line: where a wagon sent back runs, between the main line and
+// the sidings' stubs. It is a way and no rail: nothing is laid there.
+export const RETURN_Z = -1.3;
 
 // A shed: bays in rows of three, at most six drawn (the limit is in its
 // label), so two sheds fit beside one platform.
@@ -106,7 +109,7 @@ export interface Platform {
 export interface Bay {
   key: string;
   at: Point;
-  // The bead whose session stands in the bay.
+  // The bead its crew is out working.
   crew?: Bead;
 }
 
@@ -122,6 +125,20 @@ export interface Shed {
   people: boolean;
   limit: number;
   bays: Bay[];
+}
+
+// A session at work: the crew of a bay, out beside the wagon it works.
+export interface Crew {
+  key: string;
+  bead: Bead;
+  // Its bay, where it comes from and goes back to.
+  home: Point;
+  // Which way on z its bay faces away from the track.
+  away: 1 | -1;
+  // Where it stands: on the platform beside its wagon, or in its bay when
+  // the wagon is not drawn.
+  at: Point;
+  out: boolean;
 }
 
 // A bead on a track: a wagon, or the locomotive of a train.
@@ -162,6 +179,7 @@ export interface Layout {
   sidings: Track[];
   platforms: Platform[];
   sheds: Shed[];
+  crews: Crew[];
   vehicles: Vehicle[];
   counts: Count[];
   boxes: SignalBox[];
@@ -241,6 +259,11 @@ export function isSiding(flow: Flow, k: number): boolean {
   return k > 0 && flow.stages[k]?.human === true;
 }
 
+// Where a flow's held beads stand: its first siding, if it has one.
+export function holdStage(flow: Flow): string | undefined {
+  return flow.stages.find((_, k) => isSiding(flow, k))?.stage;
+}
+
 // The flow a bead of this type travels: the depot's flow for the type, else
 // its default flow (the one for no type), else its first.
 export function flowIndex(flows: Flow[], type: string): number {
@@ -276,6 +299,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
     sidings: [],
     platforms: [],
     sheds: [],
+    crews: [],
     vehicles: [],
     counts: [],
     boxes: [],
@@ -302,6 +326,9 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
       const id = `${depot.name}/${flow.name}`;
       const here = beads.filter((b) => flowIndex(flows, b.type) === j);
       const platform = (stage: string) => slots.stages[id]![stage]!;
+      // A held bead is shunted into the siding, whatever its stage.
+      const held = holdStage(flow);
+      const stands = (b: Bead) => (b.hold === true && held !== undefined ? held : b.stage);
       tracks = Math.max(tracks, track + 1);
 
       // The main line runs from the first platform to the last one on it.
@@ -325,12 +352,13 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         const key = `${id}/${stage.stage}`;
         const rail = z + (siding ? SIDING_Z : 0);
         const front = { x: x + SLOT_PITCH, z: rail };
+        const platformZ = z + (siding ? SIDING_PLATFORM_Z : PLATFORM_Z);
         out.platforms.push({
           key,
           depot: depot.name,
           flow: flow.name,
           stage: stage.stage,
-          at: { x, z: z + (siding ? SIDING_PLATFORM_Z : PLATFORM_Z) },
+          at: { x, z: platformZ },
           front,
           siding,
           terminal: stage.terminal === true,
@@ -346,34 +374,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
           });
         }
 
-        const standing = here.filter((b) => b.stage === stage.stage).sort(byAge);
-
-        // Sheds stand beyond the platform, away from the track; their bays
-        // fill rows of three, each row further out.
-        const away: 1 | -1 = siding ? -1 : 1;
-        shedGroups(yard, depot.name, flow, stage.stage).forEach((name, n) => {
-          const group = groups.get(name);
-          const people = group?.runner === "manual";
-          const limit = group?.limit ?? 0;
-          const at = {
-            x: x - PLATFORM_LENGTH / 2 + BAY_WIDTH / 2 + n * SHED_PITCH,
-            z: z + (siding ? SIDING_SHED_Z : SHED_Z),
-          };
-          const crews = people ? [] : standing.filter((b) => b.group === name && b.working === true);
-          const bays: Bay[] = [];
-          for (let b = 0; b < (people ? 0 : Math.min(limit, BAYS_DRAWN)); b++) {
-            const crew = crews[b];
-            bays.push({
-              key: `${key}/${name}#${b}`,
-              at: {
-                x: at.x + (b % BAY_COLUMNS) * BAY_WIDTH,
-                z: at.z + away * Math.floor(b / BAY_COLUMNS) * BAY_DEPTH,
-              },
-              ...(crew !== undefined ? { crew } : {}),
-            });
-          }
-          out.sheds.push({ key: `${key}/${name}`, group: name, platform: key, at, away, people, limit, bays });
-        });
+        const standing = here.filter((b) => stands(b) === stage.stage).sort(byAge);
 
         // What stands at the platform: the first train with its wagons, or
         // the first three beads; a count says what is not drawn.
@@ -382,11 +383,17 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         const slot = (s: number): Point => ({ x: front.x - s * SLOT_PITCH, z: rail });
         const count = { x: x - PLATFORM_LENGTH / 2, z: rail };
         const train = trains[0];
+        // Where each bead drawn here stands.
+        const drawn = new Map<string, Point>();
+        const stand = (v: Vehicle) => {
+          out.vehicles.push(v);
+          drawn.set(v.key, v.at);
+        };
         if (train !== undefined) {
-          out.vehicles.push({ key: train.id, bead: train, kind: "locomotive", platform: key, at: slot(0) });
+          stand({ key: train.id, bead: train, kind: "locomotive", platform: key, at: slot(0) });
           const wagons = yard.beads.filter((b) => b.train === train.id).sort(byAge);
           wagons.slice(0, SLOTS).forEach((b, s) => {
-            out.vehicles.push({ key: b.id, bead: b, kind: "wagon", platform: key, at: slot(s + 1) });
+            stand({ key: b.id, bead: b, kind: "wagon", platform: key, at: slot(s + 1) });
           });
           if (wagons.length > SLOTS) {
             out.counts.push({ key: `${key}#wagons`, platform: key, at: slot(SLOTS + 1), more: wagons.length - SLOTS, of: "wagons" });
@@ -401,12 +408,48 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
           }
         } else {
           loose.slice(0, SLOTS).forEach((b, s) => {
-            out.vehicles.push({ key: b.id, bead: b, kind: "wagon", platform: key, at: slot(s) });
+            stand({ key: b.id, bead: b, kind: "wagon", platform: key, at: slot(s) });
           });
           if (loose.length > SLOTS) {
             out.counts.push({ key: `${key}#beads`, platform: key, at: count, more: loose.length - SLOTS, of: "beads" });
           }
         }
+
+        // Sheds stand beyond the platform, away from the track; their bays
+        // fill rows of three, each row further out. A bay's crew is out
+        // while its session runs.
+        const away: 1 | -1 = siding ? -1 : 1;
+        shedGroups(yard, depot.name, flow, stage.stage).forEach((name, n) => {
+          const group = groups.get(name);
+          const people = group?.runner === "manual";
+          const limit = group?.limit ?? 0;
+          const at = {
+            x: x - PLATFORM_LENGTH / 2 + BAY_WIDTH / 2 + n * SHED_PITCH,
+            z: z + (siding ? SIDING_SHED_Z : SHED_Z),
+          };
+          const crews = people ? [] : standing.filter((b) => b.group === name && b.working === true);
+          const bays: Bay[] = [];
+          for (let b = 0; b < (people ? 0 : Math.min(limit, BAYS_DRAWN)); b++) {
+            const crew = crews[b];
+            const home = {
+              x: at.x + (b % BAY_COLUMNS) * BAY_WIDTH,
+              z: at.z + away * Math.floor(b / BAY_COLUMNS) * BAY_DEPTH,
+            };
+            bays.push({ key: `${key}/${name}#${b}`, at: home, ...(crew !== undefined ? { crew } : {}) });
+            if (crew === undefined) continue;
+            // Out on the platform, level with its wagon.
+            const wagon = drawn.get(crew.id);
+            out.crews.push({
+              key: `${key}/${name}/${crew.id}`,
+              bead: crew,
+              home,
+              away,
+              at: wagon !== undefined ? { x: wagon.x, z: platformZ } : home,
+              out: wagon !== undefined,
+            });
+          }
+          out.sheds.push({ key: `${key}/${name}`, group: name, platform: key, at, away, people, limit, bays });
+        });
       });
     });
 
@@ -449,6 +492,7 @@ export function positions(l: Layout): Map<string, Point> {
     put("shed", e.key, e.at);
     e.bays.forEach((b) => put("bay", b.key, b.at));
   });
+  l.crews.forEach((e) => put("crew", e.key, e.at));
   l.vehicles.forEach((e) => put("vehicle", e.key, e.at));
   l.counts.forEach((e) => put("count", e.key, e.at));
   l.boxes.forEach((e) => put("box", e.key, e.at));

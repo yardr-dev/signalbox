@@ -1,5 +1,7 @@
 // Draws a layout: the kit's rails, wagons and locomotives, and boxes in the
 // palette for the rest. Nothing here decides where a thing is; layout.ts did.
+// draw is what stands still: the structure, the same through a replay. Stock
+// is what moves: wagons, crews and counts, shown again for every state.
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
@@ -15,6 +17,7 @@ import {
   type Point,
   type Shed,
 } from "./layout";
+import { along, ease, exit, measure, route, seconds, TWEEN_MIN, type Stop } from "./motion";
 import type { Bead } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
@@ -25,11 +28,16 @@ const WALL_HEIGHT = 0.6;
 const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
 const CREW_SCALE = 0.7;
+const BAY_Y = 0.08;
+// A peer's goods wagon: where on the line it comes into the picture and how
+// far it is seen running.
+const GOODS_FROM = 5;
+const GOODS_RUN = 16;
+// The seconds the wire stays lit after a hook.
+const FLASH = 0.6;
 
 export interface Picture {
   root: THREE.Group;
-  // What the pointer can ask about, each with userData.bead.
-  beads: THREE.Object3D[];
   // The box on the ground everything stands in, for the first view. A peer's
   // line counts only where it starts: it runs off the page on purpose.
   bounds: THREE.Box3;
@@ -120,7 +128,7 @@ function signal(x: number, z: number): THREE.Object3D {
 
 // A group of people: a station building. A group that runs sessions: an
 // engine shed, open above so its crews show, a stall per bay.
-function shed(s: Shed, kit: Kit, beads: THREE.Object3D[]): THREE.Object3D {
+function shed(s: Shed): THREE.Object3D {
   const g = new THREE.Group();
   if (s.people) {
     g.add(block(palette.cream, 2.6, 1.5, 1.4, s.at.x + 0.7, 0, s.at.z));
@@ -140,18 +148,6 @@ function shed(s: Shed, kit: Kit, beads: THREE.Object3D[]): THREE.Object3D {
   }
   // The back wall is the one away from the track.
   g.add(block(palette.brick, width + 0.12, WALL_HEIGHT, 0.12, cx, 0, cz + (s.away * depth) / 2));
-  for (const bay of s.bays) {
-    if (!bay.crew) continue;
-    const crew = kit.make("crew");
-    crew.scale.setScalar(CREW_SCALE);
-    // Nose to the track.
-    crew.rotation.y = (s.away * Math.PI) / 2;
-    crew.position.set(bay.at.x, 0.08, bay.at.z);
-    crew.userData.bead = bay.crew;
-    crew.userData.crew = true;
-    g.add(crew);
-    beads.push(crew);
-  }
   return g;
 }
 
@@ -165,7 +161,6 @@ function signalBox(x: number, z: number): THREE.Object3D {
 
 export function draw(l: Layout, kit: Kit): Picture {
   const root = new THREE.Group();
-  const beads: THREE.Object3D[] = [];
   const bounds = new THREE.Box3();
   const rails = new Rails();
   const grow = (x: number, z: number) => bounds.expandByPoint(new THREE.Vector3(x, 0, z));
@@ -205,21 +200,10 @@ export function draw(l: Layout, kit: Kit): Picture {
   for (const s of l.sheds) {
     const n = beside.get(s.platform) ?? 0;
     beside.set(s.platform, n + 1);
-    root.add(shed(s, kit, beads));
+    root.add(shed(s));
     const text = s.people ? s.group : `${s.group} · ${s.limit}`;
     const out = BAY_DEPTH / 2 + 0.3 + (n % 2) * 1.3;
     root.add(label(text, "group", s.at.x - BAY_WIDTH / 2, 0, s.at.z + s.away * out, [0, s.away > 0 ? 0 : 1]));
-  }
-
-  for (const v of l.vehicles) {
-    const model = v.kind === "locomotive" ? kit.make("locomotive") : kit.make("wagon", hash(v.bead.id));
-    model.position.set(v.at.x, 0, v.at.z);
-    model.userData.bead = v.bead;
-    root.add(model);
-    beads.push(model);
-  }
-  for (const c of l.counts) {
-    root.add(label(`+${c.more}${c.of === "beads" ? "" : ` ${c.of}`}`, "count", c.at.x, 1.6, c.at.z, [1, 0.5]));
   }
 
   for (const b of l.boxes) {
@@ -249,10 +233,237 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   root.add(rails.build(kit.make("rail")));
-  return { root, beads, bounds };
+  return { root, bounds };
+}
+
+// One thing on its way: along a line of points, from one height, turn and
+// size to another. turn "way" lays it along the way as it goes.
+interface Move {
+  path: Point[];
+  y: [number, number];
+  turn: [number, number] | "way";
+  size: [number, number];
+  seconds: number;
+  elapsed: number;
+  // Taken out of the picture at the end.
+  last: boolean;
+}
+
+interface Mover {
+  object: THREE.Object3D;
+  size: number;
+  move?: Move;
+}
+
+interface Wagon extends Mover {
+  stop: Stop;
+}
+
+interface Engine extends Mover {
+  // Where it is, or is going.
+  at: Point;
+  home: Point;
+  away: 1 | -1;
+}
+
+export interface Show {
+  // Move to the new places, or stand there at once (a scrub, the first view).
+  tween: boolean;
+  // The beads that left for good: they roll out past the buffer.
+  left?: ReadonlySet<string>;
+}
+
+// The moving stock. show takes a layout and brings every wagon, crew and
+// count to where it has them; tick moves what is on its way.
+export class Stock {
+  readonly root = new THREE.Group();
+  // What the pointer can ask about, each with userData.bead.
+  beads: THREE.Object3D[] = [];
+
+  private readonly wagons = new Map<string, Wagon>();
+  private readonly crews = new Map<string, Engine>();
+  private readonly leaving = new Set<Mover>();
+  private readonly counts = new THREE.Group();
+  private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
+  private layout: Layout;
+
+  constructor(
+    l: Layout,
+    private readonly kit: Kit,
+  ) {
+    this.layout = l;
+    // The wire, lit: over the slate one, and seen only after a hook.
+    const wire = l.wire;
+    this.lit = new THREE.Mesh(
+      new THREE.BoxGeometry(wire.length, 0.14, 0.14),
+      new THREE.MeshBasicMaterial({ color: lamp.clear, transparent: true, opacity: 0 }),
+    );
+    this.lit.position.set(wire.at.x + wire.length / 2, POLE_HEIGHT - 0.17, wire.at.z);
+    this.lit.visible = false;
+    this.root.add(this.counts, this.lit);
+    this.show(l, { tween: false });
+  }
+
+  show(l: Layout, how: Show) {
+    this.layout = l;
+    // Nothing is on its way any more: every move is at its end.
+    if (!how.tween) this.tick(Infinity);
+
+    const tracks = new Map(l.tracks.map((t) => [t.key, t]));
+    const sidings = new Map(l.sidings.map((t) => [t.key, t]));
+    const platforms = new Map(l.platforms.map((p) => [p.key, p]));
+    const standing = new Set<string>();
+    for (const v of l.vehicles) {
+      standing.add(v.key);
+      const platform = platforms.get(v.platform);
+      const track = platform && tracks.get(`${platform.depot}/${platform.flow}`);
+      const mouth = sidings.get(v.platform)?.at;
+      const stop: Stop = {
+        at: v.at,
+        line: track?.at.z ?? v.at.z,
+        end: track ? track.at.x + track.length : v.at.x,
+        ...(mouth !== undefined ? { mouth } : {}),
+      };
+      let wagon = this.wagons.get(v.key);
+      if (!wagon) {
+        const object = v.kind === "locomotive" ? this.kit.make("locomotive") : this.kit.make("wagon", hash(v.bead.id));
+        wagon = { object, size: 1, stop };
+        this.wagons.set(v.key, wagon);
+        this.root.add(object);
+        // New to the picture: it grows where it stands.
+        this.send(wagon, [v.at], { size: [0, 1], seconds: TWEEN_MIN }, how.tween);
+      } else if (wagon.stop.at.x !== v.at.x || wagon.stop.at.z !== v.at.z) {
+        this.send(wagon, route(wagon.stop, stop), {}, how.tween);
+      }
+      wagon.stop = stop;
+      wagon.object.userData.bead = v.bead;
+    }
+    for (const [key, wagon] of this.wagons) {
+      if (standing.has(key)) continue;
+      this.wagons.delete(key);
+      const out = how.left?.has(key) === true;
+      this.send(wagon, out ? exit(wagon.stop) : [wagon.stop.at], { size: [1, 0], last: true, ...(out ? {} : { seconds: TWEEN_MIN }) }, how.tween);
+    }
+
+    const out = new Set<string>();
+    for (const c of l.crews) {
+      out.add(c.key);
+      const y = c.out ? PLATFORM_HEIGHT : BAY_Y;
+      // In its bay it stands nose to the track; out, along its wagon.
+      const turn = c.out ? 0 : (c.away * Math.PI) / 2;
+      let crew = this.crews.get(c.key);
+      if (!crew) {
+        const object = this.kit.make("crew");
+        object.userData.crew = true;
+        crew = { object, size: CREW_SCALE, at: c.home, home: c.home, away: c.away };
+        this.crews.set(c.key, crew);
+        this.root.add(object);
+        object.position.set(c.home.x, BAY_Y, c.home.z);
+        object.rotation.y = (c.away * Math.PI) / 2;
+        object.scale.setScalar(CREW_SCALE);
+      }
+      crew.home = c.home;
+      if (crew.at.x !== c.at.x || crew.at.z !== c.at.z) {
+        const at = crew.object.position;
+        this.send(crew, [{ x: at.x, z: at.z }, c.at], { y: [at.y, y], turn: [crew.object.rotation.y, turn] }, how.tween);
+      }
+      crew.at = c.at;
+      crew.object.userData.bead = c.bead;
+    }
+    for (const [key, crew] of this.crews) {
+      if (out.has(key)) continue;
+      this.crews.delete(key);
+      // The session is over: back into its bay, and out of sight there.
+      const at = crew.object.position;
+      this.send(
+        crew,
+        [{ x: at.x, z: at.z }, crew.home],
+        { y: [at.y, BAY_Y], turn: [crew.object.rotation.y, (crew.away * Math.PI) / 2], last: true },
+        how.tween,
+      );
+    }
+
+    this.counts.clear();
+    for (const c of l.counts) {
+      this.counts.add(label(`+${c.more}${c.of === "beads" ? "" : ` ${c.of}`}`, "count", c.at.x, 1.6, c.at.z, [1, 0.5]));
+    }
+    this.beads = [...this.wagons.values(), ...this.crews.values()].map((m) => m.object);
+  }
+
+  // Goods on a peer's line: out to the peer, or in from it.
+  goods(peer: string, way: "out" | "in") {
+    const line = this.layout.peers.find((p) => p.name === peer);
+    if (!line) return;
+    const near = { x: line.at.x + GOODS_FROM, z: line.at.z };
+    const far = { x: near.x + GOODS_RUN, z: line.at.z };
+    const wagon: Mover = { object: this.kit.make("wagon"), size: 1 };
+    this.root.add(wagon.object);
+    this.send(wagon, way === "out" ? [near, far] : [far, near], { size: [1, 0.4], last: true }, true);
+  }
+
+  // A hook came in over the wire.
+  flash() {
+    this.lit.material.opacity = 1;
+    this.lit.visible = true;
+  }
+
+  // Start a mover on its way, or put it at the end of it.
+  private send(m: Mover, path: Point[], over: Partial<Move>, tween: boolean) {
+    const at = m.object.position;
+    // From where it is now, when the last move did not get it to its stop.
+    const from = m.move && path[0] && (path[0].x !== at.x || path[0].z !== at.z) ? [{ x: at.x, z: at.z }, ...path] : path;
+    const move: Move = {
+      path: from,
+      y: [at.y, at.y],
+      turn: "way",
+      size: [m.object.scale.x / m.size || 1, 1],
+      seconds: seconds(measure(from)),
+      elapsed: 0,
+      last: false,
+      ...over,
+    };
+    m.move = move;
+    if (move.last) this.leaving.add(m);
+    if (!tween) move.elapsed = move.seconds;
+    this.pose(m);
+  }
+
+  private pose(m: Mover) {
+    const move = m.move;
+    if (!move) return;
+    const t = ease(Math.min(1, move.elapsed / move.seconds));
+    const pose = along(move.path, t);
+    m.object.position.set(pose.x, move.y[0] + (move.y[1] - move.y[0]) * t, pose.z);
+    m.object.rotation.y = move.turn === "way" ? pose.angle : move.turn[0] + (move.turn[1] - move.turn[0]) * t;
+    m.object.scale.setScalar(m.size * (move.size[0] + (move.size[1] - move.size[0]) * t));
+    if (move.elapsed < move.seconds) return;
+    delete m.move;
+    if (move.turn === "way") m.object.rotation.y = 0;
+    if (move.last) {
+      this.leaving.delete(m);
+      this.root.remove(m.object);
+    }
+  }
+
+  // Move everything on by a time in seconds. True while anything still moves.
+  tick(dt: number): boolean {
+    let moving = false;
+    for (const m of [...this.wagons.values(), ...this.crews.values(), ...this.leaving]) {
+      if (!m.move) continue;
+      m.move.elapsed += dt;
+      this.pose(m);
+      moving = true;
+    }
+    if (this.lit.visible) {
+      this.lit.material.opacity -= dt / FLASH;
+      this.lit.visible = this.lit.material.opacity > 0;
+      moving = true;
+    }
+    return moving;
+  }
 }
 
 export function describe(bead: Bead, crew: boolean): string {
-  const where = `${bead.depot} · ${bead.type} · ${bead.stage}`;
+  const where = `${bead.depot} · ${bead.type} · ${bead.stage}${bead.hold === true ? " · held" : ""}`;
   return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
 }

@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-10-07T08:28:06Z",
+  "taken_at": "2026-10-07T08:42:18Z",
   "depots": [
     {
       "name": "aiquokka",
@@ -659,18 +659,6 @@
   ],
   "beads": [
     {
-      "id": "yardr-bmp4",
-      "title": "CI red on main: TestPeersDaemonGetsWhatQueuedWhileAway fails in the rpc job (what queued while a did not answer is not taken within 5 s over the socket)",
-      "type": "task",
-      "stage": "new",
-      "depot": "yardr",
-      "group": "yardr-builders",
-      "working": true,
-      "labels": [],
-      "priority": 1,
-      "created_at": "2026-10-07T08:23:01.30619Z"
-    },
-    {
       "id": "yardr-nxah",
       "title": "Design: a live web view of the yard (observe first, then act, then configure)",
       "type": "task",
@@ -815,27 +803,28 @@
       "created_at": "2026-10-07T05:23:03.364376Z"
     },
     {
-      "id": "signalbox-w7w5",
-      "title": "signalbox 1: the project skeleton, a snapshot of a yard's structure, and the still picture of it as a railway",
+      "id": "yardr-5t76",
+      "title": "flow draw: a flow as a signalling diagram (SVG), from a depot, a .flow file or a pack; the README shows the starter pack's",
       "type": "task",
-      "stage": "review",
-      "depot": "signalbox",
-      "group": "yardr-reviewers",
+      "stage": "new",
+      "depot": "yardr",
+      "group": "yardr-builders",
       "working": true,
       "labels": [],
       "priority": 2,
-      "created_at": "2026-10-07T08:04:35.501454Z"
+      "created_at": "2026-10-07T08:31:29.331176Z"
     },
     {
-      "id": "signalbox-waax",
-      "title": "Layout: a flow's stages are drawn in the order flow show lists them, which is not always the order beads travel",
+      "id": "signalbox-sys1",
+      "title": "signalbox 2: replay a yard's day from its event log, trains moving along the tracks",
       "type": "task",
       "stage": "new",
       "depot": "signalbox",
-      "working": false,
+      "group": "yardr-builders",
+      "working": true,
       "labels": [],
       "priority": 2,
-      "created_at": "2026-10-07T08:20:36.537878Z"
+      "created_at": "2026-10-07T08:35:57.155568Z"
     },
     {
       "id": "yardr-6yx8",

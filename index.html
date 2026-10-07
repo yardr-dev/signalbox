@@ -11,6 +11,14 @@
     <div id="yard"></div>
     <div id="tip"></div>
     <div id="note"></div>
+    <!-- The player of a replay: shown when the snapshot came with events. -->
+    <div id="bar" hidden>
+      <button id="play" type="button">Play</button>
+      <span id="speeds" role="group" aria-label="Speed"></span>
+      <input id="scrub" type="range" min="0" value="0" step="1000" aria-label="Time of the yard" />
+      <output id="clock"></output>
+      <output id="event"></output>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

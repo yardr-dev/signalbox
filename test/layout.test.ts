@@ -238,6 +238,30 @@ describe("the mapping", () => {
     expect(crews.map((b) => b.crew!.id).sort()).toEqual(working.map((b) => b.id).sort());
   });
 
+  test("its crew is out on the platform beside its wagon, and has its bay to go back to", () => {
+    const grown = copy();
+    grown.beads.push(bead("signalbox-work", { depot: "signalbox", group: "yardr-builders", working: true }));
+    const g = layout(grown);
+    const wagon = g.vehicles.find((v) => v.key === "signalbox-work")!;
+    const platform = g.platforms.find((p) => p.key === "signalbox/default/new")!;
+    const crew = g.crews.find((c) => c.bead.id === "signalbox-work")!;
+    expect(crew).toMatchObject({ out: true, at: { x: wagon.at.x, z: platform.at.z } });
+    const bay = g.sheds.flatMap((s) => s.bays).find((b) => b.crew?.id === "signalbox-work")!;
+    expect(bay.key.startsWith("signalbox/default/new/yardr-builders#")).toBe(true);
+    expect(crew.home).toEqual(bay.at);
+    // No session, no crew.
+    expect(l.crews.find((c) => c.bead.id === "signalbox-work")).toBeUndefined();
+  });
+
+  test("a held bead stands in its flow's siding, whatever its stage", () => {
+    const grown = copy();
+    grown.beads.push(bead("signalbox-held", { depot: "signalbox", stage: "review", hold: true }));
+    grown.beads.push(bead("aiquokka-held", { depot: "aiquokka", type: "pr-review", stage: "review", hold: true }));
+    const g = layout(grown);
+    expect(g.vehicles.find((v) => v.key === "signalbox-held")).toMatchObject({ platform: "signalbox/default/decide", bead: { stage: "review" } });
+    expect(g.vehicles.find((v) => v.key === "aiquokka-held")!.platform).toBe("aiquokka/pr-review/decide");
+  });
+
   test("a train is a locomotive on the train flow's track with its wagons coupled behind", () => {
     const grown = copy();
     grown.beads.push(bead("yardr-loco", { type: "train", stage: "open" }));
