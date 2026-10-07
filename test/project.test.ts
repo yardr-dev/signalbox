@@ -41,6 +41,36 @@ describe("the projection", () => {
     expect(JSON.stringify(yard)).not.toMatch(/secret|4wbdbdwypgzzjr5vgfwr/);
   });
 
+  test("a bead's last session that ended badly is its fault, with the group it was of", () => {
+    const session = (bead: string, state: string, started_at: string, more: Raw = {}): Raw => ({ id: "4wbdbdwypgzzjr5vgfwr", bead, group: "builders", state, started_at, handle: { brief: SECRET }, error: SECRET, ...more });
+    const beads = ["a", "b", "c", "d", "e"].map((n) => ({ id: `signalbox-${n}`, title: n, type: "task", stage: "new", status: "open", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" }));
+    const sessions = [
+      // Died, and nothing since.
+      session("signalbox-a", "done", "2099-01-01T01:00:00Z", { ended_at: "2099-01-01T01:30:00Z" }),
+      session("signalbox-a", "died", "2099-01-01T02:00:00Z", { ended_at: "2099-01-01T02:30:00Z" }),
+      // Died, and done since: in whatever order the yard lists them.
+      session("signalbox-b", "done", "2099-01-01T03:00:00Z", { ended_at: "2099-01-01T03:30:00Z" }),
+      session("signalbox-b", "died", "2099-01-01T02:00:00Z", { ended_at: "2099-01-01T02:30:00Z" }),
+      // Ended by someone's choice: no fault.
+      session("signalbox-c", "released", "2099-01-01T02:00:00Z", { ended_at: "2099-01-01T02:30:00Z" }),
+      session("signalbox-d", "held", "2099-01-01T02:00:00Z", { ended_at: "2099-01-01T02:30:00Z" }),
+      // Failed, and a session at work on it now.
+      session("signalbox-e", "failed", "2099-01-01T02:00:00Z", { ended_at: "2099-01-01T02:30:00Z" }),
+      session("signalbox-e", "running", "2099-01-01T03:00:00Z"),
+    ];
+    beads[4] = { ...beads[4]!, session: "4wbdbdwypgzzjr5vgfwr", group: "builders" } as (typeof beads)[number];
+    const yard = yardOf({ ...lists, beads, sessions }, "2099-01-01T04:00:00Z");
+    expect(yard.beads.map((b) => [b.id, b.working, b.group, b.fault])).toEqual([
+      ["signalbox-a", false, "builders", { kind: "died", at: "2099-01-01T02:30:00Z" }],
+      ["signalbox-b", false, undefined, undefined],
+      ["signalbox-c", false, undefined, undefined],
+      ["signalbox-d", false, undefined, undefined],
+      ["signalbox-e", true, "builders", undefined],
+    ]);
+    expect(Object.keys(yard.beads[0]!).sort()).toEqual(["created_at", "depot", "fault", "group", "id", "priority", "stage", "title", "type", "working"]);
+    expect(JSON.stringify(yard)).not.toMatch(/secret|4wbdbdwypgzzjr5vgfwr/);
+  });
+
   test("an event keeps its number, time, kind and bead, and a few names of its data", () => {
     const started: Raw = {
       seq: 7,

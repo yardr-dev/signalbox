@@ -10,6 +10,7 @@ import {
   FLOW_PITCH,
   GROUND_Z,
   HEADSHUNT,
+  LAMP_X,
   PARK_X,
   layout,
   PEER_PITCH,
@@ -21,6 +22,7 @@ import {
   PLACE_Z,
   PLATFORM_LENGTH,
   PLATFORM_Z,
+  satKey,
   positions,
   SHED_PITCH,
   SHED_WIDTH,
@@ -400,7 +402,7 @@ describe("the mapping", () => {
     // Every session of this yard's crews: both of yardr-builders, each at its wagon.
     expect(l.work.map((w) => w.key).sort()).toEqual(["signalbox-sys1", "yardr-5t76"]);
     for (const w of l.work) expect(w.at.x).toBe(l.vehicles.find((v) => v.key === w.key)!.at.x);
-    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire", "work"]);
+    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "lamps", "peers", "platforms", "sheds", "sidings", "tracks", "vehicles", "wire", "work"]);
   });
 
   test("the places taken are the limit less the sessions at work, and the sign's count is the sessions", () => {
@@ -510,6 +512,68 @@ describe("the mapping", () => {
     const g = layout(grown);
     expect(g.vehicles.find((v) => v.key === "signalbox-held")).toMatchObject({ platform: "signalbox/default/decide", bead: { stage: "review" } });
     expect(g.vehicles.find((v) => v.key === "aiquokka-held")!.platform).toBe("aiquokka/pr-review/decide");
+  });
+
+  test("a held wagon is chocked; a fault is a lamp on the wagon, or the platform's for a bead with no route", () => {
+    const grown = copy();
+    const at = "2099-01-01T00:00:00Z";
+    grown.beads = grown.beads.filter((b) => b.depot !== "signalbox");
+    grown.beads.push(bead("signalbox-well", { depot: "signalbox", stage: "backlog" }));
+    grown.beads.push(bead("signalbox-held", { depot: "signalbox", stage: "review", hold: true }));
+    grown.beads.push(bead("signalbox-refused", { depot: "signalbox", stage: "approved", fault: { kind: "move_refused", at } }));
+    grown.beads.push(bead("signalbox-stranded", { depot: "signalbox", stage: "approved", fault: { kind: "stranded", at }, hold: false }));
+    grown.beads.push(bead("signalbox-lost", { depot: "signalbox", stage: "review", fault: { kind: "unrouted", at } }));
+    // A script's session has no figure to sit for it.
+    grown.beads.push(bead("signalbox-failed", { depot: "signalbox", stage: "new", group: "signalbox-assembly", fault: { kind: "ended_failed", at } }));
+    const g = layout(grown);
+    const marks = Object.fromEntries(g.vehicles.filter((v) => v.bead.depot === "signalbox").map((v) => [v.key, [v.chocked === true, v.lamp === true]]));
+    expect(marks).toEqual({
+      "signalbox-well": [false, false],
+      "signalbox-held": [true, false],
+      "signalbox-refused": [false, true],
+      "signalbox-stranded": [false, true],
+      "signalbox-lost": [false, false],
+      "signalbox-failed": [false, true],
+    });
+    const review = g.platforms.find((p) => p.key === "signalbox/default/review")!;
+    expect(g.lamps).toEqual([{ key: "signalbox/default/review#unrouted", platform: review.key, at: { x: review.at.x - PLATFORM_LENGTH / 2 + LAMP_X, z: review.at.z } }]);
+    expect(positions(g).get("lamp:signalbox/default/review#unrouted")).toEqual(g.lamps[0]!.at);
+    expect(layout(copy()).lamps).toEqual([]);
+  });
+
+  test("a session that ended badly sits at its wagon, back to it: one more than the places, and not out", () => {
+    const grown = copy();
+    grown.beads = grown.beads.filter((b) => b.group !== "yardr-builders" && b.depot !== "signalbox");
+    const fault = { kind: "stalled", at: "2099-01-01T00:00:00Z" };
+    grown.beads.push(bead("signalbox-sat", { depot: "signalbox", group: "yardr-builders", working: false, fault, created_at: "2099-01-01T00:00:00Z" }));
+    grown.beads.push(bead("signalbox-work", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2099-01-02T00:00:00Z" }));
+    const g = layout(grown);
+    const hut = g.sheds.find((s) => s.key === "signalbox/default/new/yardr-builders")!;
+    const sat = g.work.find((w) => w.key === "signalbox-sat")!;
+    expect(sat).toMatchObject({ sat: true, slot: 0, platform: "signalbox/default/new" });
+    expect(g.work.find((w) => w.key === "signalbox-work")!.sat).toBeUndefined();
+    // The figure says it: the wagon has no lamp.
+    expect(g.vehicles.find((v) => v.key === "signalbox-sat")!.lamp).toBeUndefined();
+    expect(atWork(g, "yardr-builders")).toBe(1);
+
+    const crew = people(g).filter((p) => p.group === "yardr-builders" && p.key.startsWith("s"));
+    const figure = crew.find((p) => p.sat)!;
+    expect(figure).toEqual({ key: satKey("signalbox-sat"), outfit: "builder", group: "yardr-builders", at: sat.at, gate: sat.gate, faces: 1, platform: sat.platform, bead: sat.bead, sat: true });
+    expect(figure.faces).toBe(-sat.reach);
+    // The hut's places are for the one at work and the two it may still start.
+    const placed = crew.filter((p) => !p.sat);
+    expect(placed.map((p) => p.key)).toEqual(hut.places.map((p) => p.key));
+    expect(placed.filter((p) => p.bead !== undefined).map((p) => p.bead!.id)).toEqual(["signalbox-work"]);
+    // It keeps no place: with every session of the limit out it still sits.
+    for (let n = 0; n < 2; n++) grown.beads.push(bead(`signalbox-more${n}`, { depot: "signalbox", group: "yardr-builders", working: true, created_at: `2099-01-0${n + 3}T00:00:00Z` }));
+    const full = people(layout(grown), people(g)).filter((p) => p.group === "yardr-builders" && p.key.startsWith("s"));
+    expect(full.filter((p) => p.bead !== undefined && !p.sat).length).toBe(3);
+    expect(full.filter((p) => p.sat).map((p) => p.bead!.id)).toEqual(["signalbox-sat"]);
+    // A bead people work has no figure to sit: its wagon is lit.
+    const manual = copy();
+    manual.beads.push(bead("signalbox-m", { depot: "signalbox", stage: "decide", group: "decisions", fault }));
+    expect(layout(manual).work.find((w) => w.key === "signalbox-m")).toBeUndefined();
+    expect(layout(manual).vehicles.find((v) => v.key === "signalbox-m")!.lamp).toBe(true);
   });
 
   test("a train is a locomotive on the train flow's track with its wagons coupled behind", () => {

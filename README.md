@@ -73,7 +73,7 @@ the ground to the platform its bead stands at (a second or two at 1x,
 however far; a faster replay walks as much faster, down to a wagon's least
 0.3 s), turns to the wagon and works on it at its own pace, whatever the
 replay's, and says under the pointer which bead and group; when the session
-ends it walks back. A scrub puts everyone
+ends it walks back, unless it ended badly (below). A scrub puts everyone
 where they were then, at once. With `prefers-reduced-motion` the figures
 stand still where they are, a hand at the wagon. A building says under the
 pointer its group, runner and limit. A click on a wagon, or on the figure at
@@ -94,7 +94,33 @@ come behind an engine of the peer's, which goes home when they have gone.
 One train runs each way at a time, and the next waits out of sight. A hook
 is a flash of the wire.
 
-![Mid-replay: the shunter of yardr's default track coupled to a wagon at new to pull it to review, two builders from yardr's hut at work at new, and a reviewer leaving yardr's office for the wagon; signalbox's hut and office above, with the same signs](docs/replay.png)
+What went wrong is drawn too, and says under the pointer what and when
+("held", "session stalled 14:02", "move refused 06:27"):
+
+- A held wagon has chocks at its wheels and a small red flag, until it is
+  let go.
+- A session that came to no good end leaves its figure at the wagon: sat on
+  the platform with its back to it, hat off. That is `session_stalled`,
+  `session_blocked`, `session_harness_error`, `session_prompt_gave_up`,
+  `session_died`, `gave_up`, and an advance with another outcome than done,
+  where the figure goes with the wagon and sits where it arrives. It is not
+  out: the sign counts sessions at work, and the hut has its places for
+  them, so a sat figure is one more than those. The next session on the
+  bead stands it up (as does `session_unblocked` a blocked one); when the
+  bead moves on without it, it goes.
+- `move_refused` and `stranded` are a lamp on the wagon, flashing red until
+  the bead moves or closes; so is a session's bad end where no crew has a
+  figure to sit for it, a script's failed landing for one. `unrouted` is the
+  same lamp on the platform the bead sits at. With `prefers-reduced-motion`
+  the lamps are lit and still.
+
+The snapshot has one `fault` on a bead for all of these but the hold: a kind
+and a time. The replay sets and clears it from the window's events; the
+snapshot itself knows only how a bead's last session ended (died, failed,
+aborted), since a stalled or blocked session is still running to the yard.
+So a fault older than the window is seen only if it is of that kind.
+
+![Mid-replay, on yardr's board: a session at new has stalled, and its builder sits on the platform at its wagon, hat off, back to it, while the hut's sign says 0 of 3 out and three builders stand at its door; a reviewer is at work at review, and the bar names the event](docs/replay.png)
 
 ## Following a yard as it runs
 
@@ -133,7 +159,8 @@ beside the files of `dist/`:
 
 What it exposes: what the committed snapshot holds, for the yard as it is
 now. Depots, flows, stages, groups, routes, crew and peers by name; of each
-open bead its id, title, type, stage, labels and whether a session works it;
+open bead its id, title, type, stage, labels, whether a session works it and
+what went wrong with it last (a kind and a time);
 of each event its number, time, kind, bead and a few names (group, depot,
 peer, stages of an advance). And of the one bead a card asks for, live
 only and in no file: its body and its notes, each with its author and time,

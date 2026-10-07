@@ -86,9 +86,22 @@ export interface Bead {
   working?: boolean;
   // Held: set aside until someone lets it go on.
   hold?: boolean;
+  // What went wrong with it last and nothing has put right since.
+  fault?: Fault;
   // The train a wagon belongs to.
   train?: string;
   labels?: string[];
   priority: number;
   created_at: string;
+}
+
+// A fault on a bead. Its kind is how the bead's session ended when that was
+// not well (stalled, blocked, harness_error, prompt_gave_up, gave_up, a
+// session's last state such as died or failed, ended_<outcome> for an
+// advance with another outcome than done), or what
+// the yard said of the bead itself: move_refused, stranded, unrouted. A hold
+// is no fault of this kind: hold says it.
+export interface Fault {
+  kind: string;
+  at: string;
 }

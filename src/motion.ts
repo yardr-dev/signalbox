@@ -234,8 +234,11 @@ export function turn(from: number, to: number, step: number): number {
 
 // What a figure does: it walks while it is on its way, works while it stands
 // at a bead, and is idle at home; and at a bead whose wagon has not come to
-// a stand there yet, since no one works on a wagon that moves.
-export type Doing = "idle" | "walk" | "work";
+// a stand there yet, since no one works on a wagon that moves. One whose
+// session ended badly sits at its bead, wherever the wagon is.
+export type Doing = "idle" | "walk" | "work" | "sit";
 export function doing(person: Person, moving: boolean, stands = true): Doing {
-  return moving ? "walk" : person.bead !== undefined && stands ? "work" : "idle";
+  if (moving) return "walk";
+  if (person.sat) return "sit";
+  return person.bead !== undefined && stands ? "work" : "idle";
 }

@@ -18,7 +18,7 @@
 // from the top of the yard to its last depot. Negative z is the strip above
 // the depots: signal boxes, the telegraph wire, the lines to peers.
 
-import type { Bead, Flow, Group, Yard } from "./yard";
+import type { Bead, Fault, Flow, Group, Yard } from "./yard";
 
 export interface Point {
   x: number;
@@ -69,6 +69,8 @@ export const GROUND_Z = 1.1;
 export const WORK_Z = 0.3;
 export const TAIL_X = 0.4;
 export const TAIL_PITCH = 0.6;
+// A platform's lamp, from its left end.
+export const LAMP_X = 0.25;
 
 // Down the page. A board has room for three flows whatever it holds (the
 // default, the trains', the wagons'), so a flow added to a depot moves no
@@ -167,7 +169,16 @@ export interface Shed {
   places: Place[];
 }
 
-// A session at work on a bead: where its figure stands.
+// The faults the yard found on a bead, not a session's end: a lamp shows them.
+export const OF_BEAD = ["move_refused", "stranded", "unrouted"];
+
+// Whether a fault is the end of a session: its figure sits at the wagon.
+export function seats(fault: Fault | undefined): fault is Fault {
+  return fault !== undefined && !OF_BEAD.includes(fault.kind);
+}
+
+// A session at work on a bead: where its figure stands. Or one that ended
+// badly: where its figure sits.
 export interface Work {
   // The bead's id.
   key: string;
@@ -181,6 +192,8 @@ export interface Work {
   gate: Point;
   // Which way on z its wagon stands from it.
   reach: 1 | -1;
+  // Its session ended badly: the figure sits here, and is not out.
+  sat?: true;
 }
 
 // A figure: one of a crew, idle at its place or at work on a bead; or a crew
@@ -199,6 +212,8 @@ export interface Person {
   // At work: the platform, and the bead.
   platform?: string;
   bead?: Bead;
+  // Sat at that bead, hat off: its session ended badly.
+  sat?: true;
 }
 
 // A bead on a track: a wagon, or the locomotive of a train.
@@ -206,6 +221,17 @@ export interface Vehicle {
   key: string;
   bead: Bead;
   kind: "wagon" | "locomotive";
+  platform: string;
+  at: Point;
+  // Held: wheel chocks at it, and a red flag on it.
+  chocked?: true;
+  // A fault with no figure to show it: a lamp on it, flashing red.
+  lamp?: true;
+}
+
+// A lamp on a platform, flashing red: a bead that sits there has no route.
+export interface Lamp {
+  key: string;
   platform: string;
   at: Point;
 }
@@ -242,6 +268,7 @@ export interface Layout {
   work: Work[];
   vehicles: Vehicle[];
   counts: Count[];
+  lamps: Lamp[];
   boxes: SignalBox[];
   peers: PeerLine[];
   // The telegraph wire: its left end and its length.
@@ -370,6 +397,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
     work: [],
     vehicles: [],
     counts: [],
+    lamps: [],
     boxes: [],
     peers: [],
     wire: { at: { x: BOARD_X, z: WIRE_Z }, length: 0 },
@@ -378,7 +406,9 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
   const open = new Set(yard.beads.map((b) => b.id));
   // A wagon whose train is open is coupled behind it, not at its own platform.
   const coupled = (b: Bead) => b.train !== undefined && open.has(b.train);
-  const crewed = (b: Bead) => b.working === true && ["hut", "office"].includes(shedKind(groups.get(b.group ?? "")));
+  // A bead a crew's session is at, at work or sat after a bad end.
+  const sat = (b: Bead) => b.working !== true && seats(b.fault);
+  const crewed = (b: Bead) => (b.working === true || sat(b)) && ["hut", "office"].includes(shedKind(groups.get(b.group ?? "")));
   // Every building a route asks for, with its board and the slots of its
   // platform: a crew keeps only the first of its own on a board, below.
   const sheds: { shed: Shed; depot: string; rank: number[] }[] = [];
@@ -458,9 +488,13 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         const train = trains[0];
         // The bead drawn in each slot here.
         const drawn: Bead[] = [];
+        // A fault is seen at the wagon unless a figure sits there for it, or
+        // it is the platform's: no route from here.
         const stand = (v: Vehicle) => {
-          out.vehicles.push(v);
-          drawn.push(v.bead);
+          const b = v.bead;
+          const lamp = b.fault !== undefined && b.fault.kind !== "unrouted" && !(sat(b) && crewed(b));
+          out.vehicles.push({ ...v, ...(b.hold === true ? { chocked: true } : {}), ...(lamp ? { lamp: true } : {}) });
+          drawn.push(b);
         };
         if (train !== undefined) {
           stand({ key: train.id, bead: train, kind: "locomotive", platform: key, at: slot(0) });
@@ -486,6 +520,11 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
           if (loose.length > SLOTS) {
             out.counts.push({ key: `${key}#beads`, platform: key, at: count, more: loose.length - SLOTS, of: "beads" });
           }
+        }
+
+        // On the slab's left end, where the count is; the signal has the right.
+        if (standing.some((b) => b.fault?.kind === "unrouted")) {
+          out.lamps.push({ key: `${key}#unrouted`, platform: key, at: { x: x - PLATFORM_LENGTH / 2 + LAMP_X, z: platformZ } });
         }
 
         // Buildings stand beyond the platform, away from the track; a crew's
@@ -520,7 +559,8 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
         // slot on the platform's edge, or at the platform's left end when
         // its wagon is only counted, or stands past the slab behind a train.
         // A bead people work, and one a script works, is no figure's; nor is
-        // a wagon behind a train that stands elsewhere, or is not drawn.
+        // a wagon behind a train that stands elsewhere, or is not drawn. A
+        // session that ended badly left its figure where it worked.
         let tail = 0;
         const worked = [...drawn, ...standing.filter((b) => !coupled(b) && !drawn.includes(b))];
         for (const b of worked.filter(crewed)) {
@@ -536,6 +576,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}): Layout {
             at: { x: wx, z: platformZ - away * WORK_Z },
             gate: { x: wx, z: ground },
             reach: away === 1 ? -1 : 1,
+            ...(sat(b) ? { sat: true } : {}),
           });
         }
       });
@@ -597,6 +638,7 @@ export function positions(l: Layout): Map<string, Point> {
   l.work.forEach((e) => put("work", e.key, e.at));
   l.vehicles.forEach((e) => put("vehicle", e.key, e.at));
   l.counts.forEach((e) => put("count", e.key, e.at));
+  l.lamps.forEach((e) => put("lamp", e.key, e.at));
   l.boxes.forEach((e) => put("box", e.key, e.at));
   l.peers.forEach((e) => put("peer", e.key, e.at));
   put("wire", "wire", l.wire.at);
@@ -619,11 +661,21 @@ export function positions(l: Layout): Map<string, Point> {
 // limit, an idle crew at every door: the price of a board that shows by
 // itself where its crews come from. The places left empty for those out on
 // another board are the last ones free, so nobody steps aside for them.
+//
+// A session that ended badly is not out, so its figure is one more than the
+// places: it sits at the bead under a key of its own (satKey), back to the
+// wagon, and the place it came from is free for the next session.
 export function people(l: Layout, before: readonly Person[] = []): Person[] {
   const out: Person[] = [];
   const board = new Map(l.platforms.map((p) => [p.key, p.depot]));
   for (const shed of l.sheds) {
-    const here = l.work.filter((w) => w.group === shed.group && board.get(w.platform) === board.get(shed.platform));
+    const all = l.work.filter((w) => w.group === shed.group && board.get(w.platform) === board.get(shed.platform));
+    const outfit = shed.kind === "office" ? "reviewer" : "builder";
+    for (const w of all.filter((w) => w.sat)) {
+      const faces = w.reach === 1 ? -1 : 1;
+      out.push({ key: satKey(w.key), outfit, group: shed.group, at: w.at, gate: w.gate, faces, platform: w.platform, bead: w.bead, sat: true });
+    }
+    const here = all.filter((w) => !w.sat);
     const sessions = new Map(here.map((w) => [w.key, w]));
     const kept = new Map<string, Work>();
     for (const p of before) {
@@ -639,7 +691,7 @@ export function people(l: Layout, before: readonly Person[] = []): Person[] {
       if (!work && idle-- <= 0) continue;
       out.push({
         key: place.key,
-        outfit: shed.kind === "office" ? "reviewer" : "builder",
+        outfit,
         group: shed.group,
         at: work?.at ?? place.at,
         gate: work?.gate ?? { x: place.at.x, z: shed.at.z - shed.away * GROUND_Z },
@@ -656,8 +708,14 @@ export function people(l: Layout, before: readonly Person[] = []): Person[] {
   return out;
 }
 
+// The key of the figure sat at a bead.
+export function satKey(bead: string): string {
+  return `sat/${bead}`;
+}
+
 // How many of a group's sessions are at work, in the whole yard: what each of
-// its buildings' signs says.
+// its buildings' signs says. One that ended is not at work, though its figure
+// still sits there.
 export function atWork(l: Layout, group: string): number {
-  return l.work.filter((w) => w.group === group).length;
+  return l.work.filter((w) => w.group === group && !w.sat).length;
 }

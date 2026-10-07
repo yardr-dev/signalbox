@@ -2,11 +2,11 @@
 import * as THREE from "three";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
-import { loadKit, type Kit } from "../src/kit";
+import { fault as tint, lamp, loadKit, type Kit } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH } from "../src/layout";
 import { GOODS_END, goodsSeconds, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { BACKLOG, COUPLING } from "../src/shunt";
-import { describe as tip, draw, house, sign, Stock } from "../src/scene";
+import { describe as tip, draw, house, sign, Stock, wrong } from "../src/scene";
 import type { Bead, Yard } from "../src/yard";
 
 // No file of the kit is there: every model is its box. And no page: a label
@@ -177,6 +177,61 @@ describe("the figures of the stock", () => {
     expect(figure.rotation.y).toBeCloseTo(-Math.PI / 2);
   });
 
+  test("a session that ends badly seats its figure where it worked, back to the wagon; the next one stands it up", () => {
+    const at = "2000-01-01T14:02:00Z";
+    const stalled = layout({ ...yard, beads: [...idle, { ...work, working: false, fault: { kind: "stalled", at } }] });
+    const crew = (stock: Stock) => stock.root.children.filter((o) => o.userData.crew === true);
+    const stock = new Stock(quiet, kit);
+    const figure = first(stock);
+    stock.show(busy, { tween: true });
+    stock.tick(WALK_MAX);
+    stock.tick(1);
+    expect(figure.rotation.y).toBeCloseTo(Math.PI / 2);
+
+    stock.show(stalled, { tween: true });
+    // No walk: it is where it was, and turns its back.
+    expect(figure.position).toMatchObject({ x: post.at.x, z: post.at.z });
+    stock.tick(1);
+    expect(figure.position).toMatchObject({ x: post.at.x, z: post.at.z });
+    expect(figure.position.y).toBeGreaterThan(0.4);
+    expect(figure.rotation.y).toBeCloseTo(-Math.PI / 2);
+    expect(stock.tick(0.1)).toBe(false);
+    // The bead's under the pointer still, and the tip says what is wrong.
+    expect(stock.beads).toContain(figure);
+    expect(tip(figure.userData.bead as Bead, true)).toContain(`session stalled ${clock(at)}`);
+    // Not out: its place at the hut has a figure again.
+    expect(crew(stock).length).toBe(people(quiet).length + 1);
+    const fresh = crew(stock).find((o) => o.position.x === place.at.x && o.position.z === place.at.z)!;
+    expect(fresh).not.toBe(figure);
+
+    // The next session on the bead: the one that sat, not the one at home.
+    stock.show(busy, { tween: true });
+    expect(crew(stock).length).toBe(people(busy).length);
+    expect(crew(stock)).toContain(figure);
+    expect(crew(stock)).not.toContain(fresh);
+    stock.tick(1);
+    expect(figure.position).toMatchObject({ x: post.at.x, z: post.at.z });
+    expect(figure.rotation.y).toBeCloseTo(Math.PI / 2);
+
+    // The bead moves on without it: the figure that sat is gone, where it sat.
+    stock.show(stalled, { tween: true });
+    stock.show(quiet, { tween: true });
+    expect(figure.position).toMatchObject({ x: post.at.x, z: post.at.z });
+    expect(stock.tick(TWEEN_MIN / 2)).toBe(true);
+    expect(figure.scale.x).toBeLessThan(1);
+    stock.tick(TWEEN_MIN);
+    expect(crew(stock)).not.toContain(figure);
+    expect(crew(stock).length).toBe(people(quiet).length);
+    expect(stock.tick(0.1)).toBe(false);
+
+    // A scrub to the fault: sat at the wagon at once.
+    stock.show(stalled, { tween: false });
+    const sat = crew(stock).find((o) => o.userData.bead?.id === work.id)!;
+    expect(sat.position).toMatchObject({ x: post.at.x, z: post.at.z });
+    expect(sat.rotation.y).toBeCloseTo(-Math.PI / 2);
+    expect(crew(stock).length).toBe(people(quiet).length + 1);
+  });
+
   test("the first place is out from the door; a sign counts who is out; a building says whose it is", () => {
     const hut = quiet.sheds.find((s) => s.group === "yardr-builders")!;
     expect(place.at.x).toBeCloseTo(hut.at.x + SHED_WIDTH / 2 + PLACE_X);
@@ -188,6 +243,116 @@ describe("the figures of the stock", () => {
     expect(house(station)).toBe(`${station.group}\nmanual · limit 50`);
     const works = quiet.sheds.find((s) => s.key === "signalbox/default/approved/signalbox-assembly")!;
     expect(sign(works)).toBe("signalbox-assembly · 1");
+  });
+});
+
+// A fault's time of day as the tip has it: the reader's own.
+const clock = (at: string) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(Date.parse(at));
+
+describe("the faults of the stock", () => {
+  const bead = (id: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type: "task", stage: "new", depot: "signalbox", priority: 2, created_at: "2000-01-01T00:00:00Z", ...over });
+  const at = (...beads: Bead[]) => layout({ ...yard, beads });
+  const wagon = (stock: Stock, id: string) => stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id && o.userData.crew !== true)!;
+  const when = "2000-01-01T06:27:00Z";
+  // The colours of a thing's parts, and of the lamps' own.
+  const colours = (o: THREE.Object3D) => {
+    const seen: number[] = [];
+    o.traverse((part) => {
+      if (part instanceof THREE.Mesh) seen.push((part.material as THREE.MeshBasicMaterial).color.getHex());
+    });
+    return seen;
+  };
+  const run = (stock: Stock) => {
+    for (let n = 0; stock.tick(0.02); n++) if (n > 5000) throw new Error("the stock never came to a stand");
+  };
+
+  test("a held wagon has chocks at its wheels and a red flag, until it is let go", () => {
+    const well = at(bead("signalbox-a"));
+    const stock = new Stock(well, kit);
+    const a = wagon(stock, "signalbox-a");
+    expect(meshes(a)).toBe(1);
+    stock.show(at(bead("signalbox-a", { hold: true })), { tween: true });
+    expect(colours(a).filter((c) => c === tint.chock).length).toBe(2);
+    expect(colours(a)).toContain(lamp.stop);
+    // No chocks under it while the shunter takes it into the siding: they lie where it stands.
+    const chocks = () => {
+      const shown: boolean[] = [];
+      a.traverse((part) => {
+        if (part instanceof THREE.Mesh && (part.material as THREE.MeshBasicMaterial).color.getHex() === tint.chock) shown.push(part.parent!.visible);
+      });
+      return shown;
+    };
+    stock.tick(0.02);
+    expect(chocks()).toEqual([false, false]);
+    run(stock);
+    expect(chocks()).toEqual([true, true]);
+    // Nothing flashes for a hold: the picture comes to a stand.
+    expect(stock.tick(0.1)).toBe(false);
+    expect(tip(a.userData.bead as Bead, false)).toContain("· held");
+
+    stock.show(well, { tween: true });
+    expect(meshes(a)).toBe(1);
+  });
+
+  test("a refused move is a lamp on the wagon, flashing red until the bead moves", () => {
+    const refused = at(bead("signalbox-a", { fault: { kind: "move_refused", at: when } }));
+    const stock = new Stock(at(bead("signalbox-a")), kit);
+    const a = wagon(stock, "signalbox-a");
+    expect(stock.tick(0.1)).toBe(false);
+    stock.show(refused, { tween: true });
+    expect(meshes(a)).toBe(3);
+    // Lit, dark, lit: and the picture never comes to a stand.
+    const lit: boolean[] = [];
+    for (let n = 0; n < 40; n++) {
+      expect(stock.tick(0.05)).toBe(true);
+      const seen = colours(a);
+      expect(seen.includes(lamp.stop) || seen.includes(tint.dark)).toBe(true);
+      lit.push(seen.includes(lamp.stop));
+    }
+    expect(lit).toContain(true);
+    expect(lit).toContain(false);
+    expect(tip(a.userData.bead as Bead, false)).toContain(`· move refused ${clock(when)}`);
+    // A reader who asked for less motion sees it lit, and still.
+    stock.still = true;
+    expect(stock.tick(0.1)).toBe(false);
+    expect(colours(a)).toContain(lamp.stop);
+    stock.still = false;
+
+    stock.show(at(bead("signalbox-a", { stage: "review" })), { tween: true });
+    expect(meshes(a)).toBe(1);
+    run(stock);
+    expect(stock.tick(0.1)).toBe(false);
+  });
+
+  test("a bead with no route lights its platform's lamp, not its wagon's", () => {
+    const lost = at(bead("signalbox-a", { fault: { kind: "unrouted", at: when } }));
+    const stock = new Stock(lost, kit);
+    expect(meshes(wagon(stock, "signalbox-a"))).toBe(1);
+    const post = lost.lamps[0]!;
+    const bulbs = () => {
+      const found: THREE.Mesh[] = [];
+      stock.root.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.geometry instanceof THREE.SphereGeometry) found.push(o);
+      });
+      return found;
+    };
+    expect(bulbs().map((b) => [b.position.x, b.position.z])).toEqual([[post.at.x, post.at.z]]);
+    expect(stock.tick(0.1)).toBe(true);
+    stock.show(at(bead("signalbox-a")), { tween: true });
+    expect(bulbs()).toEqual([]);
+    expect(stock.tick(1)).toBe(false);
+  });
+
+  test("the tip names what is wrong in words", () => {
+    expect(wrong(bead("signalbox-a"))).toBeUndefined();
+    expect(wrong(bead("signalbox-a", { hold: true }))).toBe("held");
+    expect(wrong(bead("signalbox-a", { fault: { kind: "gave_up", at: when } }))).toBe(`session gave up ${clock(when)}`);
+    expect(wrong(bead("signalbox-a", { fault: { kind: "harness_error", at: when } }))).toBe(`session harness error ${clock(when)}`);
+    expect(wrong(bead("signalbox-a", { fault: { kind: "ended_question", at: when } }))).toBe(`session ended with question ${clock(when)}`);
+    expect(wrong(bead("signalbox-a", { fault: { kind: "stranded", at: when } }))).toBe(`stranded ${clock(when)}`);
+    expect(wrong(bead("signalbox-a", { fault: { kind: "unrouted", at: when } }))).toBe(`unrouted ${clock(when)}`);
+    expect(wrong(bead("signalbox-a", { hold: true, fault: { kind: "move_refused", at: "" } }))).toBe("held · move refused");
+    expect(tip(bead("signalbox-a", { fault: { kind: "move_refused", at: when } }), false)).toBe(`signalbox-a\nsignalbox-a\nsignalbox · task · new · move refused ${clock(when)}`);
   });
 });
 

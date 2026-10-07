@@ -26,11 +26,14 @@ export const palette = {
 // the top of the yard, hi-vis for builders, white for reviewers.
 export const lamp = { clear: 0x3fd46b, stop: 0xe0453a } as const;
 export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
+// A lamp that flashes is dark between, and a wheel chock is its own orange.
+export const fault = { dark: 0x4a1512, chock: 0xf28c1d } as const;
 
 export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works";
 export type Outfit = "builder" | "reviewer" | "crew";
-// What a figure can be seen doing: the pack's idle, walk and interact-right.
-export type Clip = "idle" | "walk" | "work";
+// What a figure can be seen doing: the pack's idle, walk, interact-right and
+// sit.
+export type Clip = "idle" | "walk" | "work" | "sit";
 
 // A figure of its own: its bones are not shared with the next one. A box
 // figure has no clips and stands as it is.
@@ -88,7 +91,7 @@ const figures: Record<Outfit, string[]> = {
   reviewer: ["people/character-male-a"],
   crew: ["people/character-male-c"],
 };
-const clips: Record<Clip, string> = { idle: "idle", walk: "walk", work: "interact-right" };
+const clips: Record<Clip, string> = { idle: "idle", walk: "walk", work: "interact-right", sit: "sit" };
 // A figure is 0.67 of the pack's units tall: about a wagon's height here, so
 // it reads from the whole yard.
 const FIGURE_SIZE = 2;
@@ -135,7 +138,9 @@ function boxFigure(outfit: Outfit): Figure {
 }
 
 // A hard hat on a figure's head bone, in the pack's units: a shell over the
-// top of the head, which ends 0.33 above the bone, and a crown on it.
+// top of the head, which ends 0.33 above the bone, and a crown on it. It is
+// one part by the name of HAT: a figure that sits has it off.
+export const HAT = "hat";
 function wear(figure: THREE.Object3D, colour: number) {
   const head = figure.getObjectByName("head");
   if (!head) return;
@@ -143,7 +148,9 @@ function wear(figure: THREE.Object3D, colour: number) {
   const crown = block(colour, 0.26, 0.05, 0.24, 0.37);
   // The head is a little behind its bone.
   shell.position.z = crown.position.z = -0.02;
-  head.add(shell, crown);
+  const hat = new THREE.Group().add(shell, crown);
+  hat.name = HAT;
+  head.add(hat);
 }
 
 export async function loadKit(base: string): Promise<Kit> {

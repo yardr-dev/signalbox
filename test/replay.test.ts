@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import window from "../public/events.json";
 import snapshot from "../public/yard.json";
-import { layout, people } from "../src/layout";
+import { atWork, layout, people } from "../src/layout";
 import { Player } from "../src/player";
-import { line, opening, outgrown, SHOWN, state, step, STRUCTURE, world, type Log, type State, type YardEvent } from "../src/replay";
+import { FAULTS, line, opening, outgrown, SHOWN, state, step, STRUCTURE, world, type Log, type State, type YardEvent } from "../src/replay";
 import type { Bead, Yard } from "../src/yard";
 
 // The committed snapshot and its events are the fixture: this yard's last
@@ -74,7 +74,7 @@ describe("the reducer", () => {
     const started = run([event("started", "signalbox-a", { session: "s1" })], claimed);
     expect(started).toBe(claimed);
 
-    for (const end of ["workspace_removed", "session_died", "released"]) {
+    for (const end of ["workspace_removed", "released"]) {
       expect(crews(run([event(end, "signalbox-a", { session: "s1" })], claimed)), end).toEqual([]);
     }
     expect(crews(run([event("held", "signalbox-a", { session: "s1" })], claimed))).toEqual([]);
@@ -99,6 +99,7 @@ describe("the reducer", () => {
   });
 
   test("unknown kinds leave the state unchanged", () => {
+    expect(FAULTS.has("constructor")).toBe(false);
     const kinds = ["noted", "crew_status", "hook", "peer_message_sent", "peer_message_received", "a_kind_of_tomorrow", ""];
     for (const kind of kinds) {
       expect(step(start, event(kind, "signalbox-a", { from: "new", to: "review", session: "s1" }), w), kind).toBe(start);
@@ -118,6 +119,150 @@ describe("the reducer", () => {
       event("advanced", "signalbox-a", { from: "new", to: "merged" }),
     ]);
     expect(JSON.stringify(start)).toBe(before);
+  });
+});
+
+// What the picture makes of a state: the wagon's marks, the figure at it, the
+// platforms' lamps, and how many of the builders the hut's sign counts out.
+const seen = (s: State, id = "signalbox-a") => {
+  const l = layout({ ...one, beads: s.beads });
+  const wagon = l.vehicles.find((v) => v.key === id);
+  const figure = people(l).find((p) => p.bead?.id === id);
+  return { chocked: wagon?.chocked === true, lamp: wagon?.lamp === true, figure: figure && (figure.sat ? "sat" : "at work"), lamps: l.lamps.map((p) => p.platform), out: atWork(l, "yardr-builders") };
+};
+const well = { chocked: false, lamp: false, figure: undefined, lamps: [], out: 0 };
+
+describe("the faults of the reducer", () => {
+  const claim = event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" });
+  const claimed = run([claim]);
+
+  test("held: chocks and a flag at the wagon until unheld", () => {
+    const held = run([event("held", "signalbox-a")]);
+    expect(seen(held)).toEqual({ ...well, chocked: true });
+    expect(seen(run([event("unheld", "signalbox-a")], held))).toEqual(well);
+  });
+
+  test("a session that stalled, was blocked, gave up or died leaves its figure sat at the wagon, and is not out", () => {
+    expect(seen(claimed)).toEqual({ ...well, figure: "at work", out: 1 });
+    for (const [kind, fault] of [
+      ["session_stalled", "stalled"],
+      ["session_blocked", "blocked"],
+      ["session_harness_error", "harness_error"],
+      ["session_prompt_gave_up", "prompt_gave_up"],
+      ["session_died", "died"],
+      ["gave_up", "gave_up"],
+    ] as const) {
+      const e = event(kind, "signalbox-a", { session: "s1" });
+      const sat = run([e], claimed);
+      expect(at(sat, "signalbox-a"), kind).toMatchObject({ working: false, group: "yardr-builders", fault: { kind: fault, at: e.at } });
+      expect(seen(sat), kind).toEqual({ ...well, figure: "sat" });
+      // Its end, when the yard comes to it, sends no one home.
+      const ended = run([event("released", "signalbox-a", { session: "s1" }), event("workspace_removed", "signalbox-a", { session: "s1" })], sat);
+      expect(seen(ended), kind).toEqual({ ...well, figure: "sat" });
+      // The next session on the bead stands it up; so does the bead moving on, and then nobody is at it.
+      for (const start of ["claimed", "started"]) {
+        const next = run([event(start, "signalbox-a", { group: "yardr-builders", session: "s2" })], ended);
+        expect(at(next, "signalbox-a")!.fault, `${kind}, ${start}`).toBeUndefined();
+        expect(next.sessions, `${kind}, ${start}`).toEqual({ "signalbox-a": "s2" });
+        expect(seen(next), `${kind}, ${start}`).toEqual({ ...well, figure: "at work", out: 1 });
+      }
+      expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done" })], sat)), kind).toEqual(well);
+      expect(run([event("closed", "signalbox-a")], sat).beads, kind).toEqual([]);
+    }
+  });
+
+  test("a session nobody claimed in the window sits too, with the group its fault names", () => {
+    const sat = run([event("session_stalled", "signalbox-a", { group: "yardr-builders", session: "s1" })]);
+    expect(seen(sat)).toEqual({ ...well, figure: "sat" });
+  });
+
+  test("the fault of an older session leaves the one at work alone", () => {
+    expect(run([event("session_stalled", "signalbox-a", { session: "s0" })], claimed)).toBe(claimed);
+  });
+
+  test("a blocked session that was answered is at work again", () => {
+    const blocked = run([event("session_blocked", "signalbox-a", { session: "s1" })], claimed);
+    const back = run([event("session_unblocked", "signalbox-a", { session: "s1" })], blocked);
+    expect(back).toEqual(claimed);
+    // Only what was blocked: it puts no other fault right, and starts nothing.
+    const stalled = run([event("session_stalled", "signalbox-a", { session: "s1" })], claimed);
+    expect(run([event("session_unblocked", "signalbox-a", { session: "s1" })], stalled)).toBe(stalled);
+    expect(run([event("session_unblocked", "signalbox-a", { session: "s1" })])).toBe(start);
+  });
+
+  test("an advance with another outcome than done seats the group it left where the wagon arrives", () => {
+    const e = event("advanced", "signalbox-a", { from: "new", to: "decide", outcome: "question", group: "yardr-builders" });
+    const asked = run([e], claimed);
+    expect(at(asked, "signalbox-a")).toMatchObject({ stage: "decide", group: "yardr-builders", fault: { kind: "ended_question", at: e.at } });
+    expect(platform(asked, "signalbox-a")).toBe("signalbox/default/decide");
+    expect(seen(asked)).toEqual({ ...well, figure: "sat" });
+    expect(people(layout({ ...one, beads: asked.beads })).find((p) => p.sat)!.platform).toBe("signalbox/default/decide");
+    // Done, and an advance that names no outcome, are no fault; the next move clears one.
+    expect(seen(run([event("advanced", "signalbox-a", { from: "decide", to: "new" })], asked))).toEqual(well);
+    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done", group: "yardr-builders" })], claimed))).toEqual(well);
+    // A script's bad end has no figure to sit: the wagon's lamp says it.
+    const failed = run([event("advanced", "signalbox-a", { from: "approved", to: "new", outcome: "failed", group: "signalbox-assembly" })]);
+    expect(seen(failed)).toEqual({ ...well, lamp: true });
+    expect(seen(run([claim], failed))).toEqual({ ...well, figure: "at work", out: 1 });
+  });
+
+  test("move_refused: a lamp on the wagon until the bead moves or closes, whoever is at it", () => {
+    const e = event("move_refused", "signalbox-a", { session: "s1", group: "yardr-builders" });
+    const refused = run([e], claimed);
+    expect(at(refused, "signalbox-a")).toMatchObject({ working: true, fault: { kind: "move_refused", at: e.at } });
+    expect(refused.sessions).toEqual(claimed.sessions);
+    expect(seen(refused)).toEqual({ ...well, lamp: true, figure: "at work", out: 1 });
+    // The session's end and the next one's start put nothing right.
+    const later = run([event("workspace_removed", "signalbox-a", { session: "s1" }), event("claimed", "signalbox-a", { group: "yardr-builders", session: "s2" })], refused);
+    expect(seen(later)).toEqual({ ...well, lamp: true, figure: "at work", out: 1 });
+    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done" })], later))).toEqual(well);
+    expect(run([event("closed", "signalbox-a")], later).beads).toEqual([]);
+    // Nobody at it: the lamp all the same.
+    expect(seen(run([e]))).toEqual({ ...well, lamp: true });
+  });
+
+  test("stranded: a lamp on the wagon until the bead moves", () => {
+    const stranded = run([event("stranded", "signalbox-a")]);
+    expect(at(stranded, "signalbox-a")!.fault!.kind).toBe("stranded");
+    expect(seen(stranded)).toEqual({ ...well, lamp: true });
+    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], stranded))).toEqual(well);
+  });
+
+  test("unrouted: the lamp is the platform's the bead sits at, until the bead moves", () => {
+    const unrouted = run([event("unrouted", "signalbox-a")]);
+    expect(at(unrouted, "signalbox-a")!.fault!.kind).toBe("unrouted");
+    expect(seen(unrouted)).toEqual({ ...well, lamps: ["signalbox/default/new"] });
+    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], unrouted))).toEqual(well);
+  });
+
+  test("the last fault is the one shown; a held bead keeps its own", () => {
+    const both = run([event("session_stalled", "signalbox-a", { session: "s1" }), event("move_refused", "signalbox-a")], claimed);
+    expect(at(both, "signalbox-a")).toMatchObject({ working: false, fault: { kind: "move_refused" } });
+    const held = run([event("held", "signalbox-a")], both);
+    expect(seen(held)).toEqual({ ...well, chocked: true, lamp: true });
+    expect(seen(run([event("unheld", "signalbox-a")], held))).toEqual({ ...well, lamp: true });
+  });
+
+  test("a fault from before the window is the snapshot's, unless the window says more of the bead", () => {
+    const fault = { kind: "died", at: "2098-12-31T23:00:00Z" };
+    const end: Yard = { ...one, beads: [bead("signalbox-a", { group: "yardr-builders", working: false, fault })] };
+    const quiet: Log = { ...cast, events: [event("noted", "signalbox-a")] };
+    expect(seen(state(end, quiet))).toEqual({ ...well, figure: "sat" });
+    // The fault the snapshot has is the one this window saw happen: not before it did.
+    const loud: Log = { ...cast, events: [event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" }), event("session_died", "signalbox-a", { session: "s1" })] };
+    expect(seen(state(end, loud, 0))).toEqual(well);
+    expect(seen(state(end, loud, 1))).toEqual({ ...well, figure: "at work", out: 1 });
+    expect(seen(state(end, loud))).toEqual({ ...well, figure: "sat" });
+    const only: Log = { ...cast, events: [event("move_refused", "signalbox-a")] };
+    const refused: Yard = { ...one, beads: [bead("signalbox-a", { fault: { kind: "move_refused", at: only.events[0]!.at } })] };
+    expect(seen(state(refused, only, 0))).toEqual(well);
+    expect(seen(state(refused, only))).toEqual({ ...well, lamp: true });
+  });
+
+  test("the bar names a fault as it passes", () => {
+    for (const kind of FAULTS.keys()) expect(SHOWN.has(kind), kind).toBe(true);
+    expect(line({ seq: 1, at: "", kind: "session_stalled", bead: "signalbox-a", data: { group: "yardr-builders" } })).toBe("session stalled · signalbox-a");
+    expect(line({ seq: 2, at: "", kind: "move_refused", bead: "signalbox-a" })).toBe("move refused · signalbox-a");
   });
 });
 
@@ -156,6 +301,18 @@ describe("the committed day", () => {
   test("played to its end it is the snapshot: every open bead, its stage, its crew", () => {
     expect(log.events.length).toBe(2000);
     expect(state(yard, log).beads.map(brief).sort()).toEqual(yard.beads.map(brief).sort());
+  });
+
+  test("its faults come and go: a stalled session sits until the next one starts, a refused move is lit until the bead moves", () => {
+    const first = (kind: string) => log.events.findIndex((e) => e.kind === kind);
+    for (const [kind, fault] of [["session_stalled", "stalled"], ["move_refused", "move_refused"]] as const) {
+      const n = first(kind);
+      const id = log.events[n]!.bead!;
+      expect(state(yard, log, n).beads.find((b) => b.id === id)?.fault, kind).toBeUndefined();
+      expect(state(yard, log, n + 1).beads.find((b) => b.id === id)!.fault, kind).toEqual({ kind: fault, at: log.events[n]!.at });
+      // Put right before the window's end.
+      expect(state(yard, log).beads.find((b) => b.id === id)?.fault, kind).toBeUndefined();
+    }
   });
 
   test("it starts from another yard, and every moment of it can be laid out", () => {

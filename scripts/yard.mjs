@@ -50,7 +50,7 @@ const now = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
 // The yard now and the window of its log: yard.json and events.json.
 export async function snapshot(run, window = WINDOW) {
-  const [depots, groups, routes, crew, peers, beads, events, all] = await Promise.all([
+  const [depots, groups, routes, crew, peers, beads, events, all, sessions] = await Promise.all([
     run("depot", "list"),
     run("group", "list"),
     run("route", "list"),
@@ -62,11 +62,14 @@ export async function snapshot(run, window = WINDOW) {
     // Every bead there ever was: the ones the window names and that have
     // closed since are in no other list.
     run("bead", "list", "--all"),
+    // The ended ones too, every one: how a bead's last session ended is a
+    // fault the picture shows, however long ago that was.
+    run("session", "list", "-a", "--all"),
   ]);
   const flows = await Promise.all(depots.map(async ({ name }) => ({ depot: name, flows: await run("flow", "show", name) })));
   const taken_at = now();
   return {
-    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads }, taken_at),
+    yard: yardOf({ depots, flows, groups, routes, crew, peers, beads, sessions }, taken_at),
     log: logOf(taken_at, bySeq(events), all, alias),
   };
 }

@@ -28,6 +28,9 @@ export interface Lists {
   peers: Raw[];
   // The open beads.
   beads: Raw[];
+  // The sessions, ended ones too (session list -a): none for a caller that
+  // did not ask.
+  sessions?: Raw[];
 }
 
 // The named fields of a record that are set: yardr leaves out what is unset,
@@ -43,8 +46,31 @@ function pick(from: Raw, keys: string[], more: Raw = {}): Raw {
 const list = (value: unknown): Raw[] => (Array.isArray(value) ? (value as Raw[]) : []);
 const record = (value: unknown): Raw => (typeof value === "object" && value !== null ? (value as Raw) : {});
 
+// The session states that are no fault: at work, or ended as it should, or
+// by a release or a hold, which someone chose. Any other end (died, failed,
+// aborted) is one.
+const WELL = ["starting", "running", "done", "released", "held"];
+
+// By bead, the fault its last session left: an end that was not well, and
+// when, and the group whose session it was: the bead names none any more. A
+// bead whose last session went well has none, whatever came before.
+function faults(sessions: Raw[]): Map<unknown, Raw> {
+  const last = new Map<unknown, Raw>();
+  for (const s of sessions) {
+    const before = last.get(s.bead);
+    if (before === undefined || String(before.started_at) < String(s.started_at)) last.set(s.bead, s);
+  }
+  const out = new Map<unknown, Raw>();
+  for (const [bead, s] of last) {
+    if (typeof s.state !== "string" || WELL.includes(s.state)) continue;
+    out.set(bead, pick(s, ["group"], { fault: pick({}, [], { kind: s.state, at: s.ended_at ?? s.started_at }) }));
+  }
+  return out;
+}
+
 // yard.json: the structure of the yard and its open beads.
 export function yardOf(lists: Lists, taken_at: string): Yard {
+  const fault = faults(lists.sessions ?? []);
   const yard = {
     taken_at,
     depots: lists.depots.map((d) => pick(d, ["name", "kind", "base"])),
@@ -62,16 +88,20 @@ export function yardOf(lists: Lists, taken_at: string): Yard {
     routes: lists.routes.map((r) => pick(r, ["stage", "type", "depot", "label", "group", "priority"])),
     crew: lists.crew.map((c) => pick(c, ["name"], { kind: record(c.config).kind, state: c.state, status: c.status })),
     peers: lists.peers.map((p) => pick(p, ["name", "send", "receive"])),
-    beads: lists.beads.map(beadOf),
+    beads: lists.beads.map((b) => beadOf(b, fault.get(b.id))),
   };
   return yard as unknown as Yard;
 }
 
 // One bead of the snapshot. A session is said to be there, never named.
-function beadOf(b: Raw): Raw {
-  return pick(b, ["id", "title", "type", "stage", "depot", "group"], {
-    working: b.session !== null && b.session !== undefined,
-    ...pick(b, ["hold", "train", "labels", "priority", "created_at"]),
+// left is what its last session left behind (faults), for a caller that
+// asked for the sessions.
+function beadOf(b: Raw, left: Raw = {}): Raw {
+  return pick(b, ["id", "title", "type", "stage", "depot"], {
+    // A session at work now is the news, not how the one before it ended.
+    ...(b.session !== null && b.session !== undefined ? pick(b, ["group"], { working: true }) : { ...left, ...pick(b, ["group"]), working: false }),
+    ...pick(b, ["hold"]),
+    ...pick(b, ["train", "labels", "priority", "created_at"]),
   });
 }
 

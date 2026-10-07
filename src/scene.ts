@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { lamp, palette, type Clip, type Kit } from "./kit";
+import { fault, HAT, lamp, palette, type Clip, type Kit } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -14,12 +14,14 @@ import {
   PEER_RAIL_Z,
   people,
   PLATFORM_LENGTH,
+  seats,
   SHED_WIDTH,
   SIDING_Z,
   type Layout,
   type Person,
   type Point,
   type Shed,
+  type Vehicle,
 } from "./layout";
 import {
   along,
@@ -64,6 +66,15 @@ const GOODS: Record<string, [pick: number, size: number]> = { mail: [0, 1], bead
 const GOODS_LABEL_Y = 2.1;
 // The seconds the wire stays lit after a hook.
 const FLASH = 0.6;
+// A fault's lamp: the seconds of one flash, lit for the first half of it; how
+// high it stands on a wagon and over a platform.
+const BLINK = 0.8;
+const LAMP_Y = 2.6;
+const PLATFORM_LAMP_Y = 1.7;
+// From a wagon's middle to its ends, where its chocks lie on the rail, and
+// to its flag's pole and its lamp's.
+const CHOCK_X = 1.46;
+const MARK_X = 1.15;
 
 export interface Picture {
   root: THREE.Group;
@@ -183,6 +194,33 @@ export function sign(s: Shed, out = 0): string {
 function signAt(s: Shed, n: number): [number, number, number] {
   const x = s.places.length > 0 ? s.at.x + SHED_WIDTH / 2 : s.at.x - SHED_WIDTH / 2;
   return [x, 0, s.at.z + s.away * (SIGN_Z + (n % 2) * 1.3)];
+}
+
+// Wheel chocks on the rail at both ends of a wagon, as its own part: they
+// lie there only while it stands.
+function chocks(): THREE.Object3D {
+  const g = new THREE.Group();
+  for (const end of [-1, 1]) g.add(block(fault.chock, 0.2, 0.32, 0.9, end * CHOCK_X, 0, 0));
+  return g;
+}
+
+// A small red flag on a pole at a wagon's right end, over its roof.
+function flag(): THREE.Object3D {
+  const g = new THREE.Group();
+  g.add(block(palette.slate, 0.07, LAMP_Y, 0.07, MARK_X, 0, 0));
+  g.add(block(lamp.stop, 0.65, 0.42, 0.05, MARK_X - 0.36, LAMP_Y - 0.42, 0));
+  return g;
+}
+
+// A lamp on a post, standing on y. All of a stock's lamps are of one
+// material: they flash together.
+function beacon(light: THREE.Material, x: number, y: number, z: number, height: number): THREE.Object3D {
+  const g = new THREE.Group();
+  g.add(block(palette.slate, 0.1, height, 0.1, x, y, z));
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), light);
+  bulb.position.set(x, y + height + 0.2, z);
+  g.add(bulb);
+  return g;
 }
 
 function signalBox(x: number, z: number): THREE.Object3D {
@@ -307,6 +345,10 @@ interface Wagon extends Mover {
   // The platform it stands at, and the track of that: whose shunter moves it.
   platform: string;
   track: string;
+  // What it wears for its bead's faults, and which of them that is.
+  marks?: THREE.Object3D;
+  marked?: string;
+  chocks?: THREE.Object3D;
 }
 
 // A shunter and the kit's model of it. made says what it was made for: a
@@ -341,6 +383,8 @@ interface Walker extends Mover {
   // The platforms' edges it steps onto or off on its way: where it stands on
   // one, and the gate behind it.
   steps: { at: Point; gate: Point }[];
+  // Its hard hat: off while it sits.
+  hat?: THREE.Object3D;
   mixer?: THREE.AnimationMixer;
   actions: Partial<Record<Clip, THREE.AnimationAction>>;
   playing?: Clip;
@@ -386,6 +430,12 @@ export class Stock {
   // The goods sent so far: each has a key of its own.
   private sent = 0;
   private readonly counts = new THREE.Group();
+  // The faults' lamps: the platforms' here, the wagons' on the wagons. lamps
+  // is how many are lit, blink where in a flash they all are.
+  private readonly posts = new THREE.Group();
+  private readonly light = new THREE.MeshBasicMaterial({ color: lamp.stop });
+  private lamps = 0;
+  private blink = 0;
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   private layout: Layout;
 
@@ -404,7 +454,7 @@ export class Stock {
     );
     this.lit.position.set(wire.at.x + wire.length / 2, POLE_HEIGHT - 0.17, wire.at.z);
     this.lit.visible = false;
-    this.root.add(this.counts, this.lit);
+    this.root.add(this.counts, this.posts, this.lit);
     this.show(l, { tween: false });
   }
 
@@ -477,10 +527,13 @@ export class Stock {
       wagon.platform = v.platform;
       wagon.track = on;
       wagon.object.userData.bead = v.bead;
+      this.mark(wagon, v);
     }
     for (const [key, wagon] of this.wagons) {
       if (standing.has(key)) continue;
       this.wagons.delete(key);
+      // Whatever was wrong with it, it is on its way out.
+      this.mark(wagon, {});
       const bead = wagon.object.userData.bead as Bead;
       // A wagon of a train that left goes out with it.
       const out = how.left?.has(key) === true || (bead.train !== undefined && how.left?.has(bead.train) === true);
@@ -525,6 +578,19 @@ export class Stock {
 
     // A scrub knows nothing of who stood where: the first at home goes out.
     this.crew = people(l, how.tween ? this.crew : []);
+    // A figure stays with its bead when its session ends badly, and when the
+    // next one starts there: it sits down where it worked and stands up
+    // where it sat, under the key the bead's figure has now. The one that
+    // key had, idle at its place, gives way.
+    const at = new Map(this.crew.flatMap((p) => (p.bead ? [[p.bead.id, p] as const] : [])));
+    for (const [key, walker] of how.tween ? [...this.walkers] : []) {
+      const p = walker.person.bead && at.get(walker.person.bead.id);
+      if (!p || p.key === key || p.sat === walker.person.sat) continue;
+      const other = this.walkers.get(p.key);
+      if (other) this.root.remove(other.object);
+      this.walkers.delete(key);
+      this.walkers.set(p.key, walker);
+    }
     const placed = new Set<string>();
     for (const p of this.crew) {
       placed.add(p.key);
@@ -550,11 +616,23 @@ export class Stock {
       this.stand(walker, how.tween ? 0 : Infinity);
     }
     // A figure goes only with its place: its group's building, or its limit.
+    // One that sat has no place: it goes where it is, as a wagon does, when
+    // its bead moved on without it.
     for (const [key, walker] of this.walkers) {
       if (placed.has(key)) continue;
       this.walkers.delete(key);
-      this.root.remove(walker.object);
+      if (!walker.person.sat || !how.tween) {
+        this.root.remove(walker.object);
+        continue;
+      }
+      const { x, z } = walker.object.position;
+      this.send(walker, [{ x, z }], { turn: [walker.heading, walker.heading], size: [1, 0], seconds: TWEEN_MIN, last: true }, true);
     }
+
+    this.posts.clear();
+    for (const post of l.lamps) this.posts.add(beacon(this.light, post.at.x, PLATFORM_HEIGHT, post.at.z, PLATFORM_LAMP_Y));
+    this.lamps = l.lamps.length + l.vehicles.filter((v) => v.lamp).length;
+    this.beat(0);
 
     this.counts.clear();
     for (const c of l.counts) {
@@ -572,6 +650,33 @@ export class Stock {
   set still(still: boolean) {
     this.calm = still;
     for (const walker of this.walkers.values()) this.stand(walker, 0);
+    this.beat(0);
+  }
+
+  // What a wagon wears for what is wrong with its bead: chocks and a flag
+  // for a hold, a lamp for a fault; nothing for a wagon that is well.
+  private mark(wagon: Wagon, v: Pick<Vehicle, "chocked" | "lamp">) {
+    const marked = `${v.chocked === true}/${v.lamp === true}`;
+    if ((wagon.marked ?? "false/false") === marked) return;
+    wagon.marked = marked;
+    if (wagon.marks) wagon.object.remove(wagon.marks);
+    delete wagon.chocks;
+    wagon.marks = new THREE.Group();
+    if (v.chocked) {
+      wagon.chocks = chocks();
+      wagon.marks.add(wagon.chocks, flag());
+    }
+    if (v.lamp) wagon.marks.add(beacon(this.light, -MARK_X, 0, 0, LAMP_Y - 0.2));
+    wagon.object.add(wagon.marks);
+  }
+
+  // Bring the faults' lamps on by a time: lit, then dark, all together. A
+  // picture that does not move has them lit. True while any flashes.
+  private beat(dt: number): boolean {
+    const flashing = this.lamps > 0 && !this.calm;
+    if (flashing && Number.isFinite(dt)) this.blink = (this.blink + dt) % BLINK;
+    this.light.color.setHex(!flashing || this.blink < BLINK / 2 ? lamp.stop : fault.dark);
+    return flashing;
   }
 
   // The buildings of a picture drawn again: the next show writes their signs.
@@ -583,6 +688,8 @@ export class Stock {
   private figure(p: Person): Walker {
     const { object, clips } = this.kit.figure(p.outfit, hash(p.key));
     const walker: Walker = { object, size: 1, person: p, heading: facing(p.faces), steps: [], actions: {}, stride: 1 };
+    const hat = object.getObjectByName(HAT);
+    if (hat) walker.hat = hat;
     if (Object.keys(clips).length > 0) {
       walker.mixer = new THREE.AnimationMixer(object);
       for (const [name, clip] of Object.entries(clips) as [Clip, THREE.AnimationClip][]) walker.actions[name] = walker.mixer.clipAction(clip);
@@ -616,11 +723,13 @@ export class Stock {
     const towards = !moving ? facing(w.person.faces) : gone > 1e-6 ? heading(was, at) : w.heading;
     w.heading = Number.isFinite(dt) ? turn(w.heading, towards, TURN * dt) : towards;
     w.object.rotation.y = w.heading;
+    if (w.hat) w.hat.visible = moving || !w.person.sat;
 
     const mixer = w.mixer;
     if (!mixer) return;
     const now = doing(w.person, moving, !this.hauled(w.person.bead?.id));
-    const next = w.actions[now];
+    // A pack with no sitting pose: it stands idle, its back to the wagon.
+    const next = w.actions[now] ?? (now === "sit" ? w.actions.idle : undefined);
     const last = w.playing !== undefined ? w.actions[w.playing] : undefined;
     // Standing still, a figure stops in the middle of its clip: at work with
     // its hand at the wagon. A walk moves, as the wagons do.
@@ -839,6 +948,7 @@ export class Stock {
       this.pose(m);
       moving = true;
     }
+    if (this.beat(dt)) moving = true;
     // The shunters, after what moves by itself: a wagon behind one is where
     // the shunter has it. No time is every order done at once, unseen.
     for (const engine of this.engines.values()) {
@@ -846,6 +956,10 @@ export class Stock {
       else this.land(engine.queue.snap());
       this.drive(engine);
       if (engine.queue.busy) moving = true;
+    }
+    // No chocks under a wagon that rolls, or that a shunter has.
+    for (const [key, wagon] of this.wagons) {
+      if (wagon.chocks) wagon.chocks.visible = !wagon.move && !this.hauled(key);
     }
     for (const walker of this.walkers.values()) {
       this.stand(walker, dt);
@@ -866,8 +980,25 @@ export function house(s: Shed): string {
   return `${s.group}\n${s.runner === "" ? "no group of this yard" : `${s.runner} · limit ${s.limit}`}`;
 }
 
-// The tip of a wagon, or of the figure that works it.
+// The time of day of a fault, in the reader's own time: 14:02.
+const hour = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+// What is wrong with a bead, in words: "held", "session gave up 14:02",
+// "move refused 06:27". Nothing for a bead that is well.
+export function wrong(bead: Bead): string | undefined {
+  const said: string[] = bead.hold === true ? ["held"] : [];
+  if (bead.fault) {
+    const { kind, at } = bead.fault;
+    const what = kind.startsWith("ended_") ? `ended with ${kind.slice(6)}` : kind.replaceAll("_", " ");
+    const when = Date.parse(at);
+    said.push(`${seats(bead.fault) ? "session " : ""}${what}${Number.isNaN(when) ? "" : ` ${hour.format(when)}`}`);
+  }
+  return said.length > 0 ? said.join(" · ") : undefined;
+}
+
+// The tip of a wagon, or of the figure that works it or sits by it.
 export function describe(bead: Bead, crew: boolean): string {
-  const where = `${bead.depot} · ${bead.type} · ${bead.stage}${bead.hold === true ? " · held" : ""}`;
+  const faults = wrong(bead);
+  const where = `${bead.depot} · ${bead.type} · ${bead.stage}${faults !== undefined ? ` · ${faults}` : ""}`;
   return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
 }

@@ -11,7 +11,7 @@
 // stands at the stage its first advance left. So nothing runs backwards, and
 // the one thing the snapshot adds is the beads that closed in the window.
 
-import { flowIndex } from "./layout";
+import { flowIndex, seats } from "./layout";
 import type { Bead, Yard } from "./yard";
 
 export interface YardEvent {
@@ -75,7 +75,23 @@ export function world(yard: Yard, log: Log): World {
 
 // The kinds that end a session without moving the bead. An advance, a hold
 // and a close end it too.
-const ENDS = new Set(["released", "session_died", "workspace_removed"]);
+const ENDS = new Set(["released", "workspace_removed"]);
+
+// The kinds that are a fault on their bead, each with the fault's kind
+// (src/yard.ts). The first six say a session came to no good end, though the
+// yard may still list it: its figure sits, and it is not at work. The last
+// three are the yard's word on the bead itself, whoever is at it.
+export const FAULTS = new Map([
+  ["session_stalled", "stalled"],
+  ["session_blocked", "blocked"],
+  ["session_harness_error", "harness_error"],
+  ["session_prompt_gave_up", "prompt_gave_up"],
+  ["session_died", "died"],
+  ["gave_up", "gave_up"],
+  ["move_refused", "move_refused"],
+  ["stranded", "stranded"],
+  ["unrouted", "unrouted"],
+]);
 
 // The kinds the replay shows: step's, and the two that are no state (a peer's
 // goods, a hook's flash). Any other kind is passed over.
@@ -85,6 +101,8 @@ export const SHOWN = new Set([
   "claimed",
   "started",
   ...ENDS,
+  ...FAULTS.keys(),
+  "session_unblocked",
   "held",
   "unheld",
   "closed",
@@ -125,10 +143,18 @@ export function outgrown(event: YardEvent, w: World): boolean {
   return enters && event.bead !== undefined && !w.cast.has(event.bead);
 }
 
-// A bead as it stands at a stage with nobody on it.
+// A bead as it stands at a stage with nobody on it, and nothing wrong.
 function idle(bead: Bead, stage: string): Bead {
-  const { group: _group, working: _working, hold: _hold, ...rest } = bead;
+  const { group: _group, working: _working, hold: _hold, fault: _fault, ...rest } = bead;
   return { ...rest, stage };
+}
+
+// A bead a session starts on: how the one before it ended is over. What the
+// yard said of the bead itself stands until the bead moves.
+function fresh(bead: Bead): Bead {
+  if (!seats(bead.fault)) return bead;
+  const { fault: _fault, ...rest } = bead;
+  return rest;
 }
 
 function without<V>(record: Record<string, V>, key: string): Record<string, V> {
@@ -164,16 +190,25 @@ export function step(state: State, event: YardEvent, w: World): State {
       if (!bead || data.to === undefined) return state;
       // Past the buffer: it is out of the picture before it is closed.
       if (w.terminal(bead, data.to)) return gone();
-      return put(idle(bead, data.to));
+      const at = idle(bead, data.to);
+      // Sent on with another outcome than done: the session did not end
+      // well, and the bead says so where it arrives, with the group it left.
+      if (data.outcome === undefined || data.outcome === "done") return put(at);
+      const group = data.group ?? bead.group;
+      return put({ ...at, ...(group !== undefined ? { group } : {}), fault: { kind: `ended_${data.outcome}`, at: event.at } });
     }
     case "claimed":
       if (!here) return state;
-      return put({ ...here, working: true, ...(data.group !== undefined ? { group: data.group } : {}) }, data.session);
+      return put({ ...fresh(here), working: true, ...(data.group !== undefined ? { group: data.group } : {}) }, data.session);
     case "started":
       // The claim came first and said the same, unless the window began
       // between the two.
       if (!here || here.working === true) return state;
-      return put({ ...here, working: true }, data.session);
+      return put({ ...fresh(here), working: true }, data.session);
+    case "session_unblocked":
+      // Someone answered what it asked: it is at work again.
+      if (!here || here.fault?.kind !== "blocked") return state;
+      return put({ ...fresh(here), working: true }, data.session);
     case "held":
       if (!here) return state;
       return put({ ...here, working: false, hold: true });
@@ -183,9 +218,19 @@ export function step(state: State, event: YardEvent, w: World): State {
     case "closed":
       return gone();
     default: {
-      if (!ENDS.has(event.kind) || !here || here.working !== true) return state;
+      if (!here) return state;
       const at = state.sessions[id];
-      if (data.session !== undefined && at !== undefined && data.session !== at) return state;
+      const old = data.session !== undefined && at !== undefined && data.session !== at;
+      const kind = FAULTS.get(event.kind);
+      if (kind !== undefined) {
+        const fault = { kind, at: event.at };
+        // The bead's own: whoever is at it stays at it.
+        if (!seats(fault)) return put({ ...here, fault }, at);
+        if (old) return state;
+        const group = here.group ?? data.group;
+        return put({ ...here, working: false, ...(group !== undefined ? { group } : {}), fault });
+      }
+      if (!ENDS.has(event.kind) || here.working !== true || old) return state;
       return put({ ...here, working: false });
     }
   }
@@ -212,9 +257,13 @@ export function opening(yard: Yard, log: Log, w: World = world(yard, log)): Stat
     // Who had it: what it is now when nothing happened to it since, else
     // the group its first move names as the one it left, when that move
     // comes before any claim.
-    const first = events.find((e) => ["claimed", "started", "advanced", "held", "closed"].includes(e.kind) || ENDS.has(e.kind));
+    const first = events.find(
+      (e) => ["claimed", "started", "advanced", "held", "closed", "session_unblocked"].includes(e.kind) || ENDS.has(e.kind) || FAULTS.has(e.kind),
+    );
     const held = events.find((e) => e.kind === "held" || e.kind === "unheld");
     const hold = held ? held.kind === "unheld" : bead.hold === true;
+    // A fault is the snapshot's only when the window did nothing to the bead:
+    // what it had before the first event that set or cleared one is not known.
     const at = idle(bead, stage);
     if (first === undefined) {
       beads.push({ ...bead, stage });
