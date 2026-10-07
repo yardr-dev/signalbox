@@ -124,6 +124,9 @@ describe("the projection", () => {
       to: "review",
       outcome: "done",
     });
+    // A created keeps the stage the bead was made at, and no other kind does.
+    expect(eventOf({ seq: 8, at: "t", kind: "created", bead: "signalbox-a", data: { title: SECRET, stage: "new", depot: "signalbox", type: "task" } }, alias).data).toEqual({ stage: "new", depot: "signalbox", type: "task" });
+    expect(eventOf({ seq: 8, at: "t", kind: "updated", bead: "signalbox-a", data: { stage: SECRET } }, alias).data).toBeUndefined();
     // An edge keeps the bead at its other end and its kind.
     for (const kind of ["dep_added", "dep_removed"]) {
       expect(eventOf({ seq: 8, at: "t", kind, bead: "signalbox-b", actor: "yardmaster", data: { from: "signalbox-a", kind: "blocks", to: SECRET, note: SECRET } }, alias)).toEqual({

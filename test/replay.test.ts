@@ -43,6 +43,14 @@ describe("the reducer", () => {
     expect(last!.at.x).toBeLessThan(first!.at.x);
   });
 
+  test("a created that names its stage puts the wagon there, not on the flow's first", () => {
+    const s = run([event("created", "signalbox-b", { stage: "new" })]);
+    expect(at(s, "signalbox-b")).toMatchObject({ stage: "new" });
+    expect(platform(s, "signalbox-b")).toBe("signalbox/default/new");
+    // Made past the buffer, it never was in the picture.
+    expect(run([event("created", "signalbox-b", { stage: "merged" })])).toBe(start);
+  });
+
   test("after an advance the wagon is at the new platform", () => {
     const s = run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done" })]);
     expect(at(s, "signalbox-a")!.stage).toBe("review");
@@ -320,6 +328,33 @@ describe("the window's start, read off the window", () => {
     expect(wagon()).toMatchObject({ platform: "signalbox/default/decide", age: 4, weather: "dull" });
   });
 
+  // signalbox-mt44: made with --stage new, by a yard whose created names no
+  // stage. The wagon stood on backlog while the yard and the card said new.
+  test("a bead made at a later stage, its created naming none, stands where the snapshot has it", () => {
+    const made = event("created", "signalbox-c");
+    const now: Yard = { ...yard, beads: [bead("signalbox-c", { stage: "new" })] };
+    const window: Log = { ...cast, beads: [], events: [made, event("hook")] };
+    expect(at(opening(now, window), "signalbox-c")).toBeUndefined();
+    expect(at(state(now, window, 1), "signalbox-c")).toMatchObject({ stage: "new" });
+    expect(state(now, window).beads).toEqual(now.beads);
+    // The player, as the page runs it: at the window's end, and following.
+    const player = new Player(now, window);
+    player.seek(player.to);
+    expect(layout({ ...now, beads: player.state.beads }).vehicles.find((v) => v.key === "signalbox-c")!.platform).toBe("signalbox/default/new");
+
+    // Moved since: the snapshot's stage is of now, and the past is where its
+    // first advance left.
+    const on = event("advanced", "signalbox-c", { from: "new", to: "review" });
+    const later: Yard = { ...yard, beads: [bead("signalbox-c", { stage: "review", moved_at: on.at })] };
+    const longer: Log = { ...window, events: [made, on] };
+    expect(at(state(later, longer, 1), "signalbox-c")).toMatchObject({ stage: "new" });
+    expect(state(later, longer).beads).toEqual(later.beads);
+    // What the event says of the past stands over both.
+    const said: Log = { ...window, events: [{ ...made, data: { stage: "backlog" } }, { ...on, data: { from: "backlog", to: "review" } }] };
+    expect(at(state(later, said, 1), "signalbox-c")).toMatchObject({ stage: "backlog" });
+    expect(state(later, said).beads).toEqual(later.beads);
+  });
+
   test("state(snapshot, events[0..n]) walks the window to the snapshot", () => {
     expect(state(end, day, 0)).toEqual(opening(end, day));
     expect(at(state(end, day, 3), "signalbox-b")!.stage).toBe("new");
@@ -361,7 +396,9 @@ describe("the committed day", () => {
     const keys = new Set(log.events.flatMap((e) => Object.keys(e)));
     expect([...keys].sort()).toEqual(["at", "bead", "data", "kind", "seq"]);
     const data = new Set(log.events.flatMap((e) => Object.keys(e.data ?? {})));
-    for (const key of data) expect(["from", "to", "outcome", "group", "session", "depot", "type", "peer", "kind", "crew", "reason"]).toContain(key);
+    for (const key of data) expect(["from", "to", "stage", "outcome", "group", "session", "depot", "type", "peer", "kind", "crew", "reason"]).toContain(key);
+    // A stage is where a bead was made, on its created alone.
+    for (const e of log.events) if (e.data?.stage !== undefined) expect(e.kind).toBe("created");
     // A reason is the yard's word for a landing, never what somebody wrote.
     for (const e of log.events) if (e.data?.reason !== undefined) expect(e).toMatchObject({ kind: "closed", data: { reason: "merged" } });
     // Sessions by alias, never by the yard's own name for them.

@@ -24,6 +24,9 @@ export interface YardEvent {
     // is the bead at its other end: the event's own bead waits for it.
     from?: string;
     to?: string;
+    // Of a created: the stage the bead was made at. An older yard's event
+    // has none.
+    stage?: string;
     outcome?: string;
     group?: string;
     // An alias the snapshot gave it, not the yard's own name.
@@ -68,8 +71,10 @@ export interface State {
 export interface World {
   // Every bead of the window, open or closed, as the snapshot has it.
   cast: Map<string, Bead>;
-  // The stage a new bead of this kind stands at.
-  first(bead: Bead): string | undefined;
+  // The stage a bead made in the window stood at, for a created that names
+  // none: the one its first advance left, else, never moved, the one the
+  // snapshot has it at. Its flow's first stage when neither says.
+  made(bead: Bead): string | undefined;
   terminal(bead: Bead, stage: string): boolean;
   // The works a session on the bead at this stage is of, by its building's
   // key: the bead's group when it has one, else the first the stage is routed
@@ -83,9 +88,21 @@ export function world(yard: Yard, log: Log): World {
     return flows[flowIndex(flows, bead.type)];
   };
   const scripts = (group: string) => shedKind(yard.groups.find((g) => g.name === group)) === "works";
+  // By bead the window moves, the stage its first advance left, where one
+  // says: what opening reads for a bead from before the window.
+  const left = new Map<string, string | undefined>();
+  for (const e of log.events) {
+    if (e.kind !== "advanced" || e.bead === undefined || left.get(e.bead) !== undefined) continue;
+    left.set(e.bead, e.data?.from);
+  }
   return {
     cast: new Map([...log.beads, ...yard.beads].map((b) => [b.id, b])),
-    first: (bead) => flow(bead)?.stages[0]?.stage,
+    made: (bead) => {
+      const stages = flow(bead)?.stages ?? [];
+      // A bead past the buffer was not made there: how it came is not known.
+      const stood = left.has(bead.id) ? left.get(bead.id) : stages.some((s) => s.stage === bead.stage && s.terminal !== true) ? bead.stage : undefined;
+      return stood ?? stages[0]?.stage;
+    },
     terminal: (bead, stage) => flow(bead)?.stages.find((s) => s.stage === stage)?.terminal === true,
     works: (bead, stage) => {
       const at = flow(bead);
@@ -247,10 +264,10 @@ function moved(state: State, event: YardEvent, w: World): State {
   switch (event.kind) {
     case "created": {
       const known = w.cast.get(id);
-      const first = known && w.first(known);
-      if (here || !known || first === undefined) return state;
+      const stage = known && (data.stage ?? w.made(known));
+      if (here || !known || stage === undefined || w.terminal(known, stage)) return state;
       // The cast has it as it is at the window's end: it has not moved yet.
-      return put(idle(unmoved(known), first));
+      return put(idle(unmoved(known), stage));
     }
     case "advanced": {
       // A bead the state lost sight of comes back where it arrives.

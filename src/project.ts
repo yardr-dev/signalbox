@@ -150,12 +150,13 @@ export function cardOf(raw: Raw): Detail {
 }
 
 // The names an event's data may carry, each only as a string. An advance
-// alone keeps from and to, and an edge its from, the bead at its other end:
-// on other kinds they are people and builds.
+// alone keeps from and to, an edge its from, the bead at its other end, and a
+// created its stage: on other kinds they are people and builds.
 const NAMES = ["group", "depot", "type", "peer", "kind", "crew"];
 const OF_ADVANCE = ["from", "to", "outcome"];
 const OF_EDGE = ["from"];
-const MORE: Record<string, string[]> = { advanced: OF_ADVANCE, dep_added: OF_EDGE, dep_removed: OF_EDGE };
+const OF_CREATED = ["stage"];
+const MORE: Record<string, string[]> = { advanced: OF_ADVANCE, dep_added: OF_EDGE, dep_removed: OF_EDGE, created: OF_CREATED };
 // A close's reason is what somebody wrote, but for the yard's own word for a
 // landing: that one is passed on, and no other.
 const LANDED = "merged";
