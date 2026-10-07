@@ -40,9 +40,10 @@ export function route(from: Stop, to: Stop): Point[] {
   const leave = out.at(-1) ?? from.at;
   const join = into[0] ?? to.at;
   // Back to another platform, not to a place further back at its own: over
-  // to the return line.
+  // to the return line. A wagon coming out of a siding joins the main line
+  // at the points before it runs back too.
   const back =
-    !from.mouth && !to.mouth && join.x < leave.x - PLATFORM_LENGTH
+    !to.mouth && join.x < leave.x - PLATFORM_LENGTH
       ? [
           { x: leave.x + RETURN_Z, z: from.line + RETURN_Z },
           { x: join.x - RETURN_Z, z: from.line + RETURN_Z },

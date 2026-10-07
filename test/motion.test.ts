@@ -26,6 +26,17 @@ describe("the way a wagon takes", () => {
     expect(route(main(15), main(12.05))).toEqual([{ x: 15, z: 10 }, { x: 12.05, z: 10 }]);
   });
 
+  test("a wagon leaving a siding for an earlier platform uses the return line", () => {
+    const way = route(stub, main(3));
+    expect(way.slice(0, 3)).toEqual([
+      stub.at,
+      stub.mouth,
+      { x: stub.mouth!.x + SIDING_Z, z: 10 },
+    ]);
+    expect(way.slice(3, 5).map((p) => p.z)).toEqual([10 + RETURN_Z, 10 + RETURN_Z]);
+    expect(way.at(-1)).toEqual({ x: 3, z: 10 });
+  });
+
   test("out of the picture: past the buffer at the end of its track", () => {
     expect(exit(main(51)).at(-1)).toEqual({ x: 66 + RUN_OUT, z: 10 });
     expect(exit(stub).at(-1)).toEqual({ x: 66 + RUN_OUT, z: 10 });
