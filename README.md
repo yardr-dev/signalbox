@@ -20,7 +20,8 @@ Developed in a yardr yard; `.yardr/` holds its flow, roles and merge gate.
     npm run build      # the page as static files in dist/, for any static server
     npm run live       # the page following the yard this machine runs
     npm run check      # types
-    npm test           # the tests of the layout, the replay, the motion, the shunters, the scene and the serve script
+    npm test           # the tests of the layout, the replay, the motion, the shunters, the scene, the serve script and the release script
+    npm run release -- v1.2.3   # the release archive of that tag, in release/
 
 The page replays a day of one yard from its event log, and follows a yard as
 it runs when the serve script serves it.
@@ -429,6 +430,10 @@ machine's on a Tailscale net, for a phone on the same net.
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the committed snapshot and its replay.
 
+A machine with no checkout takes a release's archive instead: the built
+page and the script, run by Node alone, with no `npm ci` and no build.
+[INSTALL.md](INSTALL.md) says how, and is in the archive too.
+
 ![The page following this yard, closer in: Live on the bar, a builder at work on a blue container at signalbox's new and two by the door of signalbox's hut, whose sign says 1 of 3 out; in yardr below, a green container and two red tanks at the backlog have waited long enough for their paint to darken, and a blue container stands in the siding at decide](docs/live.png)
 
 ## Where things are
@@ -456,6 +461,15 @@ of this is there, and the page is the committed snapshot and its replay.
   first snapshot of a yard, laid out from slot 0, and added to when the yard
   grows. The `layout.json` beside the built page is not read by the script.
   Delete the yard's file, with the script stopped, to have it laid out afresh.
+- `scripts/release.sh` builds a release (`npm run release -- v1.2.3`, the
+  tag): it writes the version into `package.json` and the lockfile, runs
+  what the gate runs, and packs `dist/`, the serve script, what that imports
+  (`scripts/yard.mjs`, `src/layout.ts`, `src/project.ts`, `src/yard.ts`), the
+  README and `INSTALL.md` under `signalbox/` into
+  `release/signalbox_<version>.tar.gz`, with a `checksums.txt` beside it. The
+  list is one line of the script, and a test fails when the serve script
+  imports a file that is not on it. It needs the Node the archive needs,
+  22.6 or later (`engines`).
 - `public/layout.json` is the layout's memory for the committed snapshot: the
   slot of every depot, flow, stage, peer and provider's silo drawn so far. The
   snapshot script writes it when it is missing and adds what is new to it
