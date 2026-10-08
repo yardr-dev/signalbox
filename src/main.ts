@@ -9,13 +9,13 @@
 // 64 MB and its edge no finer on the first view), and PIXEL_RATIO, the most
 // pixels drawn to one of the page's (2: a phone at 3 would draw nine where
 // four are enough for a flat, antialiased picture). These lower the GPU's
-// demand; if the browser still refuses a context, close other 3D tabs or
-// restart it.
+// demand; a browser that still refuses or drops the picture gets the light
+// one of canvas.ts, which asks for neither.
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { canvas, failed, LOST } from "./canvas";
+import { begin, canvas, failed, keep, lighter, Losses, LOST } from "./canvas";
 import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { loadKit } from "./kit";
 import { layout } from "./layout";
@@ -253,8 +253,11 @@ async function start() {
   };
   shine();
 
-  const renderer = canvas(() => new THREE.WebGLRenderer({ antialias: true }), window.devicePixelRatio, PIXEL_RATIO, api !== undefined);
-  renderer.shadowMap.enabled = true;
+  // The picture is made again as a light one when the browser drops it: see
+  // fall. why is why it is light, when it is.
+  const make = (antialias: boolean) => new THREE.WebGLRenderer({ antialias });
+  const memory = () => window.localStorage;
+  let { renderer, why } = begin(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, window.location.search, memory);
   host.append(renderer.domElement);
   const labels = new CSS2DRenderer();
   labels.domElement.id = "labels";
@@ -333,25 +336,59 @@ async function start() {
     labels.render(scene, camera);
   };
 
-  // What the note says of the yard, and while the browser has taken the
-  // picture back, that instead. Not refusing the loss lets the browser give
-  // the picture back; the renderer then draws as before.
+  // What the note says of the yard and, when the picture is a light one, of
+  // that; while the browser has taken the picture back, that instead. Not
+  // refusing the loss lets the browser give the picture back; the renderer
+  // then draws as before.
   let said = "";
   let lost = false;
   const say = (text = said) => {
     said = text;
-    note.textContent = lost ? LOST : said;
+    note.textContent = lost ? LOST : why ? `${said} · ${lighter(why)}` : said;
   };
-  renderer.domElement.addEventListener("webglcontextlost", (e) => {
-    e.preventDefault();
-    lost = true;
-    say();
-  });
-  renderer.domElement.addEventListener("webglcontextrestored", () => {
+  // The full picture, not given back in time or taken twice, is given up for
+  // a light one on a canvas of its own: the scene is drawn there as it
+  // stands. A browser that gives no light one either keeps the note of the
+  // loss, and the canvas it may still give back.
+  const fall = () => {
+    let next: THREE.WebGLRenderer;
+    try {
+      next = canvas(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, true);
+    } catch {
+      return;
+    }
+    renderer.dispose();
+    renderer.domElement.replaceWith(next.domElement);
+    renderer = next;
+    why = "dropped";
     lost = false;
+    keep(memory);
+    watch();
+    size();
     say();
     render();
-  });
+  };
+  const losses = new Losses(fall);
+  // A light picture that is lost has nothing lighter to fall to: it waits.
+  // A canvas that was given up says nothing any more.
+  const watch = () => {
+    const mine = renderer;
+    mine.domElement.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      if (mine !== renderer) return;
+      lost = true;
+      say();
+      if (!why) losses.lost();
+    });
+    mine.domElement.addEventListener("webglcontextrestored", () => {
+      if (mine !== renderer) return;
+      losses.restored();
+      lost = false;
+      say();
+      render();
+    });
+  };
+  watch();
 
   // A wagon, or the figure at work on it, says under the pointer which bead
   // it is; a building which group's it is.

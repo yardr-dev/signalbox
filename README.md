@@ -114,6 +114,22 @@ Now, by day:
 
 ![Two silos, each with its provider's band, and the week's and the five hours' coal beside it](docs/look-silos.png)
 
+A browser that refuses or drops the picture gets a light one (`src/canvas.ts`):
+no shadow, no antialiasing and one pixel to one of the page's, with the yard,
+its labels, the replay and the controls as they were. `?light` on the page's
+address asks for it outright, and the note then says "light picture".
+
+The page takes it on its own at three moments, and the note says which.
+Refused at the start, it asks once more for the light one ("the browser
+refused the picture; drawing it lighter"), and only that refused too is the
+note of what helps. Lost once, it waits three seconds for the browser to give
+the picture back, and draws it light when it does not; lost a second time, it
+draws it light at once ("the browser dropped the picture; drawing it
+lighter"). After any of these the browser remembers, and the page starts
+light there until `?full` is on the address.
+
+![The first view as a light picture: no shadows, and edges in steps](docs/look-light.png)
+
 ## Replaying a day
 
     npm run snapshot   # YARDR_WEB=http://127.0.0.1:8791 names the yard's web view
