@@ -73,9 +73,9 @@ says nothing: a hut is a hut's in every depot.
 A wagon is the kit's, in the colours the pack painted it: a blue, a green or
 a red container, a tank with red ends, a load of logs, by the bead's id, so a
 bead keeps its wagon. A train's locomotive is the pack's green steam engine
-with red beams and wheels, a shunter its yellow diesel, and a peer's goods
-ride in the two kinds the pack left iron all over, the box van and the coal
-wagon. The paint says nothing of the bead: its type is read from its label
+with red beams and wheels, a shunter its yellow diesel, and a peer's line is
+worked by the locomotive too: its goods ride behind one, in the two kinds
+the pack left iron all over, the box van and the coal wagon. The paint says nothing of the bead: its type is read from its label
 and its card, not from its wagon. Red and maroon are no building's: red is a
 fault's and a stop lamp's.
 
@@ -228,9 +228,9 @@ snapshot holds, and says "notes need the live page". The yard's crew members sta
 their signal boxes. A held bead stands in the siding. A peer's
 message is a goods wagon on the peer's line, named by its kind and its peer:
 out from the yard's end past the edge of the yard, or in from there, a few
-seconds either way, each on its own rail. Goods are pulled too. The line has
-a shunter of its own for goods out, parked at the yard's end, and goods in
-come behind an engine of the peer's, which goes home when they have gone.
+seconds either way, each on its own rail. Goods are pulled too, by the kit's
+steam locomotive: the line has one of its own for goods out, parked at the
+yard's end, and goods in come behind one of the peer's, which goes home when they have gone.
 One train runs each way at a time, and the next waits out of sight. A hook
 is a flash of the wire.
 
@@ -508,7 +508,8 @@ page and the script, run by Node alone, with no `npm ci` and no build.
   had them (`toned`). A figure keeps the pack's texture.
   Platforms, signals and the silos' indicators are boxes in the palette's
   tones, a signal box, the telegraph's poles and a peer's board in their
-  accents. The kit's diesel is the shunter.
+  accents. The kit's diesel is a track's shunter, and its steam locomotive
+  the engine of a peer's line, each way.
 - `src/palette.ts`: every colour of the picture (see Look): the tones by day
   and by night, Catppuccin's accents by day and by night, which building
   wears which (`building`), the colours

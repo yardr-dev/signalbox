@@ -55,10 +55,10 @@ const files: Record<Part, string[]> = {
   ],
   // The kinds that are iron all over: they carry a peer's goods.
   van: ["train-carriage-box", "train-carriage-coal"],
-  // The pack's steam engine, green with red beams and wheels.
+  // The pack's steam engine, green with red beams and wheels: a train's, and
+  // the engine of a peer's line.
   locomotive: ["train-locomotive-a"],
-  // The engine that moves the wagons: a track's, or a peer's line's. The
-  // pack's diesel, yellow.
+  // The engine that moves a track's wagons. The pack's diesel, yellow.
   shunter: ["train-diesel-a"],
   // The plainest long building, a small warehouse, a small office, a factory
   // with its chimneys.

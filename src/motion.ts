@@ -27,7 +27,8 @@ const NEAR = 0.1;
 export const GOODS_SECONDS = 4;
 export const GOODS_MIN = 2;
 // Where on a peer's line goods stand at the yard's end: on the rail, with
-// room before them for the engine that brought them in.
+// room before them for the engine that brought them in: the kit's
+// locomotive a coupling before them is on the line with all its length.
 export const GOODS_END = 4.5;
 // The seconds goods in stand at the yard's end before they fade.
 export const GOODS_STAND = 0.5;

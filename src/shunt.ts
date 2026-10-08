@@ -2,7 +2,7 @@
 // no part of the yard: nothing of the state is an engine, and the state is
 // where a wagon stands at once. A track has one shunter, parked on its
 // headshunt, and a wagon whose bead moved waits where it stood until the
-// shunter has come for it; a peer's line has one for goods out, and each of
+// shunter has come for it; a peer's line has an engine for goods out, and each of
 // its goods in come behind an engine of the peer's. Pure, like motion.ts: an
 // order is what the state changed, a job the shunter's ways for it, and
 // Shunter the queue of one engine. scene.ts draws what they say.
@@ -264,7 +264,7 @@ export function hauling(way: Point[]): Point[] {
 }
 
 // A peer's line, one way: the goods run their way behind the engine, at
-// their own pace. Out, the line's shunter takes them from the yard's end
+// their own pace. Out, the line's engine takes them from the yard's end
 // past the edge and comes back for the next; in, an engine of the peer's
 // brings them from there, stands while they are there, and goes home.
 export function freight(way: Point[], dir: "out" | "in"): Plan {

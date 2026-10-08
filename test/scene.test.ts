@@ -1217,6 +1217,13 @@ describe("the shunters of the stock", () => {
   const shunter = (stock: Stock, key = TRACK) => stock.root.children.find((o) => o.userData.shunter === key)!;
   const wagon = (stock: Stock, id: string) => stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id && o.userData.crew !== true);
   const stands = (l: ReturnType<typeof layout>, id: string) => l.vehicles.find((v) => v.key === id)!.at;
+  const wears = (o: THREE.Object3D) => {
+    const seen: THREE.Material[] = [];
+    o.traverse((part) => {
+      if (part instanceof THREE.Mesh) seen.push(part.material as THREE.Material);
+    });
+    return seen;
+  };
   // On until nothing moves: what was seen each time comes back.
   const run = <T>(stock: Stock, see: () => T): T[] => {
     const seen: T[] = [];
@@ -1240,6 +1247,53 @@ describe("the shunters of the stock", () => {
     // No bead's: the pointer asks a wagon, not its engine.
     expect(stock.beads.some((o) => o.userData.shunter !== undefined)).toBe(false);
     expect(stock.tick(0.1)).toBe(false);
+  });
+
+  test("a depot's track has the kit's shunter, and a peer's line its locomotive, both ways", () => {
+    // What the kit was asked for, by the model it gave.
+    const parts = new Map<THREE.Object3D, Part>();
+    const asked: Kit = {
+      ...kit,
+      make(part, pick) {
+        const made = kit.make(part, pick);
+        parts.set(made, part);
+        return made;
+      },
+    };
+    const stock = new Stock(empty, asked);
+    const part = (key: string) => parts.get(shunter(stock, key));
+    expect(empty.tracks.length).toBeGreaterThan(0);
+    for (const t of empty.tracks) expect(part(t.key), t.key).toBe("shunter");
+    expect(empty.peers.length).toBeGreaterThan(0);
+    for (const p of empty.peers) {
+      expect(part(`${p.key}/out`), p.key).toBe("locomotive");
+      expect(part(`${p.key}/in`), p.key).toBe("locomotive");
+    }
+    // In the kit's own paint, as a train's: the two that meet are alike.
+    const [line] = empty.peers;
+    expect(wears(shunter(stock, `${line!.key}/out`))).toEqual([paint(stand.locomotive)]);
+    expect(wears(shunter(stock, `${line!.key}/in`))).toEqual(wears(shunter(stock, `${line!.key}/out`)));
+    // A train keeps its locomotive, and no engine of a track is one.
+    expect(wears(shunter(stock))).toEqual([paint("slate")]);
+  });
+
+  test("the locomotive fits a peer's line at the yard's end: clear of the goods there, and on the rail", () => {
+    // The kit's locomotive is 2.6 long and a van 2.7 (train-locomotive-a,
+    // train-carriage-box): longer than the diesel's 2.4.
+    const [LOCOMOTIVE, VAN] = [2.6, 2.7];
+    const [line] = empty.peers;
+    const stock = new Stock(empty, kit);
+    // Its own, parked: behind it the goods it will take on.
+    const out = shunter(stock, `${line!.key}/out`).position.x;
+    expect(out - LOCOMOTIVE / 2).toBeGreaterThan(line!.at.x + GOODS_END + VAN / 2);
+    // The peer's, come in: before the goods it brought, where the line begins.
+    const engine = shunter(stock, `${line!.key}/in`);
+    stock.goods(line!.name, "in", "mail", 1);
+    stock.tick(goodsSeconds(1));
+    expect(engine.visible).toBe(true);
+    expect(engine.position.x).toBeCloseTo(line!.at.x + GOODS_END - COUPLING);
+    expect(engine.position.x + LOCOMOTIVE / 2).toBeLessThan(line!.at.x + GOODS_END - VAN / 2);
+    expect(engine.position.x - LOCOMOTIVE / 2).toBeGreaterThan(line!.at.x);
   });
 
   test("an advance is the shunter coming for the wagon and taking it to the next platform", () => {

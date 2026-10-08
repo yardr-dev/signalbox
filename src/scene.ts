@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { CHIMNEY, HAT, SILO_HEIGHT, TINT, type Clip, type Kit } from "./kit";
+import { CHIMNEY, HAT, SILO_HEIGHT, TINT, type Clip, type Kit, type Part } from "./kit";
 import {
   atWork,
   BOARD_X,
@@ -578,8 +578,9 @@ interface Wagon extends Mover {
   chocks?: THREE.Object3D;
 }
 
-// A shunter and the kit's model of it. made says what it was made for: a
-// track or a line laid another way has another.
+// An engine and the kit's model of it: a track's is the diesel shunter, a
+// peer's line's the steam locomotive, either way. made says what it was made
+// for: a track or a line laid another way has another.
 interface Engine {
   queue: Shunter;
   object: THREE.Object3D;
@@ -1061,22 +1062,23 @@ export class Stock {
     return bead !== undefined && [...this.engines.values()].some((e) => e.queue.holds(bead));
   }
 
-  // A shunter for every track, and two for every peer's line: its own for
-  // goods out, and the peer's engine that brings goods in. One whose track
-  // or line is laid another way now starts again at its place there.
+  // A shunter for every track, and two locomotives for every peer's line:
+  // its own for goods out, and the peer's engine that brings goods in. The
+  // two are alike, and told apart by their way. One whose track or line is
+  // laid another way now starts again at its place there.
   private roster(l: Layout) {
-    const wanted = new Map<string, { park: Stop; plan: Plan; guest: boolean; made: string }>();
+    const wanted = new Map<string, { park: Stop; plan: Plan; part: Part; guest: boolean; made: string }>();
     for (const t of l.tracks) {
       if (!t.park) continue;
       const park = { at: t.park, line: t.at.z, end: t.at.x + t.length, head: t.at.x - HEADSHUNT };
-      wanted.set(t.key, { park, plan: shunting, guest: false, made: JSON.stringify(park) });
+      wanted.set(t.key, { park, plan: shunting, part: "shunter", guest: false, made: JSON.stringify(park) });
     }
     const edge = l.wire.at.x + l.wire.length;
     for (const p of l.peers) {
       for (const way of ["out", "in"] as const) {
         const path = goods(p, edge, way);
         const at = hauling(path)[0]!;
-        wanted.set(`${p.key}/${way}`, { park: { at, line: at.z, end: Infinity }, plan: freight(path, way), guest: way === "in", made: JSON.stringify(path) });
+        wanted.set(`${p.key}/${way}`, { park: { at, line: at.z, end: Infinity }, plan: freight(path, way), part: "locomotive", guest: way === "in", made: JSON.stringify(path) });
       }
     }
     for (const [key, engine] of this.engines) {
@@ -1088,8 +1090,8 @@ export class Stock {
       this.root.remove(engine.object);
       this.engines.delete(key);
     }
-    for (const [key, { park, plan, guest, made }] of wanted) {
-      const engine = { queue: new Shunter(park, plan), object: this.kit.make("shunter"), made, guest };
+    for (const [key, { park, plan, part, guest, made }] of wanted) {
+      const engine = { queue: new Shunter(park, plan), object: this.kit.make(part), made, guest };
       // Whose it is: no bead's, and the pointer has nothing to ask it.
       engine.object.userData.shunter = key;
       this.engines.set(key, engine);
@@ -1098,9 +1100,10 @@ export class Stock {
     }
   }
 
-  // Put a shunter and the wagons of its order where its queue has them. A
-  // shunter is not turned round: it runs back as it came. A peer's engine
-  // looks the way it comes in, down its line to the yard.
+  // Put an engine and the wagons of its order where its queue has them. An
+  // engine is not turned round: it runs back as it came. A line's own looks
+  // out to the peer, and a peer's the way it comes in, down its line to the
+  // yard.
   private drive(engine: Engine) {
     const { engine: at, wagons } = engine.queue.pose();
     for (const { key, pose } of wagons) {
@@ -1176,7 +1179,7 @@ export class Stock {
   }
 
   // Goods on a peer's line: out to the peer past the yard's edge behind the
-  // line's shunter, or in from there behind an engine of the peer's to the
+  // line's locomotive, or in from there behind an engine of the peer's to the
   // yard's end, where they stand a moment. kind is the message's (mail,
   // ping, bead), speed the replay's. They are an order like any: they wait
   // their turn out of sight, and with too many before them are not seen.
