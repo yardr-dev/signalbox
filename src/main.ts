@@ -8,8 +8,9 @@
 // side of the sun's shadow map (2048: 16 MB of depth texture, where 4096 was
 // 64 MB and its edge no finer on the first view), and PIXEL_RATIO, the most
 // pixels drawn to one of the page's (2: a phone at 3 would draw nine where
-// four are enough for a flat, antialiased picture). A browser that refuses
-// or drops the picture is short of that memory: these are what to turn down.
+// four are enough for a flat, antialiased picture). These lower the GPU's
+// demand; if the browser still refuses a context, close other 3D tabs or
+// restart it.
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
