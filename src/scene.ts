@@ -248,7 +248,10 @@ function repaint(wagon: THREE.Object3D, step: Weather | undefined) {
     const paint = paints.get(part) ?? (part.material as THREE.Material | THREE.Material[]);
     paints.set(part, paint);
     if (step === undefined) part.material = paint;
-    else part.material = Array.isArray(paint) ? paint.map((p) => weathered(p, step)) : weathered(paint, step);
+    else {
+      const weather = (p: THREE.Material) => ((p as THREE.MeshStandardMaterial).map ? p : weathered(p, step));
+      part.material = Array.isArray(paint) ? paint.map(weather) : weather(paint);
+    }
   });
 }
 

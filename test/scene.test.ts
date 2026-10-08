@@ -431,6 +431,31 @@ describe("the kit's own models", () => {
     dress(false);
   });
 
+  test("weathering changes the wagon's accent paint and leaves its kit texture alone", () => {
+    const now = Date.parse("2099-01-20T00:00:00Z");
+    const bead: Bead = {
+      id: "signalbox-aged",
+      title: "aged",
+      type: "task",
+      stage: "backlog",
+      depot: "signalbox",
+      priority: 2,
+      created_at: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const stock = new Stock(layout({ ...yard, beads: [bead] }, {}, now), own);
+    const wagon = stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === bead.id)!;
+    const materials: THREE.MeshStandardMaterial[] = [];
+    wagon.traverse((part) => {
+      if (part instanceof THREE.Mesh) materials.push(...[part.material].flat() as THREE.MeshStandardMaterial[]);
+    });
+    const texture = materials.find((m) => m.map);
+    const accent = materials.find((m) => !m.map && m.color.getHex() !== paint("blue").color.getHex());
+    expect(texture).toBeDefined();
+    expect(texture!.color.getHex()).toBe(0xffffff);
+    expect(accent).toBeDefined();
+    expect(accent!.color.getHex()).toBe(new THREE.Color(accents.blue).multiply(new THREE.Color(weathering.rusted)).getHex());
+  });
+
   test("a model whose texture cannot be read is as the pack has it", () => {
     const worn = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), worn);
