@@ -3,10 +3,18 @@
 // snapshot it plays them: the bar at the bottom is the player's. Served by
 // scripts/serve.mjs it follows the yard as it runs: the snapshot is the
 // yard now, and the feed's events move the picture as the replay's do.
+//
+// What the page asks of the GPU is two numbers, both below: SHADOW_MAP, the
+// side of the sun's shadow map (2048: 16 MB of depth texture, where 4096 was
+// 64 MB and its edge no finer on the first view), and PIXEL_RATIO, the most
+// pixels drawn to one of the page's (2: a phone at 3 would draw nine where
+// four are enough for a flat, antialiased picture). A browser that refuses
+// or drops the picture is short of that memory: these are what to turn down.
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import { canvas, failed, LOST } from "./canvas";
 import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { loadKit } from "./kit";
 import { layout } from "./layout";
@@ -29,6 +37,9 @@ const DISTANCE = 400;
 // Where the sun stands: left of the yard and before it, so a shadow falls to
 // the right and up the page, clear of what throws it.
 const SUN = new THREE.Vector3(-0.55, 1, 0.4).normalize();
+// What the page asks of the GPU: see the top of the file.
+const SHADOW_MAP = 2048;
+const PIXEL_RATIO = 2;
 // Pixels per unit of ground below which the sheds' names are hidden.
 const FAR = 14;
 // Pixels between the yard and the edge of the first view. A sign stands over
@@ -221,7 +232,7 @@ async function start() {
   scene.add(new THREE.AmbientLight(0xffffff, Math.PI * SHADE));
   const sun = new THREE.DirectionalLight(0xffffff, (Math.PI * (1 - SHADE)) / SUN.y);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
   sun.shadow.normalBias = 0.04;
   const shadows = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 1 - SHADE }));
   shadows.receiveShadow = true;
@@ -241,8 +252,7 @@ async function start() {
   };
   shine();
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  const renderer = canvas(() => new THREE.WebGLRenderer({ antialias: true }), window.devicePixelRatio, PIXEL_RATIO, api !== undefined);
   renderer.shadowMap.enabled = true;
   host.append(renderer.domElement);
   const labels = new CSS2DRenderer();
@@ -321,6 +331,26 @@ async function start() {
     renderer.render(scene, camera);
     labels.render(scene, camera);
   };
+
+  // What the note says of the yard, and while the browser has taken the
+  // picture back, that instead. Not refusing the loss lets the browser give
+  // the picture back; the renderer then draws as before.
+  let said = "";
+  let lost = false;
+  const say = (text = said) => {
+    said = text;
+    note.textContent = lost ? LOST : said;
+  };
+  renderer.domElement.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    lost = true;
+    say();
+  });
+  renderer.domElement.addEventListener("webglcontextrestored", () => {
+    lost = false;
+    say();
+    render();
+  });
 
   // A wagon, or the figure at work on it, says under the pointer which bead
   // it is; a building which group's it is.
@@ -553,7 +583,7 @@ async function start() {
       const window = api
         ? `following the yard, events since ${time.format(player.from)}`
         : `${log.events.length} events, ${time.format(player.from)} to ${time.format(player.to)}`;
-      note.textContent = `${yard.depots.length} depots · ${window} · ${hint}`;
+      say(`${yard.depots.length} depots · ${window} · ${hint}`);
     };
     if (api) follow();
 
@@ -687,7 +717,7 @@ async function start() {
     stock.still = true;
     controls.addEventListener("change", render);
     window.addEventListener("resize", render);
-    note.textContent = `${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`;
+    say(`${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`);
   }
   // Now that the bar and the note are on the page.
   fit();
@@ -698,5 +728,5 @@ async function start() {
 
 start().catch((err: unknown) => {
   console.error(err);
-  note.textContent = `signalbox could not draw the yard: ${err instanceof Error ? err.message : String(err)}`;
+  note.textContent = failed(err);
 });
