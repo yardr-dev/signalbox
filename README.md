@@ -29,18 +29,34 @@ it runs when the serve script serves it.
 
 ## Look
 
-The yard is drawn flat: the ground and the labels in the manner of Mini
-Motorways (Dinosaur Polo Club,
-https://dinopoloclub.com/games/mini-motorways/), the colours on it
-Catppuccin's accents (https://github.com/catppuccin/palette). A cream ground
+The ground and the labels are in the manner of Mini Motorways (Dinosaur
+Polo Club, https://dinopoloclub.com/games/mini-motorways/): a cream ground
 with nothing behind it, the depots as pads a little darker, a track as a warm
-grey ribbon, thin labels on white pills, one sun and one soft shadow, and on
-that a town of coloured blocks. No building and nothing that rolls wears its
-texture: each face is one colour of the palette, by how light the kit had
-painted it.
+grey ribbon, thin labels on white pills, one sun and one soft shadow. On that
+stand the kit's own models, in the texture the packs paint them from: their
+iron, white, glass and dark as they came. Only where a pack had painted a
+face in a colour does one of Catppuccin's accents
+(https://github.com/catppuccin/palette) go instead.
 
-A building is two accents by its kind, its walls in one and its roof in a
-neighbour of it. The colour says nothing: a hut is a hut's in every depot.
+What a colour of the kit's is, is one rule (`COLOUR` in `src/kit.ts`): the
+saturation of the texture where the face lies on it, over 0.45. The packs'
+texture is swatches, and they lie well apart on that: white, the irons, the
+darks, the pale glass and the creams are 0.38 at most, and the reds, oranges,
+yellow, green, blues, purple and pink 0.48 at least. So do the browns of
+wood and brick: no saturation parts them from a blue, and a wagon's load of
+logs is painted as a container's box is. A test reads both textures and
+names the swatches on each side.
+
+A building has its kind's two accents. The lightest of the colours the pack
+gave it goes in the first, its walls', and any colour of another hue in the
+second, its roof's. The pack's buildings are iron and white with a little
+yellow, so that is a trim: the row of doors in a station's front in teal, a
+works' doors and the bands of its chimneys in lavender, a hut's door in
+yellow and an office's in sky, and the bush that stands by each of those two
+in peach and in sapphire. A silo has no colour but its band, which is
+its provider's. The scene's own buildings, which are boxes, are their accents
+all over: a signal box, the telegraph's poles, a peer's board. The colour
+says nothing: a hut is a hut's in every depot.
 
 | building | walls | roof |
 | --- | --- | --- |
@@ -55,13 +71,18 @@ neighbour of it. The colour says nothing: a hut is a hut's in every depot.
 
 A wagon is one accent by the type of its bead, the same across the yard, so
 a train's wagons are told from tasks at a glance: a task blue, a train's
-locomotive mauve, a wagon teal, a memory lavender, any other type sky. They
+locomotive mauve, a wagon teal, a memory lavender, any other type sky. It is
+on the faces the pack had coloured: a container's box, a tank's barrel, a
+load of logs, and of a locomotive its boiler and cab, its buffer beams and
+its driving wheels; frames, a wagon's wheels and a tank's bands stay iron. A bead rides only in the kinds that have such a face. They
 are the blues and purples because those are the accents a red or amber lamp,
 a red flag, orange chocks and green moss read on, fresh, dull and rusted: a
 test measures it (`test/scene.test.ts`, the distance in Oklab), and a warm
 accent or pink fails it. A shunter and a peer's goods carry no bead and stay
-grey. Red and maroon are no building's and no wagon's: red is a fault's and a
-stop lamp's.
+grey: the shunter's body, the pack's yellow, is overlay, and goods ride in
+the two kinds the pack left iron all over, the box van and the coal wagon.
+Red and maroon are no building's and no wagon's: red is a fault's and a stop
+lamp's.
 
 The people are the kit's own, in its texture as it came; a hard hat is ours,
 hi-vis yellow for a builder and white for a reviewer.
@@ -70,17 +91,18 @@ hi-vis yellow for a builder and white for a reviewer.
 labels' ink and pill too. Its tones are the greys and creams of the ground,
 the track and the platforms, one set by day and one by night. Its accents are
 Latte's by day and Mocha's by night under the same names, so what is mauve is
-mauve in both. A lamp, a fault and the weather are the same in both. Night is
+mauve in both. A lamp, a fault and the weather are the same in both, and so
+is the kit's texture: it is lit as the people are and not recoloured. Night is
 the same picture on a near-black blue with the labels turned round. The page takes it when the
 reader's system is dark; Night on the bar says otherwise, and the browser
 remembers that until it is what the system says anyway. The camera looks down
 at an angle and is orthographic, as it was: nothing grows smaller with
 distance, so the yard reads as a map.
 
-Before the flat treatment (the old page used the same picture in both system
-settings):
+Before the ground went flat (the old page used the same picture in both
+system settings):
 
-![The first view before the flat treatment](docs/look-before.png)
+![The first view before the flat ground](docs/look-before.png)
 
 Now, by day:
 
@@ -403,13 +425,16 @@ of this is there, and the page is the committed snapshot and its replay.
   is a material of its own (`TINT`), cut from the faces that lie on the
   palette texture's orange, since the pack's models share the texture: the
   scene puts the provider's colour there, and on the band of a silo's box.
-  Every other face of a model but a figure's is sorted the same way
-  (`flat`): the texture is read where the face lies on it, and the face
-  painted by how light that colour is (`toned`). A building's light faces
-  are its walls' accent and its middling ones its roof's; a wagon's and a
-  locomotive's body is left to the scene as the band is (`TINT`), which
-  paints it by the bead's type; a shunter is a tone darker than the pack
-  has it and rail is in the track's. A figure keeps the pack's texture.
+  A model keeps the pack's texture, and the faces the pack had coloured are
+  sorted out of it the same way (`accented`): the texture is read where the
+  face lies on it, and a face more saturated than `COLOUR` is painted again.
+  A building's are its kind's accents, the lightest hue its walls' and
+  another its roof's; a wagon's and a locomotive's are left to the scene as
+  the band is (`TINT`), which paints them by the bead's type; a shunter's
+  are overlay. The wagons a bead rides in (`wagon`) are the kinds with such
+  a face, a peer's goods (`van`) the two without. Rail alone is painted
+  flat (`flat`), in the track's tone, its rails dark by how light the pack
+  had them (`toned`). A figure keeps the pack's texture.
   Platforms, signals and the silos' indicators are boxes in the palette's
   tones, a signal box, the telegraph's poles and a peer's board in their
   accents. The kit's diesel is the shunter.

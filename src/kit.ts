@@ -7,17 +7,20 @@
 // drops in here and nowhere else. A model that does not load is a box of the
 // palette instead, and the page still draws.
 //
-// But for the figures, none is drawn in its own colours: the packs paint a
-// model from a texture they share, and flat sorts its faces into the
-// palette's tones and accents instead (palette.ts), so the yard is one flat
-// picture. A figure wears the pack's texture as it came.
+// The packs paint a model from a texture they share, and a model wears it
+// here as it came: the kit's own iron, white, glass and dark. Only where the
+// pack had painted a face in a colour (COLOUR says which) is it painted
+// again, by accented: in an accent of the palette (palette.ts), or left for
+// the scene to paint (TINT). A figure is the pack's own altogether. The rails
+// alone are painted flat, in the track's tone: they are the ribbon a track
+// reads as.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { building, hat, paint, type Accent, type Building, type Tone } from "./palette";
+import { building, hat, paint, type Accent, type Tone } from "./palette";
 
-export type Part = "rail" | "wagon" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
+export type Part = "rail" | "wagon" | "van" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
 export type Outfit = "builder" | "reviewer" | "crew";
 // What a figure can be seen doing: the pack's idle, walk, interact-right and
 // sit.
@@ -41,15 +44,18 @@ export interface Kit {
 const files: Record<Part, string[]> = {
   // One unit of track, to be laid end to end.
   rail: ["track"],
+  // What a bead rides in: the kinds the pack painted a colour, which is
+  // where the bead's goes. A container's box, a tank's barrel, a load of logs.
   wagon: [
-    "train-carriage-box",
     "train-carriage-container-blue",
     "train-carriage-container-green",
     "train-carriage-container-red",
-    "train-carriage-coal",
     "train-carriage-tank",
     "train-carriage-wood",
   ],
+  // The kinds that are iron all over, with no face for a bead's colour: they
+  // carry a peer's goods.
+  van: ["train-carriage-box", "train-carriage-coal"],
   locomotive: ["train-locomotive-a"],
   // The engine that moves the wagons: a track's, or a peer's line's.
   shunter: ["train-diesel-a"],
@@ -100,11 +106,12 @@ const FIGURE_HEIGHT = 1.35;
 export const TINT = "tint";
 
 // Length, height, width of the box that stands in for a part.
-// A building's is in its walls' accent, and what a bead rides in is the
-// scene's to paint.
+// A building's is in its walls' accent, what a bead rides in is the scene's
+// to paint, and what carries none is a tone.
 const boxes: Record<Part, [number, number, number, Tone | Accent | typeof TINT]> = {
   rail: [1, 0.12, 0.8, "track"],
   wagon: [2.7, 1.3, 1.2, TINT],
+  van: [2.7, 1.3, 1.2, "roof"],
   locomotive: [2.6, 1.6, 1.3, TINT],
   shunter: [2.4, 1.6, 1.2, "slate"],
   station: [3.2, 1.3, 1.4, building.station[0]],
@@ -195,6 +202,11 @@ export function banded(model: THREE.Object3D) {
   });
 }
 
+// How light one of the packs' colours is, of 1.
+function light(red: number, green: number, blue: number): number {
+  return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+}
+
 // One of the packs' colours as a tone: by how light it is, whatever its hue.
 // White and the palest are a wall, and the darkest slate, so a model keeps
 // its own lights and darks and loses its colours.
@@ -204,8 +216,39 @@ const LIGHT: [above: number, tone: Tone][] = [
   [0.3, "roof"],
 ];
 export function toned(red: number, green: number, blue: number): Tone {
-  const light = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
-  return LIGHT.find(([above]) => light > above)?.[1] ?? "slate";
+  const is = light(red, green, blue);
+  return LIGHT.find(([above]) => is > above)?.[1] ?? "slate";
+}
+
+// A colour of the packs' own, or one of their neutrals: by its saturation,
+// the gap between the most and the least of its red, green and blue as a
+// part of the most. The packs' texture is swatches, and they lie apart on
+// this: white, the irons, the darks, the pale glass and the creams are 0.38
+// at most, and every swatch that is a colour 0.48 at least: the reds and
+// oranges, yellow, green, the blues, purple and pink, and the browns of wood
+// and brick with them, which no saturation parts from a blue. COLOUR is
+// between the two. A swatch that fades from a neutral into a colour (glass
+// into blue, skin into tan) is parted where it crosses.
+export const COLOUR = 0.45;
+export function coloured(red: number, green: number, blue: number): boolean {
+  const most = Math.max(red, green, blue);
+  return most > 0 && (most - Math.min(red, green, blue)) / most > COLOUR;
+}
+
+// Where a colour is on the wheel, of 1 all round, and how far two such are
+// apart. A swatch of the packs fades within a hue: two faces this near are of
+// one colour of a model, and two further apart of two.
+const HUE = 1 / 8;
+function hue(red: number, green: number, blue: number): number {
+  const most = Math.max(red, green, blue);
+  const gap = most - Math.min(red, green, blue);
+  if (gap === 0) return 0;
+  const sixth = most === red ? ((green - blue) / gap + 6) % 6 : most === green ? (blue - red) / gap + 2 : (red - green) / gap + 4;
+  return sixth / 6;
+}
+function round(a: number, b: number): number {
+  const d = Math.abs(a - b);
+  return Math.min(d, 1 - d);
 }
 
 // A texture's colours by where a corner lies on it, read once for each
@@ -232,86 +275,136 @@ function texels(map: THREE.Texture): Texel | undefined {
       return [data[i]!, data[i + 1]!, data[i + 2]!];
     };
   } catch (err) {
-    console.warn("kit: a texture could not be read, its models are one tone", err);
+    console.warn("kit: a texture could not be read, its models are as the pack has them", err);
   }
   read.set(map.source, texel);
   return texel;
 }
 
-// The tone of a face of a model, by the colour its texture has there. Glass
-// is the packs' second material, and a tone of its own beside a wall; a
-// model whose texture cannot be read is all of one tone.
-function texture(u: number, v: number, wears: THREE.Material): Tone {
-  if (wears.name.endsWith("specular")) return "pale";
+// The colour the pack painted a face, by the middle of it on its texture.
+// None where the texture cannot be read.
+function texture(u: number, v: number, wears: THREE.Material): [number, number, number] | undefined {
   const { map } = wears as THREE.MeshStandardMaterial;
-  const texel = map ? texels(map) : undefined;
-  return texel ? toned(...texel(u, v)) : "pale";
+  return map ? texels(map)?.(u, v) : undefined;
 }
 
 // What a face is painted in: a tone or an accent of the palette, or TINT for
 // the scene to say.
 export type Wear = Tone | Accent | typeof TINT;
 
-// A part's faces by its texture, each part in its own way. Rail is the
-// track's tone with its rails dark on it. A building has its light faces in
-// its walls' accent and its middling ones in its roof's (palette.ts); its
-// glass and its darkest stay tones. What carries a bead keeps its darkest,
-// wheels and frame, and the rest of it is its body, which the scene paints
-// by the bead. A shunter carries none: it is a tone darker than the packs
-// have it, so it is seen on a platform.
-const DARKER: Partial<Record<Tone, Tone>> = { wall: "pale", pale: "roof", roof: "slate" };
-function textured(part: Part): (u: number, v: number, wears: THREE.Material) => Wear {
-  return (u, v, wears) => {
-    const tone = texture(u, v, wears);
-    if (part === "rail") return tone === "slate" || tone === "roof" ? "slate" : "track";
-    if (part === "shunter") return DARKER[tone] ?? tone;
-    if (part === "wagon" || part === "locomotive") return tone === "slate" ? tone : TINT;
-    if (tone === "slate" || wears.name.endsWith("specular")) return tone;
-    const [wall, roof] = building[part satisfies Building];
-    return tone === "roof" ? roof : wall;
+// A rail's faces: the track's tone, with what the pack had dark, its rails,
+// dark on it. A rail whose texture cannot be read is all the track's.
+function sleeper(u: number, v: number, wears: THREE.Material): Wear {
+  const tone = toned(...(texture(u, v, wears) ?? [255, 255, 255]));
+  return tone === "slate" || tone === "roof" ? "slate" : "track";
+}
+
+// What the faces the pack painted a colour are painted in here, for each
+// part that wears its texture: the first for the lightest of a model's
+// colours, the second for any other it has. A building's are its kind's
+// walls' and roof's (palette.ts). What carries a bead leaves them all to the
+// scene, which paints them by the bead. An engine and a van carry none, and
+// the pack's yellow would be a wagon's lamp from far out: they are overlay,
+// Catppuccin's grey.
+const trims: Record<Exclude<Part, "rail">, readonly [Wear, Wear]> = {
+  wagon: [TINT, TINT],
+  locomotive: [TINT, TINT],
+  van: ["overlay", "overlay"],
+  shunter: ["overlay", "overlay"],
+  station: building.station,
+  hut: building.hut,
+  office: building.office,
+  works: building.works,
+  silo: building.silo,
+};
+
+// The faces of a mesh, each by its corners, the middle of them on the
+// texture and the material it wears.
+function* faces(part: THREE.Mesh): Generator<{ face: number[]; u: number; v: number; own: THREE.Material }> {
+  const geometry = part.geometry as THREE.BufferGeometry;
+  const uv = geometry.getAttribute("uv");
+  const index = geometry.getIndex();
+  const corners = index ? index.count : (geometry.getAttribute("position")?.count ?? 0);
+  const corner = (i: number) => (index ? index.getX(i) : i);
+  const wears = [part.material].flat() as THREE.Material[];
+  const runs = geometry.groups.length > 0 ? geometry.groups : [{ start: 0, count: corners, materialIndex: 0 }];
+  for (const run of runs) {
+    const own = wears[run.materialIndex ?? 0];
+    if (!own) continue;
+    for (let i = run.start; i + 2 < Math.min(run.start + run.count, corners); i += 3) {
+      const face = [corner(i), corner(i + 1), corner(i + 2)];
+      const middle = (of: "getX" | "getY") => (uv ? face.reduce((sum, c) => sum + uv[of](c), 0) / 3 : 0);
+      yield { face, u: middle("getX"), v: middle("getY"), own };
+    }
+  }
+}
+
+// Give every face of a model the material wear names for it. The faces are
+// sorted by it, a material of the mesh for each, and every part throws and
+// takes the yard's one shadow.
+function sorted(model: THREE.Object3D, wear: (u: number, v: number, own: THREE.Material) => THREE.Material) {
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    part.castShadow = part.receiveShadow = true;
+    const by = new Map<THREE.Material, number[]>();
+    for (const { face, u, v, own } of faces(part)) {
+      const wears = wear(u, v, own);
+      const all = by.get(wears) ?? [];
+      by.set(wears, all);
+      all.push(...face);
+    }
+    if (by.size === 0) return;
+    const geometry = part.geometry as THREE.BufferGeometry;
+    geometry.setIndex([...by.values()].flat());
+    geometry.clearGroups();
+    let start = 0;
+    [...by.values()].forEach((all, n) => {
+      geometry.addGroup(start, all.length, n);
+      start += all.length;
+    });
+    part.material = [...by.keys()];
+  });
+}
+
+// Leave a model in the pack's texture, and paint again only the faces the
+// pack had painted a colour (coloured): in first where they are of the
+// lightest of the model's colours, in other where of another hue, a paint of
+// the palette or, for TINT, one material for the scene to replace. Glass,
+// the packs' second material, and a face that is the scene's already (a
+// silo's band) stay as they are, and so does a model whose texture cannot be
+// read.
+export function accented(model: THREE.Object3D, [first, other]: readonly [Wear, Wear]) {
+  const colour = (u: number, v: number, own: THREE.Material) => {
+    if (own.name === TINT || own.name.endsWith("specular")) return undefined;
+    const is = texture(u, v, own);
+    return is && coloured(...is) ? is : undefined;
   };
+  let lightest: [number, number, number] | undefined;
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    for (const { u, v, own } of faces(part)) {
+      const is = colour(u, v, own);
+      if (is && (!lightest || light(...is) > light(...lightest))) lightest = is;
+    }
+  });
+  const tint = accent();
+  const wears = (named: Wear) => (named === TINT ? tint : paint(named));
+  sorted(model, (u, v, own) => {
+    const is = colour(u, v, own);
+    if (!is || !lightest) return own;
+    return wears(round(hue(...is), hue(...lightest)) < HUE ? first : other);
+  });
 }
 
 // Paint a model flat: every face in the palette's paint of what tone names
 // for it, by the middle of the face on its texture and the material it
-// wore. The faces are sorted by their paint, a material of the mesh for
-// each. A face the scene paints itself (TINT) stays as it is, or becomes of
+// wore. A face the scene paints itself (TINT) stays as it is, or becomes of
 // one such material for the whole model.
-export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: THREE.Material) => Wear = texture) {
+export function flat(model: THREE.Object3D, tone: (u: number, v: number, wears: THREE.Material) => Wear) {
   const tint = accent();
-  model.traverse((part) => {
-    if (!(part instanceof THREE.Mesh)) return;
-    part.castShadow = part.receiveShadow = true;
-    const geometry = part.geometry as THREE.BufferGeometry;
-    const uv = geometry.getAttribute("uv");
-    const index = geometry.getIndex();
-    const corners = index ? index.count : (geometry.getAttribute("position")?.count ?? 0);
-    const corner = (i: number) => (index ? index.getX(i) : i);
-    const wears = [part.material].flat() as THREE.Material[];
-    const runs = geometry.groups.length > 0 ? geometry.groups : [{ start: 0, count: corners, materialIndex: 0 }];
-    const sorted = new Map<THREE.Material, number[]>();
-    for (const run of runs) {
-      const own = wears[run.materialIndex ?? 0];
-      if (!own) continue;
-      for (let i = run.start; i + 2 < Math.min(run.start + run.count, corners); i += 3) {
-        const face = [corner(i), corner(i + 1), corner(i + 2)];
-        const middle = (of: "getX" | "getY") => (uv ? face.reduce((sum, c) => sum + uv[of](c), 0) / 3 : 0);
-        const named = own.name === TINT ? TINT : tone(middle("getX"), middle("getY"), own);
-        const wear = named !== TINT ? paint(named) : own.name === TINT ? own : tint;
-        const faces = sorted.get(wear) ?? [];
-        sorted.set(wear, faces);
-        faces.push(...face);
-      }
-    }
-    if (sorted.size === 0) return;
-    geometry.setIndex([...sorted.values()].flat());
-    geometry.clearGroups();
-    let start = 0;
-    [...sorted.values()].forEach((faces, n) => {
-      geometry.addGroup(start, faces.length, n);
-      start += faces.length;
-    });
-    part.material = [...sorted.keys()];
+  sorted(model, (u, v, own) => {
+    const named = own.name === TINT ? TINT : tone(u, v, own);
+    return named !== TINT ? paint(named) : own.name === TINT ? own : tint;
   });
 }
 
@@ -365,7 +458,8 @@ export async function loadKit(base: string): Promise<Kit> {
     model.scale.setScalar(size);
     const group = new THREE.Group().add(model);
     if (part === "silo") banded(model);
-    flat(model, textured(part));
+    if (part === "rail") flat(model, sleeper);
+    else accented(model, trims[part]);
     const mouth = part === "works" ? chimney(group) : undefined;
     if (mouth) group.userData[CHIMNEY] = mouth;
     return group;

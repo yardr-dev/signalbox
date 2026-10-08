@@ -1,9 +1,10 @@
 // @vitest-environment node
+import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
-import { banded, CHIMNEY, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit } from "../src/kit";
+import { banded, CHIMNEY, COLOUR, coloured, accented, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit, type Part } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
 import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { accents, building, dress, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stock, stocked, tinted, weathering, type Accent, type Tone } from "../src/palette";
@@ -11,8 +12,63 @@ import { BACKLOG, COUPLING } from "../src/shunt";
 import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
 
+// A picture as a page has it once it is read: its size and its pixels, four
+// bytes each. A PNG as the packs' textures are: eight bits, with a palette,
+// or red, green and blue with or without alpha, and not interlaced.
+interface Pixels {
+  width: number;
+  height: number;
+  data: Uint8Array;
+}
+async function png(file: Uint8Array<ArrayBuffer>): Promise<Pixels> {
+  const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
+  let [width, height, kind] = [0, 0, 0];
+  let palette: Uint8Array = new Uint8Array();
+  const packed: Uint8Array<ArrayBuffer>[] = [];
+  for (let at = 8; at < file.length; ) {
+    const size = view.getUint32(at);
+    const name = String.fromCharCode(...file.subarray(at + 4, at + 8));
+    const body = file.subarray(at + 8, at + 8 + size);
+    if (name === "IHDR") {
+      [width, height, kind] = [view.getUint32(at + 8), view.getUint32(at + 12), body[9]!];
+      if (body[8] !== 8 || body[12] !== 0) throw new Error("png: eight bits and not interlaced, or it is not read");
+    }
+    if (name === "PLTE") palette = body;
+    if (name === "IDAT") packed.push(body);
+    at += size + 12;
+  }
+  const each = { 2: 3, 3: 1, 6: 4 }[kind];
+  if (each === undefined) throw new Error(`png: colour type ${kind} is not read`);
+  const lines = new Uint8Array(await new Response(new Blob(packed).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer());
+  const row = width * each;
+  const raw = new Uint8Array(row * height);
+  for (let y = 0; y < height; y++) {
+    const filter = lines[y * (row + 1)]!;
+    for (let x = 0; x < row; x++) {
+      const left = x >= each ? raw[y * row + x - each]! : 0;
+      const up = y > 0 ? raw[(y - 1) * row + x]! : 0;
+      const corner = x >= each && y > 0 ? raw[(y - 1) * row + x - each]! : 0;
+      const near = [left, up, corner].reduce((a, b) => (Math.abs(left + up - corner - b) < Math.abs(left + up - corner - a) ? b : a));
+      const guess = [0, left, up, (left + up) >> 1, near][filter]!;
+      raw[y * row + x] = lines[y * (row + 1) + 1 + x]! + guess;
+    }
+  }
+  const data = new Uint8Array(width * height * 4).fill(255);
+  for (let i = 0; i < width * height; i++) {
+    const from = kind === 3 ? palette.subarray(3 * raw[i]!, 3 * raw[i]! + 3) : raw.subarray(i * each, i * each + 3);
+    data.set(from, i * 4);
+  }
+  return { width, height, data };
+}
+
+// The kit's files as the page is served them, under this address, and a
+// texture read as the browser reads one.
+const KIT = "http://kit.test/";
+const served = async (address: unknown) => new Response(await readFile(new URL(`../public${new URL(String(address instanceof Request ? address.url : address)).pathname}`, import.meta.url)));
+
 // No file of the kit is there: every model is its box. And no page: a label
-// is an element, of which the scene needs little.
+// is an element, of which the scene needs little, and a canvas gives back the
+// picture drawn on it.
 let kit: Kit;
 const warned: string[] = [];
 beforeAll(async () => {
@@ -24,7 +80,13 @@ beforeAll(async () => {
     setAttribute() {}
     remove() {}
   }
-  vi.stubGlobal("document", { createElement: () => new Element() });
+  class Canvas extends Element {
+    getContext() {
+      let drawn: Pixels | undefined;
+      return { drawImage: (image: Pixels) => void (drawn = image), getImageData: () => drawn };
+    }
+  }
+  vi.stubGlobal("document", { createElement: (tag: string) => (tag === "canvas" ? new Canvas() : new Element()) });
   vi.spyOn(console, "warn").mockImplementation((text: string) => void warned.push(text));
   kit = await loadKit("/");
 });
@@ -59,7 +121,7 @@ describe("a kit whose files are missing", () => {
   });
 
   test("a building, a wagon and a rail are a box each", () => {
-    for (const part of ["station", "hut", "office", "wagon", "locomotive", "shunter", "rail"] as const) {
+    for (const part of ["station", "hut", "office", "wagon", "van", "locomotive", "shunter", "rail"] as const) {
       expect(meshes(kit.make(part)), part).toBe(1);
     }
     // A works' box has a stub of a chimney, and says where its mouth is.
@@ -72,7 +134,7 @@ describe("a kit whose files are missing", () => {
     expect(warned).toContain("kit: city/building-i did not load, drawing a box");
   });
 
-  test("a building's box is in its walls' accent, and a wagon's and a locomotive's are the scene's to paint", () => {
+  test("a building's box is in its walls' accent, a wagon's and a locomotive's are the scene's to paint, and what carries no bead is a tone", () => {
     const wears = (o: THREE.Object3D) => {
       const seen: THREE.Material[] = [];
       o.traverse((part) => {
@@ -84,6 +146,7 @@ describe("a kit whose files are missing", () => {
     expect(wears(kit.make("works"))).toEqual([paint(building.works[0]), paint(building.works[1])]);
     for (const part of ["wagon", "locomotive"] as const) expect(wears(kit.make(part)).map((m) => m.name), part).toEqual([TINT]);
     expect(wears(kit.make("shunter"))).toEqual([paint("slate")]);
+    expect(wears(kit.make("van"))).toEqual([paint("roof")]);
   });
 
   test("a silo is a box with the band its provider's colour goes on", () => {
@@ -193,6 +256,187 @@ describe("a kit whose files are missing", () => {
     // The red, the green and the blue of the containers: no accent is left.
     const tones: Tone[] = [toned(0xe0, 0x50, 0x58), toned(0x60, 0xcc, 0x90), toned(0x60, 0x90, 0xd8)];
     for (const tone of tones) expect(["pale", "roof"]).toContain(tone);
+  });
+});
+
+describe("the kit's own models", () => {
+  // The files themselves, loaded as the page loads them.
+  let own: Kit;
+  const textures: Record<string, Pixels> = {};
+  beforeAll(async () => {
+    for (const pack of ["", "city/"]) textures[pack] = await png(await readFile(new URL(`../public/kit/${pack}Textures/colormap.png`, import.meta.url)));
+    vi.stubGlobal("fetch", served);
+    // The loader says how far it is, to nobody here, and asks the page for
+    // an address only for a picture inside a file: the packs' lie beside.
+    vi.stubGlobal("ProgressEvent", class {});
+    vi.stubGlobal("self", { URL });
+    vi.stubGlobal("createImageBitmap", async (file: Blob) => ({ ...(await png(new Uint8Array(await file.arrayBuffer()))), close() {} }));
+    const before = warned.length;
+    own = await loadKit(KIT);
+    expect(warned.slice(before)).toEqual([]);
+    vi.stubGlobal("fetch", async () => new Response("", { status: 404 }));
+  });
+
+  // A texture's swatches: sixteen columns of four rows, each one colour or
+  // one that fades down it. The saturation of a swatch from its least to its
+  // most, as COLOUR measures it.
+  const swatch = ({ width, height, data }: Pixels, row: number, column: number): [number, number] | undefined => {
+    const all: number[] = [];
+    for (let y = (row * height) / 4; y < ((row + 1) * height) / 4; y++) {
+      for (let x = (column * width) / 16; x < ((column + 1) * width) / 16; x++) {
+        const [red, green, blue] = data.subarray(4 * (y * width + x), 4 * (y * width + x) + 3) as unknown as [number, number, number];
+        const most = Math.max(red, green, blue);
+        all.push(most === 0 ? -1 : (most - Math.min(red, green, blue)) / most);
+      }
+    }
+    // The texture is black where it has no swatch.
+    return all.every((s) => s < 0) ? undefined : [Math.min(...all), Math.max(...all)];
+  };
+  // The swatches of a texture on each side of COLOUR, and those it parts,
+  // each as row and column.
+  const sides = (pack: string) => {
+    const found = { neutral: [] as string[], colour: [] as string[], parted: [] as string[] };
+    let [neutral, colour] = [0, 1];
+    for (let row = 0; row < 4; row++) {
+      for (let column = 0; column < 16; column++) {
+        const span = swatch(textures[pack]!, row, column);
+        if (!span) continue;
+        const side = span[1] <= COLOUR ? "neutral" : span[0] > COLOUR ? "colour" : "parted";
+        found[side].push(`${row}/${column}`);
+        if (side === "neutral") neutral = Math.max(neutral, span[1]);
+        if (side === "colour") colour = Math.min(colour, span[0]);
+      }
+    }
+    return { ...found, most: neutral, least: colour };
+  };
+
+  test("COLOUR parts the swatches of the packs' textures: white, iron, dark, pale glass and cream below it, and every hue above, wood with them", () => {
+    const train = sides("");
+    // Row 1: red, blue, the pale glass and its fade into blue, purple, pink.
+    // Row 2: white, terracotta, wood, skin and its fade into tan, cream,
+    // green, yellow, orange. Row 3: glass, the whites, red, orange, and from
+    // column 8 the darks and the irons.
+    expect(train.colour).toEqual(["1/0", "1/1", "1/2", "1/3", "1/6", "1/7", "1/8", "1/9", "2/2", "2/3", "2/4", "2/5", "2/10", "2/11", "2/12", "2/13", "2/14", "2/15", "3/4", "3/5", "3/6", "3/7"]);
+    expect(train.neutral).toEqual(["1/4", "2/0", "2/1", "2/6", "2/8", "2/9", "3/0", "3/2", "3/3", "3/8", "3/9", "3/10", "3/11", "3/12", "3/13", "3/14", "3/15"]);
+    expect(train.parted).toEqual(["1/5", "2/7", "3/1"]);
+    const city = sides("city/");
+    // Row 0: blue, glass, purple, pink, pale pink. Row 1: terracotta, wood,
+    // skin, cream, green, yellow, orange, red. Row 2: the irons, the darks,
+    // white. Row 3: dark, green, brick, slate blue, glass, a deep blue and a
+    // periwinkle that fades across the line, white.
+    expect(city.colour).toEqual(["0/0", "0/1", "0/4", "0/5", "0/6", "0/7", "1/0", "1/1", "1/2", "1/3", "1/8", "1/9", "1/10", "1/11", "1/12", "1/13", "1/14", "1/15", "3/2", "3/3", "3/4", "3/12"]);
+    expect(city.parted).toEqual(["0/3", "1/5", "3/5", "3/9", "3/13"]);
+    expect(city.neutral.length).toBe(31);
+    // The two sides lie well apart: the line is between them, not on one.
+    for (const { most, least } of [train, city]) {
+      expect(most).toBeLessThan(0.39);
+      expect(least).toBeGreaterThan(0.48);
+      expect(COLOUR).toBeGreaterThan(most + 0.05);
+      expect(COLOUR).toBeLessThan(least - 0.03);
+    }
+    // As the kit asks it: the wagons' irons and white are no colour, glass
+    // neither, and a container's red, green and blue are, and a log's brown.
+    expect([coloured(0x86, 0x8b, 0xa1), coloured(255, 255, 255), coloured(0x38, 0x38, 0x3d), coloured(0xd0, 0xe8, 0xff), coloured(0, 0, 0)]).toEqual([false, false, false, false, false]);
+    expect([coloured(0xe7, 0x58, 0x5e), coloured(0x61, 0xcb, 0x8b), coloured(0x67, 0x94, 0xd9), coloured(0xb0, 0x60, 0x41)]).toEqual([true, true, true, true]);
+  });
+
+  // What a model wears, and how much of it by the area of its faces: the
+  // pack's texture ("texture"), its glass, TINT, or a paint of the palette
+  // by its name.
+  const named = new Map<THREE.Material, string>(([...Object.values(building).flat(), "overlay", "track", "slate"] as const).map((of) => [paint(of), of]));
+  const worn = (model: THREE.Object3D) => {
+    const area: Record<string, number> = {};
+    model.updateMatrixWorld(true);
+    model.traverse((part) => {
+      if (!(part instanceof THREE.Mesh)) return;
+      expect(part.castShadow && part.receiveShadow).toBe(true);
+      const geometry = part.geometry as THREE.BufferGeometry;
+      const [at, index] = [geometry.getAttribute("position"), geometry.getIndex()!];
+      const materials = [part.material].flat() as THREE.MeshStandardMaterial[];
+      const groups = geometry.groups.length > 0 ? geometry.groups : [{ start: 0, count: index.count, materialIndex: 0 }];
+      for (const { start, count, materialIndex } of groups) {
+        const m = materials[materialIndex ?? 0]!;
+        const name = named.get(m) ?? (m.name === TINT ? TINT : m.name.endsWith("specular") ? "glass" : m.map ? "texture" : "other");
+        for (let i = start; i < start + count; i += 3) {
+          const [a, b, c] = [0, 1, 2].map((n) => new THREE.Vector3().fromBufferAttribute(at, index.getX(i + n)).applyMatrix4(part.matrixWorld));
+          area[name] = (area[name] ?? 0) + new THREE.Triangle(a, b, c).getArea();
+        }
+      }
+    });
+    return area;
+  };
+  const kinds = (part: Part, n: number) => Array.from({ length: n }, (_, pick) => worn(own.make(part, pick)));
+
+  test("what rolls wears the pack's texture, and the faces the pack painted a colour are the scene's: every wagon has some, a van none", () => {
+    // Three containers, a tank, a load of logs; a locomotive.
+    for (const of of [...kinds("wagon", 5), ...kinds("locomotive", 1)]) {
+      expect(Object.keys(of).sort()).toEqual(["texture", TINT]);
+      expect(of[TINT]).toBeGreaterThan(1);
+      // Frame, wheels and whatever was iron are the greater part or near it.
+      expect(of.texture).toBeGreaterThan(of[TINT]! * 0.7);
+    }
+    // A container's box is more of it than a tank's ends or the logs.
+    const [container, , , tank, logs] = kinds("wagon", 5).map((of) => of[TINT]!);
+    expect(container).toBeGreaterThan(tank!);
+    expect(tank).toBeGreaterThan(logs!);
+    // The box van and the coal wagon are iron all over.
+    for (const of of kinds("van", 2)) expect(Object.keys(of)).toEqual(["texture"]);
+    // A shunter's body, the pack's yellow, is overlay; its windows are glass
+    // of the texture still.
+    const [shunter] = kinds("shunter", 1);
+    expect(Object.keys(shunter!).sort()).toEqual(["overlay", "texture"]);
+    expect(shunter!.overlay).toBeGreaterThan(1);
+  });
+
+  test("a building wears the pack's texture, and the little the pack painted a colour is its kind's accents: the lightest hue its walls', another its roof's", () => {
+    const [station] = kinds("station", 1);
+    const [hut] = kinds("hut", 1);
+    const [office] = kinds("office", 1);
+    const [works] = kinds("works", 1);
+    // A station and a works have the pack's yellow alone: their walls'.
+    expect(Object.keys(station!).sort()).toEqual(["glass", "teal", "texture"]);
+    expect(Object.keys(works!).sort()).toEqual(["glass", "lavender", "texture"]);
+    // A hut and an office have a plant by the door too, green in its pot:
+    // their roof's.
+    expect(Object.keys(hut!).sort()).toEqual(["glass", "peach", "texture", "yellow"]);
+    expect(Object.keys(office!).sort()).toEqual(["glass", "sapphire", "sky", "texture"]);
+    // The pack's buildings are iron and white: the accent is a trim.
+    for (const of of [station!, hut!, office!, works!]) {
+      const accent = Object.entries(of).reduce((sum, [name, area]) => (name === "texture" || name === "glass" ? sum : sum + area), 0);
+      expect(accent).toBeGreaterThan(0.1);
+      expect(accent).toBeLessThan(of.texture! / 8);
+    }
+    // A silo's band is its provider's, and the tank has no colour beside it.
+    const [silo] = kinds("silo", 1);
+    expect(Object.keys(silo!).sort()).toEqual(["texture", TINT]);
+    // The rails are flat, in the track's tone, as they were.
+    expect(Object.keys(kinds("rail", 1)[0]!).sort()).toEqual(["slate", "track"]);
+  });
+
+  test("the scene paints a wagon's colour in its bead's accent, and night changes that and not the texture", () => {
+    const bead: Bead = { id: "signalbox-a", title: "a", type: "task", stage: "backlog", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" };
+    const stock = new Stock(layout({ ...yard, beads: [bead] }), own);
+    const wagon = stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === bead.id)!;
+    const wears = new Set<THREE.MeshStandardMaterial>();
+    wagon.traverse((part) => {
+      if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) wears.add(m as THREE.MeshStandardMaterial);
+    });
+    const [texture, ...rest] = [...wears].sort((a, b) => Number(!!b.map) - Number(!!a.map));
+    expect(rest).toEqual([paint("blue")]);
+    expect(texture!.map).not.toBeNull();
+    const day = texture!.color.getHex();
+    dress(true);
+    expect(paint("blue").color.getHex()).toBe(accents.blue);
+    expect(texture!.color.getHex()).toBe(day);
+    dress(false);
+  });
+
+  test("a model whose texture cannot be read is as the pack has it", () => {
+    const worn = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), worn);
+    accented(mesh, [TINT, TINT]);
+    expect(mesh.material).toEqual([worn]);
+    expect(mesh.castShadow && mesh.receiveShadow).toBe(true);
   });
 });
 

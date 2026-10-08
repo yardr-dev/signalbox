@@ -1,20 +1,23 @@
-// The picture's colours, all of them, and the paint made of them. The look is
-// Mini Motorways' (Dinosaur Polo Club) ground and labels with Catppuccin's
-// accents: flat colour, a pale ground, and on it a town of coloured blocks.
-// So there are three kinds here. The tones are the greys and creams the
+// The picture's colours, all of them but the kit's own, and the paint made of
+// them. The look is Mini Motorways' (Dinosaur Polo Club) ground and labels,
+// the kit's own models on it in the texture they came in, and Catppuccin's
+// accents where the kit had painted a colour (kit.ts says which faces those
+// are). So there are three kinds here. The tones are the greys and creams the
 // ground, the track and the platforms are built of, one set by day and one by
 // night. The accents are Catppuccin's, Latte's by day and Mocha's by night
-// under the same names: what stands and what rolls is painted in them. The
-// colours that mean something of their own (a lamp, a fault, the weather)
-// are the same in both. Nothing else in the page names a colour of the
-// picture: the labels' are the tones ink and pill, which the page hands to
-// its stylesheet (main.ts).
+// under the same names: the faces of what stands and what rolls that the kit
+// had in a colour are painted in them, and so is what the scene builds of
+// boxes. The colours that mean something of their own (a lamp, a fault, the
+// weather) are the same in both. Nothing else in the page names a colour of
+// the picture: the labels' are the tones ink and pill, which the page hands
+// to its stylesheet (main.ts).
 
 import * as THREE from "three";
 
-// By day: a cream map, the depots' beds a little darker. The kits' models are
-// sorted into wall, pale, roof and slate by how light each of their own
-// colours is (kit.ts): what has no accent of its own is painted in these.
+// By day: a cream map, the depots' beds a little darker. wall, pale, roof and
+// slate are what the scene builds of boxes in (a platform's signal, a silo's
+// indicators), and what a rail's faces are sorted into by how light the kit
+// had them (kit.ts).
 const day = {
   ground: 0xf4efe4,
   bed: 0xe8e1d2,
@@ -97,11 +100,14 @@ const mocha: Record<Accent, number> = {
 // The accents as they are now: dress changes them with the tones.
 export const accents: Record<Accent, number> = { ...latte };
 
-// What stands, by its kind: its walls in one accent and its roof in a
-// neighbour of it. The colour says nothing: a hut is a hut's colour in every
-// depot, so the yard reads as a town of coloured blocks. Red and maroon are
-// no building's: red is a fault's and a stop lamp's. box is a signal box,
-// post a pole of the telegraph, board a peer's sign.
+// What stands, by its kind: two accents, the second a neighbour of the
+// first. A building of boxes has its walls in one and its roof in the other.
+// One of the kit's keeps its texture, and has the first where the kit had
+// painted it its lightest colour and the second where another (kit.ts): a
+// trim, for the kit's buildings are iron and white. The colour says nothing:
+// a hut is a hut's colour in every depot. Red and maroon are no building's:
+// red is a fault's and a stop lamp's. box is a signal box, post a pole of the
+// telegraph, board a peer's sign.
 export const building = {
   box: ["rosewater", "flamingo"],
   station: ["teal", "green"],
@@ -116,7 +122,7 @@ export type Building = keyof typeof building;
 
 // A wagon by the type of its bead, the same across the yard, so a train's
 // wagons are told from tasks at a glance; sky for a type the table does not
-// have. They are of the accents a lamp, a flag, chocks and moss read on: the
+// have. It goes where the kit had painted the wagon a colour. They are of the accents a lamp, a flag, chocks and moss read on: the
 // blues and the purples, and no warm one.
 export const stock: Record<string, Accent> = { task: "blue", train: "mauve", wagon: "teal", memory: "lavender" };
 export function stocked(type: string): Accent {

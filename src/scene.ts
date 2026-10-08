@@ -89,9 +89,9 @@ const COAL: Record<Coal, number> = { plenty: iron, low: lamp.wait, last: lamp.st
 const STEP = 0.2;
 const TURN = 9;
 const FADE = 0.2;
-// A peer's goods by the kind of the message: the kit's wagon and its size. A
-// ping is the lighter wagon: the kit has no empty flat, so it is the box van
-// small.
+// A peer's goods by the kind of the message: the kit's van and its size. Mail
+// is the box van and a bead the coal wagon. A ping is the lighter one: the
+// kit has no empty flat, so it is the box van small.
 const GOODS: Record<string, [pick: number, size: number]> = { mail: [0, 1], bead: [1, 1], ping: [0, 0.65] };
 const GOODS_LABEL_Y = 2.1;
 // The seconds the wire stays lit after a hook.
@@ -347,8 +347,8 @@ function signalBox(x: number, z: number): THREE.Object3D {
   return g;
 }
 
-// Paint what the kit left for the scene (TINT): a silo's band, a wagon's
-// body.
+// Paint what the kit left for the scene (TINT): a silo's band, and of a
+// wagon or a locomotive the faces the pack had in a colour of its own.
 function coat(model: THREE.Object3D, wears: THREE.Material) {
   model.traverse((part) => {
     if (!(part instanceof THREE.Mesh)) return;
@@ -1187,9 +1187,8 @@ export class Stock {
     const engine = line && this.engines.get(`${line.key}/${way}`);
     if (!line || !engine) return;
     const [pick, size] = GOODS[kind ?? ""] ?? GOODS.mail!;
-    const wagon: Mover = { object: this.kit.make("wagon", pick), size };
-    // No bead rides in it: it is no type's colour.
-    coat(wagon.object, paint("roof"));
+    // No bead rides in it: it is a van, the kit's iron and no type's colour.
+    const wagon: Mover = { object: this.kit.make("van", pick), size };
     wagon.object.scale.setScalar(size);
     wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));
     wagon.object.visible = false;
