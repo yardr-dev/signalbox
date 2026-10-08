@@ -34,9 +34,11 @@ export interface YardEvent {
     depot?: string;
     type?: string;
     peer?: string;
-    // Of a peer message: mail, ping. Of an edge: blocks, parent,
+    // Of a peer message: mail, file, ping, bead. Of an edge: blocks, parent,
     // discovered-from.
     kind?: string;
+    // Of a peer message that was refused: in or out.
+    direction?: string;
     crew?: string;
     // Of a close: merged, a landing. No other reason leaves the yard.
     reason?: string;
@@ -153,6 +155,49 @@ export const SHOWN = new Set([
   "peer_message_received",
   "hook",
 ]);
+
+// A peer's message that is a train on its line: the way it goes, and the
+// files that crossed with it.
+export interface Train {
+  peer: string;
+  way: "out" | "in";
+  kind?: string;
+  files: number;
+}
+
+// The trains of some events, oldest first: one for a message a peer has
+// (out) or this yard took (in). A file is no train of its own. It crosses
+// as a message before the mail that names it, and a link keeps its order,
+// so the files since a link's last mail, one way, are that mail's. The
+// messages say so themselves, each when it crossed, which the mail event
+// does not: it is logged when mail out is queued, and its list names the
+// files the other yard refused too. loaded is that count, by peer and way:
+// it is kept here, from one lot of events to the next. Mail that was
+// refused or given up takes none along, and its files are not the next
+// one's.
+export function trains(events: readonly YardEvent[], loaded: Map<string, number>): Train[] {
+  const out: Train[] = [];
+  for (const e of events) {
+    const { peer, kind, direction } = e.data ?? {};
+    if (peer === undefined) continue;
+    const crossed = e.kind === "peer_message_sent" ? "out" : e.kind === "peer_message_received" ? "in" : undefined;
+    const lost = e.kind === "peer_message_failed" ? "out" : e.kind === "peer_message_refused" && (direction === "out" || direction === "in") ? direction : undefined;
+    const way = crossed ?? lost;
+    if (!way) continue;
+    const key = `${peer}/${way}`;
+    if (crossed && kind === "file") {
+      loaded.set(key, (loaded.get(key) ?? 0) + 1);
+      continue;
+    }
+    if (kind !== "mail") {
+      if (crossed) out.push({ peer, way, ...(kind !== undefined ? { kind } : {}), files: 0 });
+      continue;
+    }
+    if (crossed) out.push({ peer, way, kind, files: loaded.get(key) ?? 0 });
+    loaded.delete(key);
+  }
+  return out;
+}
 
 // The kinds that change what the yard is built of: a depot, a flow, a group,
 // a route, a peer, a crew, or a pack that brings any of them. No event

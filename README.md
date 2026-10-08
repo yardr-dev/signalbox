@@ -228,7 +228,9 @@ snapshot holds, and says "notes need the live page". The yard's crew members sta
 their signal boxes. A held bead stands in the siding. A peer's
 message is a goods wagon on the peer's line, named by its kind and its peer:
 out from the yard's end past the edge of the yard, or in from there, a few
-seconds either way, each on its own rail. Goods are pulled too, by the kit's
+seconds either way, each on its own rail. Mail is a train: the box van for
+its text, and behind it an open wagon for each image that crossed with it
+(the messages of kind `file` before it on the link). Goods are pulled too, by the kit's
 steam locomotive: the line has one of its own for goods out, parked at the
 yard's end, and goods in come behind one of the peer's, which goes home when they have gone.
 One train runs each way at a time, and the next waits out of sight. A hook
@@ -500,7 +502,8 @@ page and the script, run by Node alone, with no `npm ci` and no build.
   painted again, in its kind's accents, the lightest hue its walls' and
   another its roof's. A wagon, a locomotive and a shunter are the pack's own,
   colours and all. The wagons a bead rides in (`wagon`) are the kinds the
-  pack painted a colour, a peer's goods (`van`) the two it left iron. A
+  pack painted a colour, a peer's goods (`van`) the two it left iron; an
+  image with a peer's mail rides the load of logs. A
   wagon's box, when its model does not load, is the blue of the kit's blue
   container (`0x658dd6`), a locomotive's the green of the kit's locomotive
   (`0x56c186`): `stand` in `src/palette.ts`. Rail alone is painted
@@ -522,6 +525,8 @@ page and the script, run by Node alone, with no `npm ci` and no build.
   It keeps by works the runs open on it and how its last one ended.
   A feed's event goes through the same reducer; `outgrown` says when one
   names what the snapshot does not hold, and the page takes a new one.
+  `trains` is which of some events are a train on a peer's line, and how
+  many files each mail has behind it.
 - `src/player.ts`: the replay's clock and speed, and, live, a window that
   grows at its end. `src/motion.ts`: the way a wagon takes between two
   places, and how long it takes (a second at most, at any speed; a peer's goods four at

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { PEER_LENGTH, RETURN_Z, SIDING_Z, SLOT_PITCH, type Point } from "../src/layout";
 import { goods, goodsSeconds, GOODS_END, GOODS_STAND, RUN_OUT, TWEEN_MAX, TWEEN_MIN, type Pose, type Stop } from "../src/motion";
-import { ahead, BACKLOG, COUPLING, freight, hauling, legSeconds, RELEASE, Shunter, shunting, type Leg, type Order } from "../src/shunt";
+import { ahead, BACKLOG, consist, coupled, COUPLING, freight, hauling, legSeconds, RELEASE, Shunter, shunting, type Leg, type Order } from "../src/shunt";
 
 // A track along z = 10 from its headshunt at x = -12 to its buffer at 54:
 // platforms a stage's pitch apart from x = 0, the third (24) a siding.
@@ -399,6 +399,68 @@ describe("a peer's goods are pulled too", () => {
     expect(legs).toEqual(["pull", "release", "return"]);
     expect(released).toBeCloseTo(goodsSeconds(1), 1);
     expect(shunter.pose().engine.x).toBe(GOODS_END + COUPLING);
+  });
+
+  test("mail is a van, and a wagon behind it for each of its images; a ping and a bead are one vehicle", () => {
+    const parts = (kind: string | undefined, files?: number) => consist(kind, files).map((v) => v.part);
+    expect(parts("mail")).toEqual(["van"]);
+    expect(parts("mail", 2)).toEqual(["van", "wagon", "wagon"]);
+    // The two wagons are alike, and no van's kind.
+    const [van, first, second] = consist("mail", 2);
+    expect(first).toEqual(second);
+    expect(first).not.toEqual(van);
+    // Whatever crossed before them: a ping and a bead carry no image.
+    expect(consist("ping", 2)).toEqual([{ part: "van", pick: 0, size: 0.65 }]);
+    expect(consist("bead", 2)).toEqual([{ part: "van", pick: 1, size: 1 }]);
+    expect(consist("bead")).not.toEqual(consist("mail"));
+    expect(parts(undefined, 1)).toEqual(["van", "wagon"]);
+  });
+
+  test("a train's vehicles are a coupling apart, on the rail: out its last at the yard's end, in its first", () => {
+    for (const dir of ["out", "in"] as const) {
+      const way = goods(peer, EDGE, dir);
+      expect(coupled(way, dir, 1)).toEqual([way]);
+      const ways = coupled(way, dir, 3);
+      const near = ways.map((w) => (dir === "out" ? w[0]! : w.at(-1)!).x);
+      expect(near).toEqual(dir === "out" ? [GOODS_END + 2 * COUPLING, GOODS_END + COUPLING, GOODS_END] : [GOODS_END, GOODS_END + COUPLING, GOODS_END + 2 * COUPLING]);
+      for (const w of ways) expect(w.map((p) => p.z)).toEqual(way.map((p) => p.z));
+    }
+  });
+
+  test("a mail with two images is one order: the engine, the van and two wagons, coupled in that order, either way", () => {
+    for (const dir of ["out", "in"] as const) {
+      const { way, shunter } = line(dir);
+      const at = hauling(way)[0]!;
+      const keys = consist("mail", 2).map((_, i) => `mail/${i}`);
+      shunter.take({ key: "mail", wagons: keys.map((key) => ({ key, from: { at, line: at.z, end: Infinity } })), speed: 1, close: [] });
+      const ahead = dir === "out" ? 1 : -1;
+      const released: string[] = [];
+      let pulled = 0;
+      for (let i = 0; shunter.busy && i < 2000; i++) {
+        released.push(...shunter.tick(0.01).map((o) => o.key));
+        const { engine, wagons, leg } = shunter.pose();
+        if (leg !== "pull") continue;
+        pulled++;
+        expect(wagons.map((w) => w.key)).toEqual(keys);
+        // From the engine back, a coupling each.
+        const row = [engine, ...wagons.map((w) => w.pose)];
+        for (let n = 1; n < row.length; n++) expect((row[n - 1]!.x - row[n]!.x) * ahead).toBeCloseTo(COUPLING);
+        // None of it behind where the line begins.
+        for (const p of row) expect(p.x).toBeGreaterThan(peer.at.x + 1.35);
+      }
+      expect(pulled).toBeGreaterThan(0);
+      // One run for the mail.
+      expect(released).toEqual(["mail"]);
+      expect(shunter.pose().engine.x).toBeCloseTo(at.x);
+    }
+  });
+
+  test("the line's engine runs up the line to make room for a longer train behind it", () => {
+    const { way, shunter } = line("out");
+    const at = hauling(way)[0]!;
+    shunter.take({ key: "mail", wagons: ["a", "b"].map((key) => ({ key, from: { at, line: at.z, end: Infinity } })), speed: 1, close: [] });
+    shunter.tick(0.01);
+    expect(shunter.pose()).toMatchObject({ leg: "fetch", wagons: [] });
   });
 
   test("in behind an engine of the peer's, which stands while they do and goes home", () => {

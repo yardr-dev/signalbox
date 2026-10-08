@@ -22,7 +22,7 @@ import { loadKit } from "./kit";
 import { layout } from "./layout";
 import { css, dress, palette, SHADE } from "./palette";
 import { Player, SPEEDS } from "./player";
-import { line, outgrown } from "./replay";
+import { line, outgrown, trains } from "./replay";
 import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
@@ -596,11 +596,15 @@ async function start() {
     // Sound left on by an earlier visit starts with the first touch of this
     // one: a browser lets no page sound before.
     for (const touch of ["pointerup", "keydown"]) window.addEventListener(touch, () => sound.wake());
+    // The files that crossed a link since its last mail: that mail's wagons.
+    const loaded = new Map<string, number>();
     // A scrub is a new state, not a move: everything stands where it was
-    // then. It leaves the yard as it runs for the replay of the window.
+    // then, and no file waits for its mail. It leaves the yard as it runs
+    // for the replay of the window.
     const seek = (clock: number) => {
       player.live = false;
       player.seek(clock);
+      loaded.clear();
       present({ tween: false });
       stale = true;
       told();
@@ -615,12 +619,8 @@ async function start() {
       // Live, the yard's own pace, whatever speed the bar was left at.
       const speed = player.live ? 1 : player.speed;
       for (const cue of cues(passed)) sound.play(cue);
-      for (const e of passed) {
-        if (e.kind === "hook") stock.flash();
-        const peer = e.data?.peer;
-        if (peer !== undefined && e.kind === "peer_message_sent") stock.goods(peer, "out", e.data?.kind, speed);
-        if (peer !== undefined && e.kind === "peer_message_received") stock.goods(peer, "in", e.data?.kind, speed);
-      }
+      for (const e of passed) if (e.kind === "hook") stock.flash();
+      for (const t of trains(passed, loaded)) stock.goods(t.peer, t.way, t.kind, speed, t.files);
       if (passed.length > 0) {
         // A bead an advance took out of the state went past the buffer.
         const left = new Set(passed.filter((e) => e.kind === "advanced").map((e) => e.bead ?? ""));

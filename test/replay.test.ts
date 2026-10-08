@@ -3,7 +3,7 @@ import window from "../public/events.json";
 import snapshot from "../public/yard.json";
 import { atWork, layout, people } from "../src/layout";
 import { Player } from "../src/player";
-import { FAULTS, line, opening, outgrown, SHOWN, state, step, STRUCTURE, world, type Log, type State, type YardEvent } from "../src/replay";
+import { FAULTS, line, opening, outgrown, SHOWN, state, step, STRUCTURE, trains, world, type Log, type State, type YardEvent } from "../src/replay";
 import type { Bead, Yard } from "../src/yard";
 
 // The committed snapshot and its events are the fixture: this yard's last
@@ -445,6 +445,54 @@ describe("the player", () => {
     expect(line({ seq: 3, at: "", kind: "closed", bead: "signalbox-a" })).toBe("closed · signalbox-a");
     expect(line({ seq: 4, at: "", kind: "dep_added", bead: "signalbox-b", data: { from: "signalbox-a", kind: "blocks" } })).toBe("dep added · signalbox-b · waits for signalbox-a");
     expect(line({ seq: 5, at: "", kind: "dep_removed", bead: "signalbox-b", data: { from: "signalbox-a", kind: "discovered-from" } })).toBe("dep removed · signalbox-b · discovered-from signalbox-a");
+  });
+});
+
+describe("a peer's trains", () => {
+  const sent = (kind: string, peer = "airy") => event("peer_message_sent", undefined, { peer, kind });
+  const received = (kind: string, peer = "airy") => event("peer_message_received", undefined, { peer, kind });
+
+  test("a plain mail is a train with no file, out or in; a file alone is none", () => {
+    expect(trains([sent("mail")], new Map())).toEqual([{ peer: "airy", way: "out", kind: "mail", files: 0 }]);
+    expect(trains([received("mail")], new Map())).toEqual([{ peer: "airy", way: "in", kind: "mail", files: 0 }]);
+    expect(trains([sent("file"), received("file")], new Map())).toEqual([]);
+    expect(trains([sent("ping"), received("bead")], new Map()).map((t) => [t.way, t.kind, t.files])).toEqual([["out", "ping", 0], ["in", "bead", 0]]);
+    // Not a peer's, or not a message that crossed.
+    expect(trains([event("hook"), event("peer_message_sent"), event("advanced", "signalbox-a", { from: "new", to: "review" })], new Map())).toEqual([]);
+  });
+
+  test("the files that crossed before a mail are that mail's: one run for it, either way", () => {
+    for (const [message, way] of [[sent, "out"], [received, "in"]] as const) {
+      const loaded = new Map<string, number>();
+      expect(trains([message("file"), message("file"), message("mail"), message("mail")], loaded)).toEqual([
+        { peer: "airy", way, kind: "mail", files: 2 },
+        { peer: "airy", way, kind: "mail", files: 0 },
+      ]);
+      expect(loaded.size).toBe(0);
+    }
+  });
+
+  test("the files wait for their mail from one lot of events to the next, by link and by way", () => {
+    const loaded = new Map<string, number>();
+    expect(trains([sent("file"), received("file"), sent("file", "bern")], loaded)).toEqual([]);
+    // A ping between them takes none along.
+    expect(trains([sent("ping"), sent("file")], loaded)).toEqual([{ peer: "airy", way: "out", kind: "ping", files: 0 }]);
+    expect(trains([received("mail"), sent("mail", "bern"), sent("mail")], loaded).map((t) => [t.peer, t.way, t.files])).toEqual([
+      ["airy", "in", 1],
+      ["bern", "out", 1],
+      ["airy", "out", 2],
+    ]);
+  });
+
+  test("a file that did not cross is no wagon, and the files of mail that did not are not the next one's", () => {
+    const refused = (kind: string, direction: string) => event("peer_message_refused", undefined, { peer: "airy", kind, direction });
+    const failed = (kind: string) => event("peer_message_failed", undefined, { peer: "airy", kind });
+    expect(trains([sent("file"), failed("file"), sent("mail")], new Map())[0]!.files).toBe(1);
+    expect(trains([received("file"), refused("file", "in"), received("mail")], new Map())[0]!.files).toBe(1);
+    expect(trains([sent("file"), failed("mail"), sent("mail")], new Map())).toEqual([{ peer: "airy", way: "out", kind: "mail", files: 0 }]);
+    expect(trains([received("file"), refused("mail", "in"), received("mail")], new Map())).toEqual([{ peer: "airy", way: "in", kind: "mail", files: 0 }]);
+    // Mail refused the other way is another rail's.
+    expect(trains([received("file"), refused("mail", "out"), received("mail")], new Map())[0]!.files).toBe(1);
   });
 });
 

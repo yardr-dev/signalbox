@@ -1426,6 +1426,27 @@ describe("the shunters of the stock", () => {
       expect(engine.visible).toBe(way === "out");
     }
   });
+
+  test("a peer's mail with two images is the engine, its van and two wagons in a row, and all of it goes", () => {
+    const [line] = empty.peers;
+    for (const way of ["out", "in"] as const) {
+      const stock = new Stock(empty, kit);
+      const engine = shunter(stock, `${line!.key}/${way}`);
+      const before = new Set(stock.root.children);
+      stock.goods(line!.name, way, "mail", 1, 2);
+      const train = stock.root.children.filter((o) => !before.has(o));
+      expect(train).toHaveLength(3);
+      // The van says what the train is; the wagons behind it are alike.
+      expect(train.map((o) => o.children.filter((c) => "element" in c).length)).toEqual([1, 0, 0]);
+      stock.tick(goodsSeconds(1) / 2 + (way === "out" ? TWEEN_MIN : 0));
+      expect(train.every((o) => o.visible) && engine.visible).toBe(true);
+      const row = [engine, ...train].map((o) => o.position.x * (way === "out" ? 1 : -1));
+      for (let i = 1; i < row.length; i++) expect(row[i - 1]! - row[i]!).toBeCloseTo(COUPLING);
+      for (const o of train) expect(o.position.z).toBe(engine.position.z);
+      run(stock, () => 0);
+      for (const o of train) expect(stock.root.children).not.toContain(o);
+    }
+  });
 });
 
 describe("the lamps of the wagons that wait", () => {

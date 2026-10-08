@@ -263,16 +263,55 @@ export function hauling(way: Point[]): Point[] {
   return way.map((p) => ({ x: p.x + dir * COUPLING, z: p.z }));
 }
 
+// One vehicle of a peer's goods: the kit's part, which of its kinds, and its
+// size.
+export interface Vehicle {
+  part: "van" | "wagon";
+  pick: number;
+  size: number;
+}
+
+// The kit's box van and its coal wagon (kit.ts, van), and of what a bead
+// rides in the load of logs: the open one, which no closed van is taken for.
+const BOX = 0;
+const COAL = 1;
+const OPEN = 4;
+
+// A peer's goods by the kind of the message, from the engine back. Mail is
+// the box van, and behind it an open wagon for each file that crossed with
+// it. A bead is the coal wagon. A ping is the lighter one: the kit has no
+// empty flat, so it is the box van small. A kind of tomorrow goes as mail.
+export function consist(kind: string | undefined, files = 0): Vehicle[] {
+  if (kind === "bead") return [{ part: "van", pick: COAL, size: 1 }];
+  if (kind === "ping") return [{ part: "van", pick: BOX, size: 0.65 }];
+  const wagons = Array.from({ length: Math.max(0, files) }, (): Vehicle => ({ part: "wagon", pick: OPEN, size: 1 }));
+  return [{ part: "van", pick: BOX, size: 1 }, ...wagons];
+}
+
+// The ways of a train's vehicles on a peer's line, from the engine back: a
+// coupling apart, each as long as the goods' own way. Out, the last stands
+// where goods stand at the yard's end, since the line begins behind it, and
+// those before it further up the line; in, the first comes to a stand there
+// and the others behind it.
+export function coupled(way: Point[], dir: "out" | "in", vehicles: number): Point[][] {
+  return Array.from({ length: vehicles }, (_, i) => {
+    const up = (dir === "out" ? vehicles - 1 - i : i) * COUPLING;
+    return way.map((p) => ({ x: p.x + up, z: p.z }));
+  });
+}
+
 // A peer's line, one way: the goods run their way behind the engine, at
-// their own pace. Out, the line's engine takes them from the yard's end
-// past the edge and comes back for the next; in, an engine of the peer's
-// brings them from there, stands while they are there, and goes home.
+// their own pace, the wagons of an order as one train. Out, the line's
+// engine takes them from the yard's end past the edge and comes back for
+// the next; in, an engine of the peer's brings them from there, stands
+// while they are there, and goes home.
 export function freight(way: Point[], dir: "out" | "in"): Plan {
-  const before = hauling(way);
   const stop = (at: Point): Stop => ({ at, line: at.z, end: Infinity });
   return {
     job(order, at) {
       const steps: Step[] = [];
+      const ways = coupled(way, dir, order.wagons.length);
+      const before = hauling(ways[0] ?? way);
       const start = stop(before[0]!);
       const end = stop(before.at(-1)!);
       const back = [at.at, start.at];
@@ -282,7 +321,7 @@ export function freight(way: Point[], dir: "out" | "in"): Plan {
         seconds: goodsSeconds(order.speed),
         ease: dir === "out" ? pull : brake,
         engine: before,
-        wagons: order.wagons.map((h) => ({ key: h.key, path: way })),
+        wagons: order.wagons.map((h, i) => ({ key: h.key, path: ways[i]! })),
         to: end,
       });
       steps.push({ leg: "release", seconds: (dir === "in" ? GOODS_STAND : 0) + TWEEN_MIN, ease, engine: [end.at], wagons: [], to: end });

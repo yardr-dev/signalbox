@@ -54,7 +54,7 @@ import {
   type Stop,
 } from "./motion";
 import { building, fault, iron, lamp, liveried, paint, smoke, tinted, weathering, type Accent, type Tone } from "./palette";
-import { freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
+import { consist, freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
 import type { Allowance, Bead, Provider, Quota } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
@@ -89,10 +89,6 @@ const COAL: Record<Coal, number> = { plenty: iron, low: lamp.wait, last: lamp.st
 const STEP = 0.2;
 const TURN = 9;
 const FADE = 0.2;
-// A peer's goods by the kind of the message: the kit's van and its size. Mail
-// is the box van and a bead the coal wagon. A ping is the lighter one: the
-// kit has no empty flat, so it is the box van small.
-const GOODS: Record<string, [pick: number, size: number]> = { mail: [0, 1], bead: [1, 1], ping: [0, 0.65] };
 const GOODS_LABEL_Y = 2.1;
 // The seconds the wire stays lit after a hook.
 const FLASH = 0.6;
@@ -1181,23 +1177,27 @@ export class Stock {
   // Goods on a peer's line: out to the peer past the yard's edge behind the
   // line's locomotive, or in from there behind an engine of the peer's to the
   // yard's end, where they stand a moment. kind is the message's (mail,
-  // ping, bead), speed the replay's. They are an order like any: they wait
-  // their turn out of sight, and with too many before them are not seen.
-  goods(peer: string, way: "out" | "in", kind: string | undefined, speed: number) {
+  // ping, bead), files how many crossed with it, speed the replay's. They
+  // are one order like any, however many wagons: they wait their turn out of
+  // sight, and with too many before them are not seen.
+  goods(peer: string, way: "out" | "in", kind: string | undefined, speed: number, files = 0) {
     const line = this.layout.peers.find((p) => p.name === peer);
     const engine = line && this.engines.get(`${line.key}/${way}`);
     if (!line || !engine) return;
-    const [pick, size] = GOODS[kind ?? ""] ?? GOODS.mail!;
-    // No bead rides in it: it is a van, the kit's iron all over.
-    const wagon: Mover = { object: this.kit.make("van", pick), size };
-    wagon.object.scale.setScalar(size);
-    wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));
-    wagon.object.visible = false;
-    this.root.add(wagon.object);
     const key = `goods/${this.sent++}`;
-    this.parting.set(key, { mover: wagon, engine: `${line.key}/${way}`, stand: way === "in" ? GOODS_STAND : 0 });
     const at = engine.queue.park.at;
-    this.land(this.give(engine.queue, { key, wagons: [{ key, from: { at, line: at.z, end: Infinity } }], speed, close: [] }, true));
+    const wagons = consist(kind, files).map(({ part, pick, size }, i) => {
+      // No bead rides in it, whatever the kit made it of.
+      const wagon: Mover = { object: this.kit.make(part, pick), size };
+      wagon.object.scale.setScalar(size);
+      // The first says what the train is.
+      if (i === 0) wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));
+      wagon.object.visible = false;
+      this.root.add(wagon.object);
+      this.parting.set(`${key}/${i}`, { mover: wagon, engine: `${line.key}/${way}`, stand: way === "in" ? GOODS_STAND : 0 });
+      return { key: `${key}/${i}`, from: { at, line: at.z, end: Infinity } };
+    });
+    this.land(this.give(engine.queue, { key, wagons, speed, close: [] }, true));
   }
 
   // A hook came in over the wire.
