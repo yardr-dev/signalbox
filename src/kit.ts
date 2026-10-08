@@ -8,17 +8,17 @@
 // palette instead, and the page still draws.
 //
 // The packs paint a model from a texture they share, and a model wears it
-// here as it came: the kit's own iron, white, glass and dark. Only where the
-// pack had painted a face in a colour (COLOUR says which) is it painted
-// again, by accented: in an accent of the palette (palette.ts), or left for
-// the scene to paint (TINT). A figure is the pack's own altogether. The rails
-// alone are painted flat, in the track's tone: they are the ribbon a track
-// reads as.
+// here as it came: the kit's own iron, white, glass and dark. What rolls and
+// a figure are the pack's own altogether, colours and all. Of a building
+// alone the faces the pack had painted in a colour (COLOUR says which) are
+// painted again, by accented, in an accent of the palette (palette.ts); a
+// silo's band is left for the scene to paint (TINT). The rails are painted
+// flat, in the track's tone: they are the ribbon a track reads as.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { building, hat, paint, type Accent, type Tone } from "./palette";
+import { building, hat, paint, stand, type Accent, type Tone } from "./palette";
 
 export type Part = "rail" | "wagon" | "van" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
 export type Outfit = "builder" | "reviewer" | "crew";
@@ -44,8 +44,8 @@ export interface Kit {
 const files: Record<Part, string[]> = {
   // One unit of track, to be laid end to end.
   rail: ["track"],
-  // What a bead rides in: the kinds the pack painted a colour, which is
-  // where the bead's goes. A container's box, a tank's barrel, a load of logs.
+  // What a bead rides in: the kinds the pack painted a colour. A blue, a
+  // green and a red container, a tank with red ends, a load of logs.
   wagon: [
     "train-carriage-container-blue",
     "train-carriage-container-green",
@@ -53,11 +53,12 @@ const files: Record<Part, string[]> = {
     "train-carriage-tank",
     "train-carriage-wood",
   ],
-  // The kinds that are iron all over, with no face for a bead's colour: they
-  // carry a peer's goods.
+  // The kinds that are iron all over: they carry a peer's goods.
   van: ["train-carriage-box", "train-carriage-coal"],
+  // The pack's steam engine, green with red beams and wheels.
   locomotive: ["train-locomotive-a"],
-  // The engine that moves the wagons: a track's, or a peer's line's.
+  // The engine that moves the wagons: a track's, or a peer's line's. The
+  // pack's diesel, yellow.
   shunter: ["train-diesel-a"],
   // The plainest long building, a small warehouse, a small office, a factory
   // with its chimneys.
@@ -101,18 +102,18 @@ const FIGURE_SIZE = 2;
 const FIGURE_HEIGHT = 1.35;
 
 // The name of a material the scene replaces with a colour of its own: a
-// silo's band, by its provider, and the body of what carries a bead, by the
-// bead.
+// silo's band, by its provider.
 export const TINT = "tint";
 
 // Length, height, width of the box that stands in for a part.
-// A building's is in its walls' accent, what a bead rides in is the scene's
-// to paint, and what carries none is a tone.
-const boxes: Record<Part, [number, number, number, Tone | Accent | typeof TINT]> = {
+// A building's is in its walls' accent. A wagon's and a locomotive's are in
+// the pack's own paint, as its texture has it (palette.ts, stand), and a
+// van's and a shunter's are a tone.
+const boxes: Record<Part, [number, number, number, Tone | Accent | number]> = {
   rail: [1, 0.12, 0.8, "track"],
-  wagon: [2.7, 1.3, 1.2, TINT],
+  wagon: [2.7, 1.3, 1.2, stand.wagon],
   van: [2.7, 1.3, 1.2, "roof"],
-  locomotive: [2.6, 1.6, 1.3, TINT],
+  locomotive: [2.6, 1.6, 1.3, stand.locomotive],
   shunter: [2.4, 1.6, 1.2, "slate"],
   station: [3.2, 1.3, 1.4, building.station[0]],
   hut: [2, 1.4, 2.4, building.hut[0]],
@@ -123,8 +124,7 @@ const boxes: Record<Part, [number, number, number, Tone | Accent | typeof TINT]>
 
 function box(part: Part): THREE.Object3D {
   const [length, height, width, wears] = boxes[part];
-  const body = block(wears === TINT ? "slate" : wears, length, height, width, 0);
-  if (wears === TINT) body.material = accent();
+  const body = block(wears, length, height, width, 0);
   const group = new THREE.Group().add(body);
   if (part === "silo") {
     // A silo's box has the band its provider's colour goes on.
@@ -300,17 +300,10 @@ function sleeper(u: number, v: number, wears: THREE.Material): Wear {
 }
 
 // What the faces the pack painted a colour are painted in here, for each
-// part that wears its texture: the first for the lightest of a model's
-// colours, the second for any other it has. A building's are its kind's
-// walls' and roof's (palette.ts). What carries a bead leaves them all to the
-// scene, which paints them by the bead. An engine and a van carry none, and
-// the pack's yellow would be a wagon's lamp from far out: they are overlay,
-// Catppuccin's grey.
-const trims: Record<Exclude<Part, "rail">, readonly [Wear, Wear]> = {
-  wagon: [TINT, TINT],
-  locomotive: [TINT, TINT],
-  van: ["overlay", "overlay"],
-  shunter: ["overlay", "overlay"],
+// building: the first for the lightest of a model's colours, the second for
+// any other it has, its kind's walls' and roof's (palette.ts). What rolls
+// has no trim: it keeps the pack's colours.
+const trims: Partial<Record<Part, readonly [Wear, Wear]>> = {
   station: building.station,
   hut: building.hut,
   office: building.office,
@@ -363,6 +356,13 @@ function sorted(model: THREE.Object3D, wear: (u: number, v: number, own: THREE.M
       start += all.length;
     });
     part.material = [...by.keys()];
+  });
+}
+
+// Every part of a model throws and takes the yard's one shadow.
+function sunlit(model: THREE.Object3D) {
+  model.traverse((part) => {
+    if (part instanceof THREE.Mesh) part.castShadow = part.receiveShadow = true;
   });
 }
 
@@ -458,8 +458,11 @@ export async function loadKit(base: string): Promise<Kit> {
     model.scale.setScalar(size);
     const group = new THREE.Group().add(model);
     if (part === "silo") banded(model);
+    const trim = trims[part];
     if (part === "rail") flat(model, sleeper);
-    else accented(model, trims[part]);
+    else if (trim) accented(model, trim);
+    // What rolls is the pack's own, as a figure is.
+    else sunlit(model);
     const mouth = part === "works" ? chimney(group) : undefined;
     if (mouth) group.userData[CHIMNEY] = mouth;
     return group;
@@ -471,9 +474,7 @@ export async function loadKit(base: string): Promise<Kit> {
     file.scene.rotation.y = Math.PI / 2;
     file.scene.scale.setScalar(FIGURE_SIZE);
     // In the pack's own colours, and under the yard's one sun and shadow.
-    file.scene.traverse((part) => {
-      if (part instanceof THREE.Mesh) part.castShadow = part.receiveShadow = true;
-    });
+    sunlit(file.scene);
     const found: Figure["clips"] = {};
     for (const [clip, name] of Object.entries(clips) as [Clip, string][]) {
       const animation = file.animations.find((a) => a.name === name);

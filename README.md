@@ -34,18 +34,18 @@ Polo Club, https://dinopoloclub.com/games/mini-motorways/): a cream ground
 with nothing behind it, the depots as pads a little darker, a track as a warm
 grey ribbon, thin labels on white pills, one sun and one soft shadow. On that
 stand the kit's own models, in the texture the packs paint them from: their
-iron, white, glass and dark as they came. Only where a pack had painted a
-face in a colour does one of Catppuccin's accents
-(https://github.com/catppuccin/palette) go instead.
+iron, white, glass and dark as they came. What rolls keeps the kit's colours
+too. Only on a building, where a pack had painted a face in a colour, does
+one of Catppuccin's accents (https://github.com/catppuccin/palette) go
+instead.
 
 What a colour of the kit's is, is one rule (`COLOUR` in `src/kit.ts`): the
 saturation of the texture where the face lies on it, over 0.45. The packs'
 texture is swatches, and they lie well apart on that: white, the irons, the
 darks, the pale glass and the creams are 0.38 at most, and the reds, oranges,
 yellow, green, blues, purple and pink 0.48 at least. So do the browns of
-wood and brick: no saturation parts them from a blue, and a wagon's load of
-logs is painted as a container's box is. A test reads both textures and
-names the swatches on each side.
+wood and brick: no saturation parts them from a blue. A test reads both
+textures and names the swatches on each side.
 
 A building has its kind's two accents. The lightest of the colours the pack
 gave it goes in the first, its walls', and any colour of another hue in the
@@ -69,20 +69,41 @@ says nothing: a hut is a hut's in every depot.
 | the telegraph's poles | yellow | yellow |
 | a peer's board | sapphire | sapphire |
 
-A wagon is one accent by the type of its bead, the same across the yard, so
-a train's wagons are told from tasks at a glance: a task blue, a train's
-locomotive mauve, a wagon teal, a memory lavender, any other type sky. It is
-on the faces the pack had coloured: a container's box, a tank's barrel, a
-load of logs, and of a locomotive its boiler and cab, its buffer beams and
-its driving wheels; frames, a wagon's wheels and a tank's bands stay iron. A bead rides only in the kinds that have such a face. They
-are the blues and purples because those are the accents a red or amber lamp,
-a red flag, orange chocks and green moss read on, fresh, dull and rusted: a
-test measures it (`test/scene.test.ts`, the distance in Oklab), and a warm
-accent or pink fails it. A shunter and a peer's goods carry no bead and stay
-grey: the shunter's body, the pack's yellow, is overlay, and goods ride in
-the two kinds the pack left iron all over, the box van and the coal wagon.
-Red and maroon are no building's and no wagon's: red is a fault's and a stop
-lamp's.
+A wagon is the kit's, in the colours the pack painted it: a blue, a green or
+a red container, a tank with red ends, a load of logs, by the bead's id, so a
+bead keeps its wagon. A train's locomotive is the pack's green steam engine
+with red beams and wheels, a shunter its yellow diesel, and a peer's goods
+ride in the two kinds the pack left iron all over, the box van and the coal
+wagon. The paint says nothing of the bead: its type is read from its label
+and its card, not from its wagon. Red and maroon are no building's: red is a
+fault's and a stop lamp's.
+
+What means something is put on the kit's paint, and a test measures how far
+each is from every colour of every wagon, fresh, dull and rusted, in the sun
+and in the shade (`test/scene.test.ts`, the distance in Oklab, where 0.1 is
+told at a glance):
+
+| on | amber lamp | red lamp | flag | chocks |
+| --- | --- | --- | --- | --- |
+| the blue container | 0.33 | 0.11 | 0.05 | 0.18 |
+| the green container | 0.21 | 0.29 | 0.26 | 0.21 |
+| the red container | 0.24 | 0.02 | 0.01 | 0.11 |
+| the tank | 0.24 | 0.02 | 0.01 | 0.11 |
+| the logs | 0.11 | 0.09 | 0.08 | 0.05 |
+| the locomotive | 0.21 | 0.03 | 0.01 | 0.12 |
+
+The amber of a wait lies on the roof and reads on all of them. The kit's red
+is a fault's red (the blue container has it too, at its darkest), and its
+logs are near the chocks' orange: by colour alone a red lamp and a flag are
+not told from a red container. They stand on a post over the roof, and chocks
+lie on the rail, so what they are seen against is the ground, the platform
+and the track, and the iron of frame and wheels: there each is 0.13 or more,
+by day and by night. The weather tints the whole wagon, the kit's texture
+with it: dull is 0.14 or more from fresh on every colour and iron (0.09 on
+the darks of a frame, which have little to lose), and rust
+goes on from dull on the blue, the green and the iron (0.08 to 0.13), while
+on the kit's red and on the logs rust is their own hue (0.03 to 0.05) and
+the iron beside them says it. Moss is 0.16 or more from the rust it lies on.
 
 The people are the kit's own, in its texture as it came; a hard hat is ours,
 hi-vis yellow for a builder and white for a reviewer.
@@ -92,7 +113,8 @@ labels' ink and pill too. Its tones are the greys and creams of the ground,
 the track and the platforms, one set by day and one by night. Its accents are
 Latte's by day and Mocha's by night under the same names, so what is mauve is
 mauve in both. A lamp, a fault and the weather are the same in both, and so
-is the kit's texture: it is lit as the people are and not recoloured. Night is
+is the kit's texture, a wagon's colours with it: it is lit as the people are
+and not recoloured. Night is
 the same picture on a near-black blue with the labels turned round. The page takes it when the
 reader's system is dark; Night on the bar says otherwise, and the browser
 remembers that until it is what the system says anyway. The camera looks down
@@ -406,7 +428,7 @@ machine's on a Tailscale net, for a phone on the same net.
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the committed snapshot and its replay.
 
-![The page following this yard, closer in: Live on the bar, two builders at work on two tank wagons at signalbox's new and the third by the door of signalbox's hut; yardr's hut below says the same 2 of 3 out, with one builder at its door, and the wagons at yardr's backlog have waited long enough for their paint to darken](docs/live.png)
+![The page following this yard, closer in: Live on the bar, a builder at work on a blue container at signalbox's new and two by the door of signalbox's hut, whose sign says 1 of 3 out; in yardr below, a green container and two red tanks at the backlog have waited long enough for their paint to darken, and a blue container stands in the siding at decide](docs/live.png)
 
 ## Where things are
 
@@ -457,14 +479,16 @@ of this is there, and the page is the committed snapshot and its replay.
   is a material of its own (`TINT`), cut from the faces that lie on the
   palette texture's orange, since the pack's models share the texture: the
   scene puts the provider's colour there, and on the band of a silo's box.
-  A model keeps the pack's texture, and the faces the pack had coloured are
-  sorted out of it the same way (`accented`): the texture is read where the
-  face lies on it, and a face more saturated than `COLOUR` is painted again.
-  A building's are its kind's accents, the lightest hue its walls' and
-  another its roof's; a wagon's and a locomotive's are left to the scene as
-  the band is (`TINT`), which paints them by the bead's type; a shunter's
-  are overlay. The wagons a bead rides in (`wagon`) are the kinds with such
-  a face, a peer's goods (`van`) the two without. Rail alone is painted
+  A model keeps the pack's texture, and of a building the faces the pack had
+  coloured are sorted out of it the same way (`accented`): the texture is
+  read where the face lies on it, and a face more saturated than `COLOUR` is
+  painted again, in its kind's accents, the lightest hue its walls' and
+  another its roof's. A wagon, a locomotive and a shunter are the pack's own,
+  colours and all. The wagons a bead rides in (`wagon`) are the kinds the
+  pack painted a colour, a peer's goods (`van`) the two it left iron. A
+  wagon's box, when its model does not load, is the blue of the kit's blue
+  container (`0x658dd6`), a locomotive's the green of the kit's locomotive
+  (`0x56c186`): `stand` in `src/palette.ts`. Rail alone is painted
   flat (`flat`), in the track's tone, its rails dark by how light the pack
   had them (`toned`). A figure keeps the pack's texture.
   Platforms, signals and the silos' indicators are boxes in the palette's
@@ -472,7 +496,7 @@ of this is there, and the page is the committed snapshot and its replay.
   accents. The kit's diesel is the shunter.
 - `src/palette.ts`: every colour of the picture (see Look): the tones by day
   and by night, Catppuccin's accents by day and by night, which building
-  (`building`) and which type of bead (`stock`) wears which, the colours
+  wears which (`building`), the colours
   that mean something of their own, and `paint`, the one flat material of
   each. `dress` changes day to night on the paint that is worn.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over

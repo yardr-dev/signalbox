@@ -53,7 +53,7 @@ import {
   walkSeconds,
   type Stop,
 } from "./motion";
-import { building, fault, iron, lamp, liveried, paint, smoke, stocked, tinted, weathering, type Accent, type Tone } from "./palette";
+import { building, fault, iron, lamp, liveried, paint, smoke, tinted, weathering, type Accent, type Tone } from "./palette";
 import { freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
 import type { Allowance, Bead, Provider, Quota } from "./yard";
 
@@ -234,8 +234,9 @@ function signAt(s: Shed, n: number): [number, number, number] {
   return [x, 0, s.at.z + s.away * (SIGN_Z + (n % 2) * 1.3)];
 }
 
-// A wagon's paint under the weather: its own with a tint (palette.ts). Moss
-// lies on rust: a mossy wagon has the rusted paint.
+// A wagon's paint under the weather: its own with a tint (palette.ts), the
+// kit's texture as much as a box's paint: the texture is the wagon's colour.
+// Moss lies on rust: a mossy wagon has the rusted paint.
 function weathered(own: THREE.Material, step: Weather): THREE.Material {
   return tinted(own, step === "dull" ? weathering.dull : weathering.rusted);
 }
@@ -248,10 +249,7 @@ function repaint(wagon: THREE.Object3D, step: Weather | undefined) {
     const paint = paints.get(part) ?? (part.material as THREE.Material | THREE.Material[]);
     paints.set(part, paint);
     if (step === undefined) part.material = paint;
-    else {
-      const weather = (p: THREE.Material) => ((p as THREE.MeshStandardMaterial).map ? p : weathered(p, step));
-      part.material = Array.isArray(paint) ? paint.map(weather) : weather(paint);
-    }
+    else part.material = Array.isArray(paint) ? paint.map((p) => weathered(p, step)) : weathered(paint, step);
   });
 }
 
@@ -350,8 +348,7 @@ function signalBox(x: number, z: number): THREE.Object3D {
   return g;
 }
 
-// Paint what the kit left for the scene (TINT): a silo's band, and of a
-// wagon or a locomotive the faces the pack had in a colour of its own.
+// Paint what the kit left for the scene (TINT): a silo's band.
 function coat(model: THREE.Object3D, wears: THREE.Material) {
   model.traverse((part) => {
     if (!(part instanceof THREE.Mesh)) return;
@@ -741,8 +738,6 @@ export class Stock {
         const old = this.parting.get(v.key);
         if (old) giveUp(old.engine);
         const object = v.kind === "locomotive" ? this.kit.make("locomotive") : this.kit.make("wagon", hash(v.bead.id));
-        // Its body by its bead's type, before the weather is at it.
-        coat(object, paint(stocked(v.bead.type)));
         // Measured before it is anywhere, at its full size.
         const top = new THREE.Box3().setFromObject(object).max.y;
         wagon = { object, size: 1, stop, platform: v.platform, track: on, top };
@@ -1190,7 +1185,7 @@ export class Stock {
     const engine = line && this.engines.get(`${line.key}/${way}`);
     if (!line || !engine) return;
     const [pick, size] = GOODS[kind ?? ""] ?? GOODS.mail!;
-    // No bead rides in it: it is a van, the kit's iron and no type's colour.
+    // No bead rides in it: it is a van, the kit's iron all over.
     const wagon: Mover = { object: this.kit.make("van", pick), size };
     wagon.object.scale.setScalar(size);
     wagon.object.add(label(kind !== undefined ? `${kind} · ${peer}` : peer, "goods", 0, GOODS_LABEL_Y / size, 0, [0.5, 1]));

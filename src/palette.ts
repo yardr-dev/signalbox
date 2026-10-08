@@ -1,13 +1,13 @@
 // The picture's colours, all of them but the kit's own, and the paint made of
 // them. The look is Mini Motorways' (Dinosaur Polo Club) ground and labels,
 // the kit's own models on it in the texture they came in, and Catppuccin's
-// accents where the kit had painted a colour (kit.ts says which faces those
-// are). So there are three kinds here. The tones are the greys and creams the
-// ground, the track and the platforms are built of, one set by day and one by
-// night. The accents are Catppuccin's, Latte's by day and Mocha's by night
-// under the same names: the faces of what stands and what rolls that the kit
-// had in a colour are painted in them, and so is what the scene builds of
-// boxes. The colours that mean something of their own (a lamp, a fault, the
+// accents where the kit had painted a building a colour (kit.ts says which
+// faces those are). So there are three kinds here. The tones are the greys
+// and creams the ground, the track and the platforms are built of, one set
+// by day and one by night. The accents are Catppuccin's, Latte's by day and
+// Mocha's by night under the same names: the faces of what stands that the
+// kit had in a colour are painted in them, and so is what the scene builds
+// of boxes. What rolls is the kit's own, colours and all. The colours that mean something of their own (a lamp, a fault, the
 // weather) are the same in both. Nothing else in the page names a colour of
 // the picture: the labels' are the tones ink and pill, which the page hands
 // to its stylesheet (main.ts).
@@ -120,14 +120,12 @@ export const building = {
 } as const satisfies Record<string, readonly [wall: Accent, roof: Accent]>;
 export type Building = keyof typeof building;
 
-// A wagon by the type of its bead, the same across the yard, so a train's
-// wagons are told from tasks at a glance; sky for a type the table does not
-// have. It goes where the kit had painted the wagon a colour. They are of the accents a lamp, a flag, chocks and moss read on: the
-// blues and the purples, and no warm one.
-export const stock: Record<string, Accent> = { task: "blue", train: "mauve", wagon: "teal", memory: "lavender" };
-export function stocked(type: string): Accent {
-  return Object.hasOwn(stock, type) ? stock[type]! : "sky";
-}
+// A wagon and a locomotive are the kit's, in its texture, and no colour of
+// theirs is named here but these two: what the box wears that stands for one
+// whose model did not load. The lightest blue of the kit's blue container
+// and the lightest green of its locomotive, as the texture has them, by day
+// and by night as the texture is.
+export const stand = { wagon: 0x658dd6, locomotive: 0x56c186 } as const;
 
 // Lamps carry the signal's meaning.
 // wait is the amber of a wagon that waits for another bead, out a lamp that
@@ -151,8 +149,8 @@ export const hat = { builder: 0xffd21f, reviewer: 0xffffff } as const;
 // A lamp that flashes is dark between, and a wheel chock is its own orange.
 export const fault = { dark: 0x4a1512, chock: 0xf58a1f } as const;
 
-// What weather does to a wagon that waits: its paint is this much of what it
-// was, and moss is a green of its own.
+// What weather does to a wagon that waits: its paint, the kit's texture, is
+// this much of what it was, and moss is a green of its own.
 export const weathering = { dull: 0xa6a6a0, rusted: 0xb9744a, moss: 0x7c9a5e } as const;
 
 // How much of the sun's light a face in shadow keeps: a soft shadow, and the
@@ -179,7 +177,8 @@ export function paint(of: Tone | Accent | number): THREE.MeshLambertMaterial {
 }
 
 // A paint under a tint, for a wagon the weather has been at: one for every
-// paint and tint, shared by the wagons that wear it.
+// paint and tint, shared by the wagons that wear it. The kit's texture is a
+// paint like any: it is white under its picture, and the tint goes there.
 const worn = new Map<string, { m: THREE.Material; from: THREE.Material; by: number }>();
 export function tinted(from: THREE.Material, by: number): THREE.Material {
   const key = `${from.uuid}/${by}`;

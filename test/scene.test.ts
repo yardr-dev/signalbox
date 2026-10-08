@@ -7,7 +7,7 @@ import snapshot from "../public/yard.json";
 import { banded, CHIMNEY, COLOUR, coloured, accented, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit, type Part } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
 import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
-import { accents, building, dress, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stock, stocked, tinted, weathering, type Accent, type Tone } from "../src/palette";
+import { accents, building, dress, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stand, tinted, weathering, type Accent, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
 import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
@@ -134,7 +134,7 @@ describe("a kit whose files are missing", () => {
     expect(warned).toContain("kit: city/building-i did not load, drawing a box");
   });
 
-  test("a building's box is in its walls' accent, a wagon's and a locomotive's are the scene's to paint, and what carries no bead is a tone", () => {
+  test("a building's box is in its walls' accent, a wagon's and a locomotive's in the kit's own blue and green, and a shunter's and a van's a tone", () => {
     const wears = (o: THREE.Object3D) => {
       const seen: THREE.Material[] = [];
       o.traverse((part) => {
@@ -144,7 +144,10 @@ describe("a kit whose files are missing", () => {
     };
     for (const part of ["station", "hut", "office", "silo"] as const) expect(wears(kit.make(part))[0], part).toBe(paint(building[part][0]));
     expect(wears(kit.make("works"))).toEqual([paint(building.works[0]), paint(building.works[1])]);
-    for (const part of ["wagon", "locomotive"] as const) expect(wears(kit.make(part)).map((m) => m.name), part).toEqual([TINT]);
+    // As the kit's texture has them: the lightest of its blue container and
+    // of its locomotive's green. Nothing of them is left for the scene.
+    expect([stand.wagon, stand.locomotive]).toEqual([0x658dd6, 0x56c186]);
+    for (const part of ["wagon", "locomotive"] as const) expect(wears(kit.make(part)), part).toEqual([paint(stand[part])]);
     expect(wears(kit.make("shunter"))).toEqual([paint("slate")]);
     expect(wears(kit.make("van"))).toEqual([paint("roof")]);
   });
@@ -367,25 +370,127 @@ describe("the kit's own models", () => {
   };
   const kinds = (part: Part, n: number) => Array.from({ length: n }, (_, pick) => worn(own.make(part, pick)));
 
-  test("what rolls wears the pack's texture, and the faces the pack painted a colour are the scene's: every wagon has some, a van none", () => {
-    // Three containers, a tank, a load of logs; a locomotive.
-    for (const of of [...kinds("wagon", 5), ...kinds("locomotive", 1)]) {
-      expect(Object.keys(of).sort()).toEqual(["texture", TINT]);
-      expect(of[TINT]).toBeGreaterThan(1);
-      // Frame, wheels and whatever was iron are the greater part or near it.
-      expect(of.texture).toBeGreaterThan(of[TINT]! * 0.7);
+  // The colours the pack painted a model, each as the texture has it under
+  // a face, with the area of the faces that have it: those of more than a
+  // trim, a colour of the pack's (coloured) or its iron.
+  const hex = (colour: number) => colour.toString(16).padStart(6, "0");
+  const painted = (model: THREE.Object3D, colour: boolean) => {
+    const area = new Map<number, number>();
+    model.updateMatrixWorld(true);
+    model.traverse((part) => {
+      if (!(part instanceof THREE.Mesh)) return;
+      const geometry = part.geometry as THREE.BufferGeometry;
+      const [at, uv, index] = [geometry.getAttribute("position"), geometry.getAttribute("uv"), geometry.getIndex()!];
+      const { width, height, data } = (part.material as THREE.MeshStandardMaterial).map!.image as Pixels;
+      const pixel = (t: number, size: number) => Math.min(size - 1, Math.floor((t - Math.floor(t)) * size));
+      for (let i = 0; i < index.count; i += 3) {
+        const face = [0, 1, 2].map((n) => index.getX(i + n));
+        const [a, b, c] = face.map((n) => new THREE.Vector3().fromBufferAttribute(at, n).applyMatrix4(part.matrixWorld));
+        const middle = (of: "getX" | "getY") => face.reduce((sum, n) => sum + uv[of](n), 0) / 3;
+        const from = 4 * (pixel(middle("getY"), height) * width + pixel(middle("getX"), width));
+        const is = (data[from]! << 16) | (data[from + 1]! << 8) | data[from + 2]!;
+        area.set(is, (area.get(is) ?? 0) + new THREE.Triangle(a, b, c).getArea());
+      }
+    });
+    return [...area].filter(([is, of]) => of > 0.3 && coloured(is >> 16, (is >> 8) & 0xff, is & 0xff) === colour).map(([is]) => is);
+  };
+  // The texture is a picture: its colours are as a screen has them.
+  const texel = (colour: number) => linear(colour);
+  const STOCK = ["container-blue", "container-green", "container-red", "tank", "wood"];
+
+  test("what rolls wears the pack's texture as it came, colours and all: nothing of it is the scene's or the palette's", () => {
+    // Three containers, a tank, a load of logs; two vans; a locomotive and
+    // a shunter. A shunter's windows are glass of the texture.
+    for (const of of [...kinds("wagon", 5), ...kinds("van", 2), ...kinds("locomotive", 1), ...kinds("shunter", 1)]) {
+      expect(Object.keys(of)).toEqual(["texture"]);
+      expect(of.texture).toBeGreaterThan(20);
     }
-    // A container's box is more of it than a tank's ends or the logs.
-    const [container, , , tank, logs] = kinds("wagon", 5).map((of) => of[TINT]!);
-    expect(container).toBeGreaterThan(tank!);
-    expect(tank).toBeGreaterThan(logs!);
-    // The box van and the coal wagon are iron all over.
-    for (const of of kinds("van", 2)) expect(Object.keys(of)).toEqual(["texture"]);
-    // A shunter's body, the pack's yellow, is overlay; its windows are glass
-    // of the texture still.
-    const [shunter] = kinds("shunter", 1);
-    expect(Object.keys(shunter!).sort()).toEqual(["overlay", "texture"]);
-    expect(shunter!.overlay).toBeGreaterThan(1);
+    // The pack's own colours are on them: a container's from its dark to its
+    // light, the red of a tank's ends, the logs, the green and the red of
+    // the locomotive, the shunter's yellow. A van is iron all over.
+    const colours = (part: Part, pick: number) => painted(own.make(part, pick), true).map(hex);
+    expect(colours("wagon", 0)).toEqual(expect.arrayContaining(["595cbf", "658dd6"]));
+    expect(colours("wagon", 1)).toEqual(expect.arrayContaining(["1f886b", "56c186"]));
+    expect(colours("wagon", 2)).toEqual(expect.arrayContaining(["b53137", "e05359"]));
+    expect(colours("wagon", 3)).toEqual(expect.arrayContaining(["b53137", "e05359"]));
+    expect(colours("wagon", 4)).toEqual(expect.arrayContaining(["b46444", "ec9368"]));
+    expect(colours("locomotive", 0)).toEqual(expect.arrayContaining(["319b74", "56c186", "bf393f", "d54a50"]));
+    expect(colours("shunter", 0)).toEqual(expect.arrayContaining(["ff9d36", "ffb046"]));
+    for (const pick of [0, 1]) expect(colours("van", pick)).toEqual([]);
+    // The box that stands for one that did not load is of them.
+    expect(colours("wagon", 0)).toContain(hex(stand.wagon));
+    expect(colours("locomotive", 0)).toContain(hex(stand.locomotive));
+  });
+
+  test("what means something is told from the kit's paint: amber on every wagon, and a red lamp, a flag and chocks from the ground they are seen against", () => {
+    // A mark against every colour of a model, fresh, dull and rusted, in the
+    // sun and in the shade: the least of the distances, to two places.
+    const least = (mark: Triple[], own: number[]) => {
+      const faces = own.flatMap((is) => [texel(is), times(texel(is), linear(weathering.dull)), times(texel(is), linear(weathering.rusted))]).flatMap((face) => [face, lit(face, SHADE)]);
+      return Math.round(100 * Math.min(...faces.flatMap((face) => mark.map((m) => apart(m, face))))) / 100;
+    };
+    // A lamp shines: it is its colour whatever the sun does. A flag and
+    // chocks are painted, and have a side in the shade.
+    const marks: Record<string, Triple[]> = {
+      amber: [linear(lamp.wait)],
+      lamp: [linear(lamp.stop)],
+      flag: [linear(lamp.stop), lit(linear(lamp.stop), SHADE)],
+      chocks: [linear(tint.chock), lit(linear(tint.chock), SHADE)],
+    };
+    const models = [...STOCK.map((name, pick) => [name, own.make("wagon", pick)] as const), ["locomotive", own.make("locomotive")] as const];
+    const figures = Object.fromEntries(models.map(([name, model]) => [name, Object.fromEntries(Object.entries(marks).map(([mark, as]) => [mark, least(as, painted(model, true))]))]));
+    expect(figures).toEqual({
+      "container-blue": { amber: 0.33, lamp: 0.11, flag: 0.05, chocks: 0.18 },
+      "container-green": { amber: 0.21, lamp: 0.29, flag: 0.26, chocks: 0.21 },
+      "container-red": { amber: 0.24, lamp: 0.02, flag: 0.01, chocks: 0.11 },
+      tank: { amber: 0.24, lamp: 0.02, flag: 0.01, chocks: 0.11 },
+      wood: { amber: 0.11, lamp: 0.09, flag: 0.08, chocks: 0.05 },
+      locomotive: { amber: 0.21, lamp: 0.03, flag: 0.01, chocks: 0.12 },
+    });
+    for (const [name, model] of models) {
+      // The amber of a wait lies on the roof: it reads on every colour.
+      expect(figures[name]!.amber, `amber on ${name}`).toBeGreaterThan(READS);
+      // And every mark reads on the iron of frame and wheels.
+      for (const [mark, as] of Object.entries(marks)) expect(least(as, painted(model, false)), `${mark} on the iron of ${name}`).toBeGreaterThan(READS);
+    }
+    // The kit's red is a fault's red, and its logs are near chocks' orange:
+    // by colour a red lamp and a flag are not told from a red container, a
+    // tank's ends or a locomotive's beams. They stand on a post over the
+    // roof, and chocks lie on the rail: what they are seen against is the
+    // ground, and there they read, by day and by night.
+    for (const dark of [false, true]) {
+      dress(dark);
+      for (const tone of ["ground", "bed", "track", "platform", "terminal"] satisfies Tone[]) {
+        const under = [linear(palette[tone]), lit(linear(palette[tone]), SHADE)];
+        for (const mark of ["lamp", "flag", "chocks"]) {
+          expect(Math.min(...under.flatMap((face) => marks[mark]!.map((m) => apart(m, face)))), `${mark} on ${tone} ${dark ? "by night" : "by day"}`).toBeGreaterThan(READS);
+        }
+      }
+    }
+    dress(false);
+  });
+
+  test("the weather is seen on every colour of the kit's: dull and rusted are told from fresh, and moss from rust", () => {
+    const moss = linear(weathering.moss);
+    for (const [pick, name] of STOCK.entries()) {
+      const model = own.make("wagon", pick);
+      for (const is of [...painted(model, true), ...painted(model, false)]) {
+        const fresh = texel(is);
+        const dull = times(fresh, linear(weathering.dull));
+        const rusted = times(fresh, linear(weathering.rusted));
+        // The darks of a frame have little to lose: they are not asked.
+        const slate = toned(is >> 16, (is >> 8) & 0xff, is & 0xff) === "slate";
+        if (!slate) expect(apart(fresh, dull), `dull ${hex(is)} of ${name}`).toBeGreaterThan(READS);
+        expect(apart(fresh, rusted), `rusted ${hex(is)} of ${name}`).toBeGreaterThan(READS);
+        // Rust is a step on from dull on the iron every wagon has, and on
+        // its blue and green. On the kit's red and its logs it is not: rust
+        // is their own hue, and there the iron beside them says it.
+        const warm = (is >> 16) > 1.5 * ((is >> 8) & 0xff);
+        if (!warm && !slate) expect(apart(dull, rusted), `rusted on from dull ${hex(is)} of ${name}`).toBeGreaterThan(0.08);
+        if (warm) expect(apart(dull, rusted), `rusted on from dull ${hex(is)} of ${name}`).toBeLessThan(0.08);
+        expect(Math.min(apart(moss, rusted), apart(moss, lit(rusted, SHADE)), apart(lit(moss, SHADE), lit(rusted, SHADE))), `moss on ${hex(is)} of ${name}`).toBeGreaterThan(READS);
+      }
+    }
   });
 
   test("a building wears the pack's texture, and the little the pack painted a colour is its kind's accents: the lightest hue its walls', another its roof's", () => {
@@ -413,47 +518,52 @@ describe("the kit's own models", () => {
     expect(Object.keys(kinds("rail", 1)[0]!).sort()).toEqual(["slate", "track"]);
   });
 
-  test("the scene paints a wagon's colour in its bead's accent, and night changes that and not the texture", () => {
-    const bead: Bead = { id: "signalbox-a", title: "a", type: "task", stage: "backlog", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" };
-    const stock = new Stock(layout({ ...yard, beads: [bead] }), own);
-    const wagon = stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === bead.id)!;
+  test("a wagon in the yard wears the kit's texture and nothing else, whatever its bead's type, and night changes none of it", () => {
+    const bead = (id: string, type: string): Bead => ({ id, title: id, type, stage: "backlog", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" });
+    const stock = new Stock(layout({ ...yard, beads: [bead("signalbox-a", "task"), bead("signalbox-m", "memory"), bead("signalbox-s", "spike")] }), own);
     const wears = new Set<THREE.MeshStandardMaterial>();
-    wagon.traverse((part) => {
-      if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) wears.add(m as THREE.MeshStandardMaterial);
-    });
-    const [texture, ...rest] = [...wears].sort((a, b) => Number(!!b.map) - Number(!!a.map));
-    expect(rest).toEqual([paint("blue")]);
-    expect(texture!.map).not.toBeNull();
-    const day = texture!.color.getHex();
+    for (const id of ["signalbox-a", "signalbox-m", "signalbox-s"]) {
+      stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!.traverse((part) => {
+        if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) wears.add(m as THREE.MeshStandardMaterial);
+      });
+    }
+    // A file of the pack has one material: its texture, white under it.
+    expect(wears.size).toBeGreaterThan(0);
+    const as = () => [...wears].map((m) => [m.map !== null, m.name === TINT, m.color.getHex()]);
+    for (const is of as()) expect(is).toEqual([true, false, 0xffffff]);
+    const day = as();
     dress(true);
-    expect(paint("blue").color.getHex()).toBe(accents.blue);
-    expect(texture!.color.getHex()).toBe(day);
+    expect(as()).toEqual(day);
     dress(false);
   });
 
-  test("weathering changes the wagon's accent paint and leaves its kit texture alone", () => {
+  test("weathering tints the whole wagon, the kit's texture with it, and leaves the kit's own material as it was", () => {
     const now = Date.parse("2099-01-20T00:00:00Z");
-    const bead: Bead = {
-      id: "signalbox-aged",
-      title: "aged",
-      type: "task",
-      stage: "backlog",
-      depot: "signalbox",
-      priority: 2,
-      created_at: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    const aged = (id: string, days: number): Bead => ({ id, title: id, type: "task", stage: "backlog", depot: "signalbox", priority: 2, created_at: new Date(now - days * 24 * 60 * 60 * 1000).toISOString() });
+    const stock = new Stock(layout({ ...yard, beads: [aged("signalbox-fresh", 0), aged("signalbox-dull", 3), aged("signalbox-rusted", 7)] }, {}, now), own);
+    const wears = (id: string) => {
+      const seen = new Set<THREE.MeshStandardMaterial>();
+      stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!.traverse((part) => {
+        if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) seen.add(m as THREE.MeshStandardMaterial);
+      });
+      return [...seen];
     };
-    const stock = new Stock(layout({ ...yard, beads: [bead] }, {}, now), own);
-    const wagon = stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === bead.id)!;
-    const materials: THREE.MeshStandardMaterial[] = [];
-    wagon.traverse((part) => {
-      if (part instanceof THREE.Mesh) materials.push(...[part.material].flat() as THREE.MeshStandardMaterial[]);
-    });
-    const texture = materials.find((m) => m.map);
-    const accent = materials.find((m) => !m.map && m.color.getHex() !== paint("blue").color.getHex());
-    expect(texture).toBeDefined();
-    expect(texture!.color.getHex()).toBe(0xffffff);
-    expect(accent).toBeDefined();
-    expect(accent!.color.getHex()).toBe(new THREE.Color(accents.blue).multiply(new THREE.Color(weathering.rusted)).getHex());
+    const [fresh] = wears("signalbox-fresh");
+    expect(fresh!.map).not.toBeNull();
+    for (const [id, by] of [["signalbox-dull", weathering.dull], ["signalbox-rusted", weathering.rusted]] as const) {
+      const worn = wears(id);
+      // Every part of it: no face keeps the fresh paint.
+      expect(worn.length, id).toBe(1);
+      expect(worn[0]!.map, id).not.toBeNull();
+      expect(worn[0]!.color.getHex(), id).toBe(new THREE.Color(by).getHex());
+    }
+    // What the kit hands out next is fresh.
+    expect(fresh!.color.getHex()).toBe(0xffffff);
+    for (let pick = 0; pick < 5; pick++) {
+      own.make("wagon", pick).traverse((part) => {
+        if (part instanceof THREE.Mesh) expect((part.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0xffffff);
+      });
+    }
   });
 
   test("a model whose texture cannot be read is as the pack has it", () => {
@@ -580,48 +690,16 @@ describe("the palette", () => {
     expect(mauve.color.getHex()).toBe(latte.mauve);
   });
 
-  test("a building is its kind's two accents and a wagon its bead's type's; none is red or maroon, which are a fault's", () => {
+  test("a building is its kind's two accents; none is red or maroon, which are a fault's", () => {
     expect(Object.keys(building).sort()).toEqual(["board", "box", "hut", "office", "post", "silo", "station", "works"]);
-    const worn: Accent[] = [...Object.values(building).flat(), ...Object.values(stock), stocked("no such type")];
+    const worn: Accent[] = Object.values(building).flat();
     for (const accent of worn) {
       expect(Object.keys(accents)).toContain(accent);
       expect(["red", "maroon"]).not.toContain(accent);
     }
-    // A type is one colour, and no two types the same.
-    expect(["task", "train", "wagon", "memory"].map(stocked)).toEqual(["blue", "mauve", "teal", "lavender"]);
-    expect(stocked("spike")).toBe("sky");
-    expect(stocked("toString")).toBe("sky");
-    expect(new Set([...Object.values(stock), stocked("spike")]).size).toBe(Object.keys(stock).length + 1);
     // The kinds of building that stand in a depot are told apart by their roofs.
     const roofs = (["station", "hut", "office", "works"] as const).map((kind) => building[kind][1]);
     expect(new Set(roofs).size).toBe(4);
-  });
-
-  test("a lamp, a flag, chocks and moss read on every wagon colour, fresh, dull and rusted, in the sun and in the shade, by day and by night", () => {
-    for (const dark of [false, true]) {
-      dress(dark);
-      const when = dark ? "by night" : "by day";
-      for (const type of [...Object.keys(stock), "any other"]) {
-        const own = linear(shade(stocked(type)));
-        const dull = times(own, linear(weathering.dull));
-        const rusted = times(own, linear(weathering.rusted));
-        // A face is its paint in the sun, and SHADE of it out of it.
-        const faces = [own, dull, rusted].flatMap((paint) => [paint, lit(paint, SHADE)]);
-        const least = (mark: Triple[]) => Math.min(...faces.flatMap((face) => mark.map((m) => apart(m, face))));
-        // A lamp shines: it is its colour whatever the sun does.
-        expect(least([linear(lamp.stop)]), `the fault's lamp on ${type} ${when}`).toBeGreaterThan(READS);
-        expect(least([linear(lamp.wait)]), `the wait's lamp on ${type} ${when}`).toBeGreaterThan(READS);
-        // A flag and chocks are painted, and have a side in the shade.
-        expect(least([linear(lamp.stop), lit(linear(lamp.stop), SHADE)]), `the flag on ${type} ${when}`).toBeGreaterThan(READS);
-        expect(least([linear(tint.chock), lit(linear(tint.chock), SHADE)]), `chocks on ${type} ${when}`).toBeGreaterThan(READS);
-        // Moss lies on rust, on the roof, and the weather's steps are told
-        // from one another.
-        const moss = linear(weathering.moss);
-        expect(Math.min(apart(moss, rusted), apart(moss, lit(rusted, SHADE)), apart(lit(moss, SHADE), lit(rusted, SHADE))), `moss on ${type} ${when}`).toBeGreaterThan(READS);
-        expect(apart(own, dull), `dull ${type} ${when}`).toBeGreaterThan(READS);
-        expect(apart(dull, rusted), `rusted ${type} ${when}`).toBeGreaterThan(READS);
-      }
-    }
   });
 
   test("a provider's band stands out from its silo, and from another provider's, by day and by night", () => {
@@ -1090,28 +1168,25 @@ describe("the colours of the stock", () => {
   // at their own.
   const beads = [bead("signalbox-a", "task", { stage: "new" }), bead("yardr-b", "task", { depot: "yardr" }), bead("signalbox-t", "train"), bead("signalbox-w", "wagon", { train: "signalbox-t" }), bead("aiquokka-s", "spike", { depot: "aiquokka" })];
 
-  test("a wagon is its bead's type's accent, the same in every depot, and a train's wagons are not a task's", () => {
+  test("a wagon says nothing of its bead's type by its paint: a box is the kit's blue for every type, a locomotive's the kit's green", () => {
     const stock = new Stock(layout({ ...yard, beads }), kit);
     const of = (id: string) => body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!);
-    expect(of("signalbox-a")).toEqual([paint("blue")]);
-    expect(of("yardr-b")).toEqual([paint("blue")]);
-    expect(of("signalbox-t")).toEqual([paint("mauve")]);
-    expect(of("signalbox-w")).toEqual([paint("teal")]);
-    expect(of("aiquokka-s")).toEqual([paint("sky")]);
-    // Nothing that rolls is left in the kit's own tint, a shunter neither.
+    for (const id of ["signalbox-a", "yardr-b", "signalbox-w", "aiquokka-s"]) expect(of(id), id).toEqual([paint(stand.wagon)]);
+    expect(of("signalbox-t")).toEqual([paint(stand.locomotive)]);
+    // Nothing that rolls is left for the scene to paint, a shunter neither.
     stock.root.traverse((part) => {
       if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) expect((m as THREE.Material).name).not.toBe(TINT);
     });
   });
 
-  test("night changes a wagon's colour where it is, under the weather too: blue is Mocha's blue", () => {
+  test("night leaves a wagon's colour as it is, under the weather too: the kit's is the same by day and by night", () => {
     const now = Date.parse("2099-01-09T00:00:00Z");
     const stock = new Stock(layout({ ...yard, beads: [bead("signalbox-a", "task"), bead("signalbox-b", "task", { created_at: "2099-01-08T23:00:00Z" })] }, {}, now), kit);
     const of = (id: string) => (body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!)[0] as THREE.MeshLambertMaterial).color.getHex();
-    const rusted = (blue: number) => new THREE.Color(blue).multiply(new THREE.Color(weathering.rusted)).getHex();
-    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([0x1e66f5, rusted(0x1e66f5)]);
+    const rusted = new THREE.Color(stand.wagon).multiply(new THREE.Color(weathering.rusted)).getHex();
+    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([stand.wagon, rusted]);
     dress(true);
-    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([0x89b4fa, rusted(0x89b4fa)]);
+    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([stand.wagon, rusted]);
     dress(false);
   });
 
