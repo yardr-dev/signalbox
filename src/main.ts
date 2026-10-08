@@ -10,12 +10,12 @@
 // pixels drawn to one of the page's (2: a phone at 3 would draw nine where
 // four are enough for a flat, antialiased picture). These lower the GPU's
 // demand; a browser that still refuses or drops the picture gets the light
-// one of canvas.ts, which asks for neither.
+// one of canvas.ts, which asks for neither, and a phone starts with it.
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { begin, canvas, failed, keep, lighter, Losses, LOST, Refused } from "./canvas";
+import { begin, canvas, failed, handheld, keep, lighter, Losses, LOST, Refused } from "./canvas";
 import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { listen, report, served } from "./fault";
 import { loadKit } from "./kit";
@@ -265,7 +265,7 @@ async function start() {
   // fall. why is why it is light, when it is.
   const make = (antialias: boolean) => new THREE.WebGLRenderer({ antialias });
   const memory = () => window.localStorage;
-  const begun = begin(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, window.location.search, memory);
+  const begun = begin(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, window.location.search, memory, handheld(window));
   let { renderer, why } = begun;
   if (begun.refusal !== undefined) {
     report("refused", begun.refusal);

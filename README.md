@@ -128,6 +128,11 @@ draws it light at once ("the browser dropped the picture; drawing it
 lighter"). After any of these the browser remembers, and the page starts
 light there until `?full` is on the address.
 
+A phone or a tablet starts light, as its browser drops the full picture: a
+coarse pointer and a viewport whose shorter side is under 900 CSS px
+(`handheld`), with the note "light picture on a phone: ?full asks for the
+full one", and `?full` draws the full one there too.
+
 ![The first view as a light picture: no shadows, and edges in steps](docs/look-light.png)
 
 ## Replaying a day

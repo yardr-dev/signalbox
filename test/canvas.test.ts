@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { begin, canvas, failed, keep, lighter, Losses, LOST, Refused, WAIT, wanted } from "../src/canvas";
-import type { Store } from "../src/canvas";
+import { begin, canvas, failed, handheld, keep, lighter, Losses, LOST, Refused, WAIT, wanted } from "../src/canvas";
+import type { Store, View } from "../src/canvas";
 
 // A renderer that only remembers what it was made with and told to draw.
 function stub(antialias: boolean) {
@@ -60,34 +60,81 @@ describe("the canvas", () => {
 
 describe("what the address and the browser say of the picture", () => {
   test("nothing said is the full picture", () => {
-    expect(wanted("", () => kept())).toBeUndefined();
-    expect(wanted("?speed=2", () => kept())).toBeUndefined();
+    expect(wanted("", () => kept(), false)).toBeUndefined();
+    expect(wanted("?speed=2", () => kept(), false)).toBeUndefined();
   });
 
   test("?light asks for the light one", () => {
-    expect(wanted("?light", () => kept())).toBe("asked");
-    expect(wanted("?a=1&light", () => kept())).toBe("asked");
+    expect(wanted("?light", () => kept(), false)).toBe("asked");
+    expect(wanted("?a=1&light", () => kept(), false)).toBe("asked");
   });
 
   test("a fall is remembered on this browser, until ?full", () => {
     const store = kept();
     keep(() => store);
     expect(store.held).toEqual({ "signalbox.light": "true" });
-    expect(wanted("", () => store)).toBe("kept");
-    expect(wanted("?full", () => store)).toBeUndefined();
+    expect(wanted("", () => store, false)).toBe("kept");
+    expect(wanted("?full", () => store, false)).toBeUndefined();
     expect(store.held).toEqual({});
-    expect(wanted("", () => store)).toBeUndefined();
+    expect(wanted("", () => store, false)).toBeUndefined();
   });
 
   test("?light is asked for, whatever is remembered", () => {
-    expect(wanted("?light", () => kept({ "signalbox.light": "true" }))).toBe("asked");
+    expect(wanted("?light", () => kept({ "signalbox.light": "true" }), false)).toBe("asked");
   });
 
   test("a browser that refuses its storage remembers nothing, and the page goes on", () => {
-    expect(wanted("", closed)).toBeUndefined();
-    expect(wanted("?full", closed)).toBeUndefined();
-    expect(wanted("?light", closed)).toBe("asked");
+    expect(wanted("", closed, false)).toBeUndefined();
+    expect(wanted("?full", closed, false)).toBeUndefined();
+    expect(wanted("?light", closed, false)).toBe("asked");
     expect(() => keep(closed)).not.toThrow();
+  });
+});
+
+describe("a phone or a tablet", () => {
+  // A window with the pointer and the viewport of a device, and what it was
+  // asked of its media.
+  function view(coarse: boolean, innerWidth: number, innerHeight: number): View & { asked: string[] } {
+    const asked: string[] = [];
+    return {
+      asked,
+      innerWidth,
+      innerHeight,
+      matchMedia(query: string) {
+        asked.push(query);
+        return { matches: coarse } as MediaQueryList;
+      },
+    };
+  }
+
+  test("is a coarse pointer and a shorter side under 900 CSS px", () => {
+    const phone = view(true, 412, 915);
+    expect(handheld(phone)).toBe(true);
+    expect(phone.asked).toEqual(["(pointer: coarse)"]);
+    // Turned on its side, and a tablet either way.
+    expect(handheld(view(true, 915, 412))).toBe(true);
+    expect(handheld(view(true, 820, 1180))).toBe(true);
+    expect(handheld(view(true, 1180, 899))).toBe(true);
+  });
+
+  test("is not a fine pointer, however small the window, nor a large touch screen", () => {
+    expect(handheld(view(false, 412, 915))).toBe(false);
+    expect(handheld(view(false, 1440, 900))).toBe(false);
+    expect(handheld(view(true, 1440, 900))).toBe(false);
+    expect(handheld(view(true, 900, 1600))).toBe(false);
+  });
+
+  test("starts light, unless ?full asks or a fall is remembered", () => {
+    expect(wanted("", () => kept(), true)).toBe("handheld");
+    expect(wanted("?full", () => kept(), true)).toBeUndefined();
+    expect(wanted("?light", () => kept(), true)).toBe("asked");
+    expect(wanted("?full&light", () => kept(), true)).toBe("asked");
+    expect(wanted("", closed, true)).toBe("handheld");
+    // The full picture asked for with ?full fell here: that is what is said.
+    const store = kept({ "signalbox.light": "true" });
+    expect(wanted("", () => store, true)).toBe("kept");
+    expect(wanted("?full", () => store, true)).toBeUndefined();
+    expect(wanted("", () => store, true)).toBe("handheld");
   });
 });
 
@@ -107,7 +154,7 @@ describe("the first picture", () => {
 
   test("is the full one, and nothing is remembered", () => {
     const store = kept();
-    const { renderer, why, refusal } = begin(browser(0).make, 3, 2, false, "", () => store);
+    const { renderer, why, refusal } = begin(browser(0).make, 3, 2, false, "", () => store, false);
     expect(why).toBeUndefined();
     expect(refusal).toBeUndefined();
     expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([true, true, 2]);
@@ -116,28 +163,54 @@ describe("the first picture", () => {
 
   test("is the light one when the address asks, and that is not remembered", () => {
     const store = kept();
-    const { renderer, why } = begin(browser(0).make, 3, 2, false, "?light", () => store);
+    const { renderer, why } = begin(browser(0).make, 3, 2, false, "?light", () => store, false);
     expect(why).toBe("asked");
     expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([false, false, 1]);
     expect(store.held).toEqual({});
   });
 
   test("is the light one after an earlier fall", () => {
-    const { renderer, why } = begin(browser(0).make, 3, 2, false, "", () => kept({ "signalbox.light": "true" }));
+    const { renderer, why } = begin(browser(0).make, 3, 2, false, "", () => kept({ "signalbox.light": "true" }), false);
     expect(why).toBe("kept");
     expect(renderer.shadowMap.enabled).toBe(false);
+  });
+
+  test("is the light one on a handheld, asked for once, and that is not remembered", () => {
+    const store = kept();
+    const phone = browser(0);
+    const { renderer, why, refusal } = begin(phone.make, 3, 2, false, "", () => store, true);
+    expect(why).toBe("handheld");
+    expect(refusal).toBeUndefined();
+    expect(phone.asked).toEqual([false]);
+    expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([false, false, 1]);
+    expect(store.held).toEqual({});
+  });
+
+  test("is the full one on a handheld with ?full, and an earlier fall is forgotten", () => {
+    const store = kept({ "signalbox.light": "true" });
+    const { renderer, why } = begin(browser(0).make, 3, 2, false, "?full", () => store, true);
+    expect(why).toBeUndefined();
+    expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([true, true, 2]);
+    expect(store.held).toEqual({});
+  });
+
+  test("refused on a handheld with ?full, falls and is remembered as anywhere", () => {
+    const store = kept();
+    const { why } = begin(browser(1).make, 3, 2, false, "?full", () => store, true);
+    expect(why).toBe("refused");
+    expect(wanted("", () => store, true)).toBe("kept");
   });
 
   test("refused, is asked once more as a light one, and that is remembered", () => {
     const store = kept();
     const chrome = browser(1);
-    const { renderer, why, refusal: said } = begin(chrome.make, 3, 2, false, "", () => store);
+    const { renderer, why, refusal: said } = begin(chrome.make, 3, 2, false, "", () => store, false);
     expect(chrome.asked).toEqual([true, false]);
     expect(why).toBe("refused");
     // What the browser said of the full one, for the report (fault.ts).
     expect(said).toBe(refusal.message);
     expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([false, false, 1]);
-    expect(wanted("", () => store)).toBe("kept");
+    expect(wanted("", () => store, false)).toBe("kept");
   });
 
   test("refused twice is a refusal, with what the browser said, and nothing is remembered", () => {
@@ -145,7 +218,7 @@ describe("the first picture", () => {
     const chrome = browser(2);
     let thrown: unknown;
     try {
-      begin(chrome.make, 3, 2, true, "", () => store);
+      begin(chrome.make, 3, 2, true, "", () => store, false);
     } catch (err) {
       thrown = err;
     }
@@ -157,7 +230,7 @@ describe("the first picture", () => {
 
   test("a light one refused is not asked for again", () => {
     const chrome = browser(1);
-    expect(() => begin(chrome.make, 3, 2, false, "?light", () => kept())).toThrow(Refused);
+    expect(() => begin(chrome.make, 3, 2, false, "?light", () => kept(), false)).toThrow(Refused);
     expect(chrome.asked).toEqual([false]);
   });
 });
@@ -261,6 +334,7 @@ describe("the note of a light picture", () => {
   test("says why it is one", () => {
     expect(lighter("asked")).toBe("light picture");
     expect(lighter("kept")).toBe("light picture, as the full one failed here before: ?full asks for it again");
+    expect(lighter("handheld")).toBe("light picture on a phone: ?full asks for the full one");
     expect(lighter("refused")).toBe("the browser refused the picture; drawing it lighter");
     expect(lighter("dropped")).toBe("the browser dropped the picture; drawing it lighter");
   });

@@ -9,6 +9,10 @@
 // moments: refused at the start, lost and not given back within WAIT, lost a
 // second time. It then starts light on this browser until ?full is asked;
 // ?light asks for the light picture outright.
+//
+// A phone or a tablet is not asked for the full picture at all: its browser
+// drops it, and the first visit would be a loss and a wait. It starts light
+// (see handheld), and ?full asks for the full one there as anywhere.
 
 // What the page needs of a renderer here: a stub in a test is one too.
 interface Drawn {
@@ -44,25 +48,43 @@ export function canvas<R extends Drawn>(make: (antialias: boolean) => R, device:
 }
 
 // Why the picture is a light one: the address asked for it, the browser
-// remembered an earlier fall, or it refused or dropped the full one now.
-export type Why = "asked" | "kept" | "refused" | "dropped";
+// remembered an earlier fall, the device is a phone or a tablet, or the
+// browser refused or dropped the full one now.
+export type Why = "asked" | "kept" | "handheld" | "refused" | "dropped";
+
+// What handheld asks of the window: a stub in a test is one too.
+export type View = Pick<Window, "matchMedia" | "innerWidth" | "innerHeight">;
+
+// The shorter side of the viewport, in CSS px, a handheld is under.
+const HANDHELD = 900;
+
+// A phone or a tablet: the pointer is coarse, matchMedia("(pointer: coarse)"),
+// and the shorter side of the viewport is under 900 CSS px. Both, as a
+// laptop with a touch screen has a fine pointer too and gets the full
+// picture, and so does a large touch screen on a wall.
+export function handheld(view: View): boolean {
+  return view.matchMedia("(pointer: coarse)").matches && Math.min(view.innerWidth, view.innerHeight) < HANDHELD;
+}
 
 // Where a fall is remembered: the browser's localStorage, or none.
 export type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const KEY = "signalbox.light";
 
 // What the address and the browser's memory say of the picture, before it is
-// made. ?full forgets an earlier fall; ?light asks whatever else is said.
-export function wanted(search: string, store: () => Store): Why | undefined {
+// made. ?full forgets an earlier fall and asks for the full picture on a
+// handheld too; ?light asks whatever else is said. A fall remembered on a
+// handheld is a fall of the full picture asked for there, and is said first.
+export function wanted(search: string, store: () => Store, handheld: boolean): Why | undefined {
   const query = new URLSearchParams(search);
+  const full = query.has("full");
   let kept = false;
   try {
-    if (query.has("full")) store().removeItem(KEY);
+    if (full) store().removeItem(KEY);
     else kept = store().getItem(KEY) !== null;
   } catch {
     // A browser that refuses its storage remembers no fall.
   }
-  return query.has("light") ? "asked" : kept ? "kept" : undefined;
+  return query.has("light") ? "asked" : kept ? "kept" : handheld && !full ? "handheld" : undefined;
 }
 
 // The page fell to the light picture on its own: the next visit starts there.
@@ -78,8 +100,8 @@ export function keep(store: () => Store) {
 // full picture, once more as a light one. A light one refused is a refusal.
 // refusal is what the browser said of the full picture, when a light one is
 // drawn in its place.
-export function begin<R extends Drawn>(make: (antialias: boolean) => R, device: number, cap: number, live: boolean, search: string, store: () => Store): { renderer: R; why: Why | undefined; refusal?: string } {
-  const why = wanted(search, store);
+export function begin<R extends Drawn>(make: (antialias: boolean) => R, device: number, cap: number, live: boolean, search: string, store: () => Store, handheld: boolean): { renderer: R; why: Why | undefined; refusal?: string } {
+  const why = wanted(search, store, handheld);
   try {
     return { renderer: canvas(make, device, cap, live, why !== undefined), why };
   } catch (err) {
@@ -135,6 +157,8 @@ export function lighter(why: Why): string {
       return "light picture";
     case "kept":
       return "light picture, as the full one failed here before: ?full asks for it again";
+    case "handheld":
+      return "light picture on a phone: ?full asks for the full one";
     case "refused":
       return "the browser refused the picture; drawing it lighter";
     case "dropped":
