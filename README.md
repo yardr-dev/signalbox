@@ -352,7 +352,7 @@ machine's on a Tailscale net, for a phone on the same net.
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the committed snapshot and its replay.
 
-![The page following this yard, closer in: Live on the bar, two builders by the door of signalbox's hut and the third at work on a wagon at signalbox's new; yardr's hut below says the same 1 of 3 out, with two at its door](docs/live.png)
+![The page following this yard, closer in: Live on the bar, one builder by the door of signalbox's hut and another at work on a wagon at signalbox's new; yardr's hut below says the same 2 of 3 out, with one at its door and the second builder at work on a wagon at yardr's new](docs/live.png)
 
 ## Where things are
 
