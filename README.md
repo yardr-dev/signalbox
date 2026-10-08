@@ -347,12 +347,10 @@ restart of the yardr server, which the view rides out inside the stream.
 The page's own line stays open all the while, and says `Live · no feed`
 only when the script itself is gone.
 
-The live page reports its faults to the script's log (`src/fault.ts`), so
-that what went wrong on a phone can be read where the script runs: the
-picture refused, lost, given back or drawn light, and an error nobody caught,
-each with its time, what the browser said, the page's size and the screen's
-pixels to one, and no identity beyond the browser's user agent. The
-snapshot's page reports nothing.
+The live page reports its faults to the script's log (`src/fault.ts`), with
+the time, kind, detail, browser's user agent, page size and pixel ratio, and
+no identity beyond the browser's user agent; the snapshot's page reports
+nothing.
 
 The silos' levels the script asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquokka` names the
 binary), which is a call over the network for every provider: once a minute
