@@ -130,7 +130,7 @@ export const stand = { wagon: 0x658dd6, locomotive: 0x56c186 } as const;
 // Lamps carry the signal's meaning.
 // wait is the amber of a wagon that waits for another bead, out a lamp that
 // is not lit. Clear is bright enough to read against the kit's green paint.
-export const lamp = { clear: 0x74e875, stop: 0xe5484d, wait: 0xffb224, out: 0x4b525b } as const;
+export const lamp = { clear: 0x55f744, stop: 0xe5484d, wait: 0xffb224, out: 0x4b525b } as const;
 // The grey of a works' smoke.
 export const smoke = 0x70757c;
 // The iron of the coal in a silo's indicators.

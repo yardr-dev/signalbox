@@ -85,14 +85,14 @@ told at a glance):
 
 | on | clear lamp | amber lamp | stop lamp / fault red | flag | chocks |
 | --- | --- | --- | --- | --- | --- |
-| the blue container | 0.33 | 0.33 | 0.11 | 0.05 | 0.18 |
-| the green container | 0.12 | 0.21 | 0.29 | 0.26 | 0.21 |
-| the red container | 0.38 | 0.24 | 0.02 | 0.01 | 0.11 |
-| the tank | 0.38 | 0.24 | 0.02 | 0.01 | 0.11 |
-| the logs | 0.25 | 0.11 | 0.09 | 0.08 | 0.05 |
-| the locomotive | 0.12 | 0.21 | 0.03 | 0.01 | 0.12 |
+| the blue container | 0.39 | 0.33 | 0.11 | 0.05 | 0.18 |
+| the green container | 0.18 | 0.21 | 0.29 | 0.26 | 0.21 |
+| the red container | 0.44 | 0.24 | 0.02 | 0.01 | 0.11 |
+| the tank | 0.44 | 0.24 | 0.02 | 0.01 | 0.11 |
+| the logs | 0.31 | 0.11 | 0.09 | 0.08 | 0.05 |
+| the locomotive | 0.18 | 0.21 | 0.03 | 0.01 | 0.12 |
 
-The clear lamp is a brighter green (`0x74e875`) so it reads even on the kit's
+The clear lamp is a brighter green (`0x55f744`) so it reads even on the kit's
 green container and locomotive. The amber of a wait lies on the roof and
 reads on all of them. The kit's red is a fault's red (the blue container has
 it too, at its darkest), and its logs are near the chocks' orange: by colour
