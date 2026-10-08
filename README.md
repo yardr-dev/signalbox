@@ -83,22 +83,23 @@ each is from every colour of every wagon, fresh, dull and rusted, in the sun
 and in the shade (`test/scene.test.ts`, the distance in Oklab, where 0.1 is
 told at a glance):
 
-| on | amber lamp | red lamp | flag | chocks |
-| --- | --- | --- | --- | --- |
-| the blue container | 0.33 | 0.11 | 0.05 | 0.18 |
-| the green container | 0.21 | 0.29 | 0.26 | 0.21 |
-| the red container | 0.24 | 0.02 | 0.01 | 0.11 |
-| the tank | 0.24 | 0.02 | 0.01 | 0.11 |
-| the logs | 0.11 | 0.09 | 0.08 | 0.05 |
-| the locomotive | 0.21 | 0.03 | 0.01 | 0.12 |
+| on | clear lamp | amber lamp | stop lamp / fault red | flag | chocks |
+| --- | --- | --- | --- | --- | --- |
+| the blue container | 0.33 | 0.33 | 0.11 | 0.05 | 0.18 |
+| the green container | 0.12 | 0.21 | 0.29 | 0.26 | 0.21 |
+| the red container | 0.38 | 0.24 | 0.02 | 0.01 | 0.11 |
+| the tank | 0.38 | 0.24 | 0.02 | 0.01 | 0.11 |
+| the logs | 0.25 | 0.11 | 0.09 | 0.08 | 0.05 |
+| the locomotive | 0.12 | 0.21 | 0.03 | 0.01 | 0.12 |
 
-The amber of a wait lies on the roof and reads on all of them. The kit's red
-is a fault's red (the blue container has it too, at its darkest), and its
-logs are near the chocks' orange: by colour alone a red lamp and a flag are
-not told from a red container. They stand on a post over the roof, and chocks
-lie on the rail, so what they are seen against is the ground, the platform
-and the track, and the iron of frame and wheels: there each is 0.13 or more,
-by day and by night. The weather tints the whole wagon, the kit's texture
+The clear lamp is a brighter green (`0x74e875`) so it reads even on the kit's
+green container and locomotive. The amber of a wait lies on the roof and
+reads on all of them. The kit's red is a fault's red (the blue container has
+it too, at its darkest), and its logs are near the chocks' orange: by colour
+alone a red lamp and a flag are not told from a red container. They stand on
+a post over the roof, and chocks lie on the rail, so what they are seen
+against is the ground, the platform and the track, and the iron of frame and
+wheels: there each is 0.13 or more, by day and by night. The weather tints the whole wagon, the kit's texture
 with it: dull is 0.14 or more from fresh on every colour and iron (0.09 on
 the darks of a frame, which have little to lose), and rust
 goes on from dull on the blue, the green and the iron (0.08 to 0.13), while

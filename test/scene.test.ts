@@ -422,7 +422,7 @@ describe("the kit's own models", () => {
     expect(colours("locomotive", 0)).toContain(hex(stand.locomotive));
   });
 
-  test("what means something is told from the kit's paint: amber on every wagon, and a red lamp, a flag and chocks from the ground they are seen against", () => {
+  test("what means something is told from the kit's paint: the clear and amber lamps on every wagon, and a red lamp, a flag and chocks from the ground they are seen against", () => {
     // A mark against every colour of a model, fresh, dull and rusted, in the
     // sun and in the shade: the least of the distances, to two places.
     const least = (mark: Triple[], own: number[]) => {
@@ -433,6 +433,7 @@ describe("the kit's own models", () => {
     // chocks are painted, and have a side in the shade.
     const marks: Record<string, Triple[]> = {
       amber: [linear(lamp.wait)],
+      clear: [linear(lamp.clear)],
       lamp: [linear(lamp.stop)],
       flag: [linear(lamp.stop), lit(linear(lamp.stop), SHADE)],
       chocks: [linear(tint.chock), lit(linear(tint.chock), SHADE)],
@@ -440,16 +441,17 @@ describe("the kit's own models", () => {
     const models = [...STOCK.map((name, pick) => [name, own.make("wagon", pick)] as const), ["locomotive", own.make("locomotive")] as const];
     const figures = Object.fromEntries(models.map(([name, model]) => [name, Object.fromEntries(Object.entries(marks).map(([mark, as]) => [mark, least(as, painted(model, true))]))]));
     expect(figures).toEqual({
-      "container-blue": { amber: 0.33, lamp: 0.11, flag: 0.05, chocks: 0.18 },
-      "container-green": { amber: 0.21, lamp: 0.29, flag: 0.26, chocks: 0.21 },
-      "container-red": { amber: 0.24, lamp: 0.02, flag: 0.01, chocks: 0.11 },
-      tank: { amber: 0.24, lamp: 0.02, flag: 0.01, chocks: 0.11 },
-      wood: { amber: 0.11, lamp: 0.09, flag: 0.08, chocks: 0.05 },
-      locomotive: { amber: 0.21, lamp: 0.03, flag: 0.01, chocks: 0.12 },
+      "container-blue": { amber: 0.33, clear: 0.33, lamp: 0.11, flag: 0.05, chocks: 0.18 },
+      "container-green": { amber: 0.21, clear: 0.12, lamp: 0.29, flag: 0.26, chocks: 0.21 },
+      "container-red": { amber: 0.24, clear: 0.38, lamp: 0.02, flag: 0.01, chocks: 0.11 },
+      tank: { amber: 0.24, clear: 0.38, lamp: 0.02, flag: 0.01, chocks: 0.11 },
+      wood: { amber: 0.11, clear: 0.25, lamp: 0.09, flag: 0.08, chocks: 0.05 },
+      locomotive: { amber: 0.21, clear: 0.12, lamp: 0.03, flag: 0.01, chocks: 0.12 },
     });
     for (const [name, model] of models) {
       // The amber of a wait lies on the roof: it reads on every colour.
       expect(figures[name]!.amber, `amber on ${name}`).toBeGreaterThan(READS);
+      expect(figures[name]!.clear, `clear on ${name}`).toBeGreaterThan(READS);
       // And every mark reads on the iron of frame and wheels.
       for (const [mark, as] of Object.entries(marks)) expect(least(as, painted(model, false)), `${mark} on the iron of ${name}`).toBeGreaterThan(READS);
     }
