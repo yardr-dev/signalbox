@@ -7,9 +7,10 @@
 //   AIQUOKKA=/path/to/aiquokka the binary that says what is left of the
 //   providers' quota.
 //
-// Beside the built page (dist/) it answers three routes, all from the yard's
-// web view (scripts/yard.mjs) and cut down by src/project.ts. It starts no
-// process of yardr's: it is one more reader of the view's JSON and stream.
+// Beside the built page (dist/) it answers three routes from the yard's web
+// view (scripts/yard.mjs), cut down by src/project.ts, and takes one report
+// from the page. It starts no process of yardr's: it is one more reader of
+// the view's JSON and stream.
 //
 //   GET /api/snapshot           the yard now, its slots, the window of its
 //                               log and the providers' quota: {yard, layout,
@@ -23,6 +24,11 @@
 //   GET /api/bead/<id>          one bead for its card (src/card.ts): {bead,
 //                               notes}, with the bead's body and its notes;
 //                               404 when the yard has no bead of that id
+//   POST /api/fault             what went wrong in the page's browser
+//                               (src/fault.ts): {at, what, detail, agent,
+//                               screen}, answered 204 and written as one
+//                               line where this script says what it does;
+//                               nothing of it is kept
 //
 // The feed is a relay of the view's stream (/events?format=json): one line
 // to the view for all who listen, and each gets what is after its own last.
@@ -61,6 +67,34 @@ export const RETRY = 1000;
 // for the page when it comes.
 export const QUOTA_EVERY = 60_000;
 export const QUOTA_WAIT = 3000;
+
+// A report of the page's: the bytes its body may have, and the milliseconds
+// a connection waits before its next one is taken.
+export const FAULT_BYTES = 4096;
+export const FAULT_EVERY = 1000;
+
+// The kind of a report, and the most characters of each other part that are
+// written: a line of the log stays a line one can read.
+const KIND = /^[a-z][a-z-]{0,31}$/;
+const PARTS = { agent: 300, screen: 40, detail: 1000 };
+
+// The line a report is written as, or nothing when it is no report. What a
+// browser sent is written as text of one line: nothing in it ends the line
+// or moves the terminal's cursor.
+export function fault(said) {
+  if (said === null || typeof said !== "object") return undefined;
+  const { at, what } = said;
+  if (typeof what !== "string" || !KIND.test(what)) return undefined;
+  if (typeof at !== "string" || Number.isNaN(Date.parse(at))) return undefined;
+  const part = {};
+  for (const [name, most] of Object.entries(PARTS)) {
+    if (typeof said[name] !== "string") return undefined;
+    part[name] = said[name].replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim().slice(0, most);
+  }
+  // When the browser says it was: the page sends its reports apart, and the
+  // log has no clock of its own.
+  return `signalbox: fault ${what} from ${part.agent} ${part.screen}: ${part.detail} at ${new Date(at).toISOString()}`;
+}
 
 // A bead's id, as the route takes it: it becomes a part of the path the
 // view is asked for, so it has no slash and does not start with a dot.
@@ -128,6 +162,8 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   let fuelled;
   let fuelling;
   let unfuelled;
+  // When each connection's last report was taken.
+  const reported = new WeakMap();
 
   const json = (res, status, body) => {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -291,6 +327,45 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     tune(listener);
   }
 
+  // A report of the page's goes to the terminal and nowhere else. One a
+  // second from a connection, and no more than FAULT_BYTES of it: a page
+  // gone wrong, or whoever else reaches the port, does not fill the log.
+  function answerFault(req, res) {
+    const last = reported.get(req.socket);
+    const now = clock();
+    if (last !== undefined && now - last < FAULT_EVERY) return json(res, 429, { error: "one report a second" });
+    reported.set(req.socket, now);
+    let over = false;
+    // The rest of a body that is too long is not waited for.
+    const long = () => {
+      over = true;
+      res.setHeader("connection", "close");
+      json(res, 413, { error: `a report is ${FAULT_BYTES} bytes at most` });
+    };
+    if (Number(req.headers["content-length"]) > FAULT_BYTES) return long();
+    const parts = [];
+    let size = 0;
+    req.on("data", (part) => {
+      if (over) return;
+      size += part.length;
+      if (size > FAULT_BYTES) return long();
+      parts.push(part);
+    });
+    req.on("end", () => {
+      if (over) return;
+      let line;
+      try {
+        line = fault(JSON.parse(Buffer.concat(parts).toString("utf8")));
+      } catch {
+        // No JSON is no report.
+      }
+      if (line === undefined) return json(res, 400, { error: "not a report" });
+      console.error(line);
+      res.writeHead(204, { "cache-control": "no-store" });
+      res.end();
+    });
+  }
+
   function answerFile(req, res, url) {
     let path;
     try {
@@ -309,6 +384,7 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
 
   function handle(req, res) {
     const url = new URL(req.url ?? "/", "http://signalbox");
+    if (url.pathname === "/api/fault") return req.method === "POST" ? answerFault(req, res) : json(res, 405, { error: "POST only" });
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "GET only" });
     if (url.pathname === "/api/snapshot") return void answerSnapshot(res);
     if (url.pathname === "/api/feed") return answerFeed(req, res, url);

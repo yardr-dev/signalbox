@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { QUOTA_EVERY, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
+import { FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
 import { bead, follow, head, quota, snapshot, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
@@ -751,6 +751,98 @@ describe("a bead", () => {
       ["http://127.0.0.1:8791/peers", "application/json"],
       ["http://127.0.0.1:9000/peers", "application/json"],
     ]);
+  });
+});
+
+describe("a fault of the page's", () => {
+  const said = { at: "2099-01-01T00:00:07.000Z", what: "lost", detail: "GPU process gone", agent: "Mozilla/5.0 (Linux; Android 16; Pixel 10)", screen: "412x915@2.625" };
+  const tell = (url, body, more = {}) => fetch(`${url}/api/fault`, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body), ...more });
+
+  test("is answered with nothing, and written as one line", async () => {
+    const s = await start(yard([]));
+    let response;
+    const lines = await terminal(async () => {
+      response = await tell(s.url, said);
+    });
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(lines).toEqual(["signalbox: fault lost from Mozilla/5.0 (Linux; Android 16; Pixel 10) 412x915@2.625: GPU process gone at 2099-01-01T00:00:07.000Z"]);
+  });
+
+  test("stays one line, whatever the browser sent, and each part has its length", () => {
+    const line = fault({ ...said, detail: `first\nsignalbox: fault forged\r\n\u001b[2Jsecond\u2028third ${"x".repeat(5000)}`, agent: "a".repeat(5000) });
+    expect(line).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
+    expect(line).toContain(": first signalbox: fault forged [2Jsecond third x");
+    expect(line.length).toBeLessThan(1500);
+  });
+
+  test("what is no report is refused, and nothing is written", async () => {
+    const s = await start(yard([]), { clock: () => 0 });
+    const lines = await terminal(async () => {
+      // Each on a line of its own: a connection has one report a second.
+      const alone = { headers: { connection: "close" } };
+      for (const body of ["{", "null", "[]", { ...said, what: "Lost it" }, { ...said, what: undefined }, { ...said, at: "then" }, { ...said, detail: 7 }, { ...said, agent: undefined }, { ...said, screen: {} }]) {
+        expect((await tell(s.url, body, alone)).status, JSON.stringify(body)).toBe(400);
+      }
+      expect((await fetch(`${s.url}/api/fault`)).status).toBe(405);
+    });
+    expect(lines).toEqual([]);
+  });
+
+  test("is 4 KB at most, said or not", async () => {
+    const s = await start(yard([]));
+    const lines = await terminal(async () => {
+      const body = JSON.stringify({ ...said, detail: "x".repeat(FAULT_BYTES) });
+      expect((await tell(s.url, body, { headers: { connection: "close" } })).status).toBe(413);
+      // A body whose length is not said before it comes.
+      const raw = await new Promise((done) => {
+        const socket = new Socket();
+        let text = "";
+        socket.connect(Number(new URL(s.url).port), "127.0.0.1", () => {
+          socket.write("POST /api/fault HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n");
+          for (let n = 0; n < 5; n++) socket.write(`400\r\n${"x".repeat(1024)}\r\n`);
+        });
+        socket.on("data", (d) => (text += d));
+        socket.on("error", () => done(text));
+        socket.on("close", () => done(text));
+      });
+      expect(raw).toMatch(/^HTTP\/1\.1 413/);
+      // The most that is taken.
+      const most = { ...said, detail: "" };
+      most.detail = "x".repeat(FAULT_BYTES - JSON.stringify(most).length);
+      expect((await tell(s.url, most, { headers: { connection: "close" } })).status).toBe(204);
+    });
+    expect(lines).toHaveLength(1);
+  });
+
+  test("one a second from a connection: the rest is dropped", async () => {
+    let now = 0;
+    const s = await start(yard([]), { clock: () => now });
+    // One connection, a request after the other.
+    const socket = new Socket();
+    let text = "";
+    socket.on("data", (d) => (text += d));
+    await new Promise((done) => socket.connect(Number(new URL(s.url).port), "127.0.0.1", done));
+    const answers = () => [...text.matchAll(/HTTP\/1\.1 (\d+)/g)].map((m) => Number(m[1]));
+    const send = async (detail) => {
+      const body = JSON.stringify({ ...said, detail });
+      const before = answers().length;
+      socket.write(`POST /api/fault HTTP/1.1\r\nHost: x\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      await until(() => answers().length > before);
+    };
+    const lines = await terminal(async () => {
+      await send("first");
+      now = FAULT_EVERY - 1;
+      await send("too soon");
+      await send("still too soon");
+      now = FAULT_EVERY;
+      await send("a second on");
+      // Another connection is not held by this one.
+      expect((await tell(s.url, { ...said, detail: "another" }, { headers: { connection: "close" } })).status).toBe(204);
+    });
+    socket.destroy();
+    expect(answers()).toEqual([204, 429, 429, 204]);
+    expect(lines.map((l) => l.replace(/^.*: (.*) at .*$/, "$1"))).toEqual(["first", "a second on", "another"]);
   });
 });
 

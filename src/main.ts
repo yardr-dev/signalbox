@@ -15,8 +15,9 @@
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { begin, canvas, failed, keep, lighter, Losses, LOST } from "./canvas";
+import { begin, canvas, failed, keep, lighter, Losses, LOST, Refused } from "./canvas";
 import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
+import { listen, report, served } from "./fault";
 import { loadKit } from "./kit";
 import { layout } from "./layout";
 import { css, dress, palette, SHADE } from "./palette";
@@ -100,6 +101,8 @@ function dressed() {
 }
 // Before anything is loaded: the page is the ground's colour from the start.
 dressed();
+// And an error from here on is told to the script, when one serves the page.
+listen();
 
 // The yard's events, when the snapshot came with them. Without the file the
 // page is the still picture.
@@ -186,7 +189,12 @@ function show(c: Card) {
 const WEATHERS = 60 * 60 * 1000;
 
 async function start() {
-  const api = await snapshot();
+  // A script that answers serves the page, also when its yard does not.
+  const api = await snapshot().catch((err: unknown) => {
+    served(true);
+    throw err;
+  });
+  served(api !== undefined);
   const files = async (): Promise<Snapshot> => {
     const response = await fetch(`${base}yard.json`);
     if (!response.ok) throw new Error(`yard.json: ${response.status}`);
@@ -257,7 +265,12 @@ async function start() {
   // fall. why is why it is light, when it is.
   const make = (antialias: boolean) => new THREE.WebGLRenderer({ antialias });
   const memory = () => window.localStorage;
-  let { renderer, why } = begin(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, window.location.search, memory);
+  const begun = begin(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, window.location.search, memory);
+  let { renderer, why } = begun;
+  if (begun.refusal !== undefined) {
+    report("refused", begun.refusal);
+    report("light", "refused");
+  }
   host.append(renderer.domElement);
   const labels = new CSS2DRenderer();
   labels.domElement.id = "labels";
@@ -354,7 +367,8 @@ async function start() {
     let next: THREE.WebGLRenderer;
     try {
       next = canvas(make, window.devicePixelRatio, PIXEL_RATIO, api !== undefined, true);
-    } catch {
+    } catch (err) {
+      report("refused", err instanceof Error ? err.message : String(err));
       return;
     }
     renderer.dispose();
@@ -363,6 +377,7 @@ async function start() {
     why = "dropped";
     lost = false;
     keep(memory);
+    report("light", "dropped");
     watch();
     size();
     say();
@@ -376,12 +391,14 @@ async function start() {
     mine.domElement.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
       if (mine !== renderer) return;
+      report("lost", (e as WebGLContextEvent).statusMessage ?? "");
       lost = true;
       say();
       if (!why) losses.lost();
     });
     mine.domElement.addEventListener("webglcontextrestored", () => {
       if (mine !== renderer) return;
+      report("restored");
       losses.restored();
       lost = false;
       say();
@@ -766,5 +783,6 @@ async function start() {
 
 start().catch((err: unknown) => {
   console.error(err);
+  if (err instanceof Refused) report("refused", err.message);
   note.textContent = failed(err);
 });

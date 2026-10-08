@@ -76,7 +76,9 @@ export function keep(store: () => Store) {
 
 // The first renderer of the page: as wanted, and when the browser refuses the
 // full picture, once more as a light one. A light one refused is a refusal.
-export function begin<R extends Drawn>(make: (antialias: boolean) => R, device: number, cap: number, live: boolean, search: string, store: () => Store): { renderer: R; why: Why | undefined } {
+// refusal is what the browser said of the full picture, when a light one is
+// drawn in its place.
+export function begin<R extends Drawn>(make: (antialias: boolean) => R, device: number, cap: number, live: boolean, search: string, store: () => Store): { renderer: R; why: Why | undefined; refusal?: string } {
   const why = wanted(search, store);
   try {
     return { renderer: canvas(make, device, cap, live, why !== undefined), why };
@@ -90,7 +92,7 @@ export function begin<R extends Drawn>(make: (antialias: boolean) => R, device: 
       throw err;
     }
     keep(store);
-    return { renderer, why: "refused" };
+    return { renderer, why: "refused", refusal: err instanceof Error ? err.message : String(err) };
   }
 }
 

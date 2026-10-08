@@ -347,11 +347,18 @@ restart of the yardr server, which the view rides out inside the stream.
 The page's own line stays open all the while, and says `Live · no feed`
 only when the script itself is gone.
 
+The live page reports its faults to the script's log (`src/fault.ts`), so
+that what went wrong on a phone can be read where the script runs: the
+picture refused, lost, given back or drawn light, and an error nobody caught,
+each with its time, what the browser said, the page's size and the screen's
+pixels to one, and no identity beyond the browser's user agent. The
+snapshot's page reports nothing.
+
 The silos' levels the script asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquokka` names the
 binary), which is a call over the network for every provider: once a minute
 at most, however many pages are open, and not at all while none is. Without
 `aiquokka` the silos say "unknown" and the rest of the page is as ever. It
-is three routes beside the files of `dist/`:
+is four routes beside the files of `dist/`:
 
 - `GET /api/snapshot`: `yard.json`, `layout.json`, `events.json` and
   `quota.json` in one answer, taken now; `quota` is the last answer of the
@@ -370,6 +377,12 @@ is three routes beside the files of `dist/`:
   figures, dots and dashes, and starts with a letter or a figure; anything
   else is refused before the view is asked. A bead the yard does not have is a 404,
   and the card says "not found".
+- `POST /api/fault`: a report of the page's, `{at, what, detail, agent,
+  screen}`, answered 204 and written as one line where the script says what
+  it does (`signalbox: fault <what> from <agent> <screen>: <detail> at <at>`).
+  A body is 4 KB at most (413), a connection has one a second (429 for the
+  rest), and what is no report is a 400. Nothing is kept: the log is the
+  record.
 
 What it exposes: what the committed snapshot holds, for the yard as it is
 now. Depots, flows, stages, groups, routes, crew and peers by name; of each

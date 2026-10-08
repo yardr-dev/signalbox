@@ -107,8 +107,9 @@ describe("the first picture", () => {
 
   test("is the full one, and nothing is remembered", () => {
     const store = kept();
-    const { renderer, why } = begin(browser(0).make, 3, 2, false, "", () => store);
+    const { renderer, why, refusal } = begin(browser(0).make, 3, 2, false, "", () => store);
     expect(why).toBeUndefined();
+    expect(refusal).toBeUndefined();
     expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([true, true, 2]);
     expect(store.held).toEqual({});
   });
@@ -130,9 +131,11 @@ describe("the first picture", () => {
   test("refused, is asked once more as a light one, and that is remembered", () => {
     const store = kept();
     const chrome = browser(1);
-    const { renderer, why } = begin(chrome.make, 3, 2, false, "", () => store);
+    const { renderer, why, refusal: said } = begin(chrome.make, 3, 2, false, "", () => store);
     expect(chrome.asked).toEqual([true, false]);
     expect(why).toBe("refused");
+    // What the browser said of the full one, for the report (fault.ts).
+    expect(said).toBe(refusal.message);
     expect([renderer.antialias, renderer.shadowMap.enabled, renderer.ratio]).toEqual([false, false, 1]);
     expect(wanted("", () => store)).toBe("kept");
   });
