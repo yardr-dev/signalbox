@@ -386,7 +386,7 @@ describe("the mapping", () => {
         bead: wagon.bead,
         group: "yardr-builders",
         platform: platform.key,
-        slot: 1,
+        slot: 0,
         // On the platform's edge to its track, level with its wagon; the gate behind the platform.
         at: { x: wagon.at.x, z: platform.at.z - WORK_Z },
         gate: { x: wagon.at.x, z: platform.at.z - PLATFORM_Z + SHED_Z - GROUND_Z },
@@ -493,17 +493,34 @@ describe("the mapping", () => {
     expect(l.work.filter((w) => w.platform.endsWith("/backlog") || w.platform.endsWith("/decide"))).toEqual([]);
   });
 
+  test("a session takes a slot ahead of an older bead that has none", () => {
+    const grown = copy();
+    grown.beads = grown.beads.filter((b) => !(b.depot === "signalbox" && b.stage === "new"));
+    // Four loose beads, the oldest with no session: the three at work are drawn.
+    grown.beads.push(bead("signalbox-idle", { depot: "signalbox", group: "yardr-builders", created_at: "2000-01-01T00:00:00Z" }));
+    for (let n = 0; n < SLOTS; n++) grown.beads.push(bead(`signalbox-w${n}`, { depot: "signalbox", group: "yardr-builders", working: true, created_at: `2000-01-0${n + 2}T00:00:00Z` }));
+    const g = layout(grown);
+    const platform = "signalbox/default/new";
+    expect(g.vehicles.filter((v) => v.platform === platform).map((v) => v.key)).toEqual(["signalbox-w0", "signalbox-w1", "signalbox-w2"]);
+    expect(g.vehicles.find((v) => v.key === "signalbox-idle")).toBeUndefined();
+    expect(g.counts.find((c) => c.platform === platform)).toMatchObject({ more: 1, of: "beads" });
+    const figures = g.work.filter((w) => w.platform === platform);
+    expect(figures.map((w) => [w.key, w.slot])).toEqual([["signalbox-w0", 0], ["signalbox-w1", 1], ["signalbox-w2", 2]]);
+  });
+
   test("a session on a bead that is only counted has its figure at the platform's left end", () => {
     const grown = copy();
-    for (let n = 0; n < SLOTS; n++) grown.beads.push(bead(`signalbox-old${n}`, { depot: "signalbox", created_at: `2000-01-0${n + 1}T00:00:00Z` }));
+    // More sessions than slots: the later ones are only counted, and stand at the left end.
+    for (let n = 0; n < SLOTS; n++) grown.beads.push(bead(`signalbox-old${n}`, { depot: "signalbox", group: "yardr-builders", working: true, created_at: `2000-01-0${n + 1}T00:00:00Z` }));
     grown.beads.push(bead("signalbox-late", { depot: "signalbox", group: "yardr-builders", working: true, created_at: "2099-01-09T00:00:00Z" }));
     const g = layout(grown);
     expect(g.vehicles.find((v) => v.key === "signalbox-sys1")).toBeUndefined();
     const platform = g.platforms.find((p) => p.key === "signalbox/default/new")!;
-    const tail = g.work.filter((w) => w.platform === platform.key);
+    const tail = g.work.filter((w) => w.platform === platform.key && w.slot === undefined);
     expect(tail.map((w) => [w.key, w.slot])).toEqual([["signalbox-sys1", undefined], ["signalbox-late", undefined]]);
     tail.forEach((w, n) => expect(w.at.x - (platform.at.x - PLATFORM_LENGTH / 2)).toBeCloseTo(TAIL_X + n * TAIL_PITCH));
-    expect(people(g).filter((p) => p.platform === platform.key).length).toBe(2);
+    // The hut draws the three at the wagons. The two counted are past its places.
+    expect(people(g).filter((p) => p.platform === platform.key).map((p) => p.bead?.id)).toEqual(["signalbox-old0", "signalbox-old1", "signalbox-old2"]);
   });
 
   test("the yard's crew members stand before their signal boxes", () => {
@@ -557,8 +574,10 @@ describe("the mapping", () => {
     const g = layout(grown);
     const hut = g.sheds.find((s) => s.key === "signalbox/default/new/yardr-builders")!;
     const sat = g.work.find((w) => w.key === "signalbox-sat")!;
-    expect(sat).toMatchObject({ sat: true, slot: 0, platform: "signalbox/default/new" });
+    // A session at work takes the first slot. One that sits does not go ahead of it.
+    expect(g.work.find((w) => w.key === "signalbox-work")).toMatchObject({ slot: 0 });
     expect(g.work.find((w) => w.key === "signalbox-work")!.sat).toBeUndefined();
+    expect(sat).toMatchObject({ sat: true, slot: 1, platform: "signalbox/default/new" });
     // The figure says it: the wagon has no lamp.
     expect(g.vehicles.find((v) => v.key === "signalbox-sat")!.lamp).toBeUndefined();
     expect(atWork(g, "yardr-builders")).toBe(1);
@@ -602,6 +621,19 @@ describe("the mapping", () => {
     expect(g.counts.find((c) => c.platform === open)).toMatchObject({ more: 2, of: "wagons" });
     // None of them stands at the wagon flow's own platform.
     expect(g.vehicles.filter((v) => v.platform.startsWith("yardr/type/wagon/"))).toEqual([]);
+  });
+
+  test("a train's wagons with a session stand ahead of an older one with none", () => {
+    const grown = copy();
+    grown.beads.push(bead("yardr-loco", { type: "train", stage: "open" }));
+    grown.beads.push(bead("yardr-old", { type: "wagon", stage: "new", train: "yardr-loco", created_at: "2099-01-01T00:00:00Z" }));
+    for (let n = 0; n < SLOTS; n++) {
+      grown.beads.push(bead(`yardr-crew${n}`, { type: "wagon", stage: "new", train: "yardr-loco", group: "yardr-builders", working: true, created_at: `2099-01-0${n + 2}T00:00:00Z` }));
+    }
+    const g = layout(grown);
+    const open = "yardr/yardr.train/open";
+    expect(g.vehicles.filter((v) => v.bead.train === "yardr-loco").map((v) => v.key)).toEqual(["yardr-crew0", "yardr-crew1", "yardr-crew2"]);
+    expect(g.counts.find((c) => c.platform === open && c.of === "wagons")).toMatchObject({ more: 1, of: "wagons" });
   });
 });
 

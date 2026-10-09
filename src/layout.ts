@@ -523,6 +523,14 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
   // A bead a crew's session is at, at work or sat after a bad end.
   const sat = (b: Bead) => b.working !== true && seats(b.fault);
   const crewed = (b: Bead) => (b.working === true || sat(b)) && ["hut", "office"].includes(shedKind(groups.get(b.group ?? "")));
+  // A session at work takes a slot before a bead that only stands, so its
+  // figure works at a wagon. One that sits after a bad end does not. Within
+  // each, oldest first.
+  const session = (b: Bead) => crewed(b) && !sat(b);
+  const forSlots = (beads: Bead[]): Bead[] => {
+    const aged = [...beads].sort(byAge);
+    return [...aged.filter(session), ...aged.filter((b) => !session(b))];
+  };
   // Every building a route asks for, with its board and the slots of its
   // platform: a crew keeps only the first of its own on a board, below.
   const sheds: { shed: Shed; depot: string; rank: number[] }[] = [];
@@ -594,7 +602,8 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
         const standing = here.filter((b) => stands(b) === stage.stage).sort(byAge);
 
         // What stands at the platform: the first train with its wagons, or
-        // the first three beads; a count says what is not drawn.
+        // three beads, a session at work ahead of one that only stands. A
+        // count says what is not drawn.
         const loose = standing.filter((b) => !coupled(b));
         const trains = loose.filter((b) => b.type === "train");
         const slot = (s: number): Point => ({ x: front.x - s * SLOT_PITCH, z: rail });
@@ -623,7 +632,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
         };
         if (train !== undefined) {
           stand({ key: train.id, bead: train, kind: "locomotive", platform: key, at: slot(0) });
-          const wagons = yard.beads.filter((b) => b.train === train.id).sort(byAge);
+          const wagons = forSlots(yard.beads.filter((b) => b.train === train.id));
           wagons.slice(0, SLOTS).forEach((b, s) => {
             stand({ key: b.id, bead: b, kind: "wagon", platform: key, at: slot(s + 1) });
           });
@@ -639,7 +648,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
             out.counts.push({ key: `${key}#beads`, platform: key, at: count, more: rest, of: "beads" });
           }
         } else {
-          loose.slice(0, SLOTS).forEach((b, s) => {
+          forSlots(loose).slice(0, SLOTS).forEach((b, s) => {
             stand({ key: b.id, bead: b, kind: "wagon", platform: key, at: slot(s) });
           });
           if (loose.length > SLOTS) {
