@@ -31,41 +31,17 @@ it runs when the serve script serves it.
 
 ## Following a yard as it runs
 
-    npm run live                          # the yard whose web view is at http://127.0.0.1:8791
-    YARDR_WEB=http://127.0.0.1:9000 npm run live   # a view at another address, as for the snapshot
-    npm run live -- --port 8800           # a port of your choice (a free one)
-    npm run live -- --host 100.64.0.7     # an address other than this machine's own
-
-`npm run live` builds the page and starts `scripts/serve.mjs`, which prints
-the page's address: on 127.0.0.1 and a free port unless told otherwise. The
-page opens at now, playing: the yard as it stands, and what happens in it as
-it happens, moved as the replay moves it. The script follows the yard through
-its web view and nothing else, so the view has to run (`yardr web serve`, or
-`yardr web start` or `yardr web install` to keep it running). There is no
-login: whoever reaches the port reads what the page shows. So it listens on
-this machine alone, and `--host` is for an address only your own devices
-reach.
-
-[INSTALL.md](INSTALL.md) says how to install it beside a yard from a
-release's archive, with no checkout and no build, and how to put it before
-the public. The script's routes and what they expose are in
-[docs/replay.md](docs/replay.md#following-a-yard-as-it-runs).
+`npm run live` builds the page and starts `scripts/serve.mjs`, which follows
+the yard through its web view. [INSTALL.md](INSTALL.md) says how to install
+it beside a yard and how to put it before the public.
 
 ## Replaying a day
 
-    npm run snapshot   # YARDR_WEB=http://127.0.0.1:8791 names the yard's web view
-    npm run dev
-
-The snapshot writes `public/yard.json` (the yard now) and, beside it,
-`public/events.json`: the events of the yard's newest 2000 sequence numbers,
-which is the window the page plays. The page opens at the window's start,
-paused. The bar at the bottom plays and pauses, sets the speed (60x makes an
-hour a minute), and scrubs over the window. Without `events.json` the page is
-the still picture of `yard.json`. The committed files are the demo data and
-the tests' fixture.
-
-What moves, what a fault looks like, the works, the silos, the weather and
-the lamps are in [docs/replay.md](docs/replay.md).
+The page replays a day of one yard from its event log. `npm run snapshot`
+writes `public/yard.json` and the newest 2000 events in
+`public/events.json`; the page opens at the window's start, paused. What
+moves and what a fault looks like are in
+[docs/replay.md](docs/replay.md).
 
 ## Where things are
 
