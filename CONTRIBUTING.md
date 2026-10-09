@@ -18,11 +18,9 @@ Closing the issue drops it.
 Open a pull request against `main`. The template has three lines. They are
 what changed, why, and how you tested it.
 
-Someone the repository does not already know waits for a maintainer. The
-maintainer looks at the person and the change before anything of the pull
-request is run anywhere. The label `accepted` means that look is done, and
-the pull request may be read. The yard's reviewer reads the code and runs
-none of it. A maintainer merges on GitHub, or closes the pull request.
+A maintainer looks at every pull request before any of its code is run. The
+label `accepted` means that look is done, and the pull request may be read.
+A maintainer merges on GitHub, or closes the pull request.
 
 ## The yard's bot
 

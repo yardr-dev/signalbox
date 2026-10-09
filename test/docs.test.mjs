@@ -51,6 +51,10 @@ describe("the pages' links", () => {
     expect(links(readFileSync(join(here, "README.md"), "utf8"))).toEqual(expect.arrayContaining(["docs/yard.png", "INSTALL.md", "docs/look.md", "docs/replay.md", "docs/code.md", "CONTRIBUTING.md", "LICENSE", "NOTICE"]));
   });
 
+  test("the pull request template has three prompts", () => {
+    expect(readFileSync(join(here, ".github/PULL_REQUEST_TEMPLATE.md"), "utf8").trim().split("\n")).toEqual(["What:", "Why:", "How tested:"]);
+  });
+
   test("a link to a missing file or heading is found", () => {
     expect(links("[a](b.md) ![c](d.png) [e](https://example.com/f) (g) [h](#i)")).toEqual(["b.md", "d.png", "#i"]);
     expect(anchors("# Following a yard as it runs\n```\n# not one\n```\n## `npm run live`, twice")).toEqual(["following-a-yard-as-it-runs", "npm-run-live-twice"]);
