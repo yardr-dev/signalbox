@@ -7,15 +7,16 @@ forward: what the reviewer can fix with confidence is fixed on the branch
 
 Approval here is the last review before the bead is merged, so be thorough.
 
-Before the bead leaves, the depot's light gate has passed on the branch as it
-now is: the builder's gate line names the commit under review and you
-committed nothing, or you ran it yourself
-(`yardr depot check <depot> --light --dir .`). The full gate is not the
-review's: it runs once, on what lands. One note on the bead says how the
-review ended. Outcomes:
+Before the bead leaves, the depot's test command has passed on the branch as
+it now is: the builder's test line names the commit under review and you
+committed nothing, or you ran it yourself in the worktree (the brief prints
+it as `test:`) and your note ends with its line,
+`test: <command> @ <commit>: pass`. The run with `YARDR_LANDING=1` is not
+the review's: it comes once, on what lands. One note on the bead says how
+the review ended. Outcomes:
 
 - `done`, approved: the note says what you checked, what you fixed (commits),
-  the gate result, and any remaining risk. The bead is landed from
+  the test result, and any remaining risk. The bead is landed from
   `approved`.
 - `changes`, it needs the builder: the design is wrong, the bead was misread,
   or a large part is missing. The note gives concrete, actionable findings,
@@ -26,13 +27,13 @@ review ended. Outcomes:
   the question and the options, and the bead goes to `decide`.
 
 A branch that came from another yard (`yardr bead show` says `branch
-yard/<bead> came from <peer>`) carries no gate line this yard trusts: run
-the light gate of this yard on it yourself, whatever the returned notes
+yard/<bead> came from <peer>`) carries no test line this yard trusts: run
+the depot's test command on it yourself, whatever the returned notes
 say, and read those notes as an account of the work, written where it was
 done.
 
 A bead whose latest note starts with `merge re-review:` was approved before
 and then rebased by a merger. Only the conflict resolution is reviewed. Sound:
-the note has the range-diff summary and the gate result, and the outcome is
+the note has the range-diff summary and the test result, and the outcome is
 `done`. Not sound, and not fixed forward: `changes` with a concrete finding,
 or `question`.

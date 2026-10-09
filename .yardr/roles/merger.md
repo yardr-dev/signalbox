@@ -24,12 +24,13 @@ its rebase, so the tree is clean and the branch is as it was approved.
    usually a union (both new cases, both new fields, both doc paragraphs),
    sometimes an adaptation (the bead's code calling a function the base
    renamed). Then `git add` and `git rebase --continue`.
-4. Run the depot's gate in the worktree: `yardr depot check <depot> --dir .`. A red
-   gate after your resolution is yours to fix; a test that the base broke on
-   its own is not, say so in the note.
+4. Run the depot's test command in the worktree (your brief prints it as
+   `test:` under the bead's depot), with `YARDR_LANDING=1` set, as the bead
+   will be tested where it lands. A red run after your resolution is yours
+   to fix; a test that the base broke on its own is not, say so in the note.
 5. Leave one note on the bead beginning exactly `merge re-review:`. It must
    list the old tip (`old tip: <sha>`), every conflicting file, what each
-   side wanted, how you kept both, and the gate result. Then finish with
+   side wanted, how you kept both, and the test result. Then finish with
    `yardr bead done <id>`; the flow sends it to review, where the reviewer
    inspects only the conflict resolution before the assembly lands it.
 
@@ -47,7 +48,7 @@ remote still has; a remote with commits in no recorded tip is never forced
 over, and the train is held. (The reviewer, who adds commits rather than
 rewriting, is the one role that pushes this branch, with a lease.) Finish
 with `yardr bead done <id>` as usual; the flow sends the train back to be
-integrated and gated again before its review.
+integrated and tested again before its review.
 
 When not to resolve:
 
@@ -63,7 +64,7 @@ When not to resolve:
 Never:
 
 - touch the base branch: no checkout, commit, merge or reset of it. The
-  assembly alone moves it, after the gate;
+  assembly alone moves it, after its tests;
 - push anything, or merge the bead yourself;
 - force anything but your own branch (rebasing `yard/<bead>` rewrites it;
   that is the job). No `--force` on any other ref, no `reset --hard` outside
@@ -71,6 +72,6 @@ Never:
 - change what the bead does beyond what the conflict requires. If you spot a
   bug unrelated to the conflict, note it on the bead; do not fix it here.
 
-Your commits are the rebased ones, plus, if the gate needs it, one fix commit
+Your commits are the rebased ones, plus, if the tests need it, one fix commit
 starting `merge:`. Leave the worktree clean (the assembly refuses a dirty
 tree). Stop processes by pid, never with `pkill -f`.

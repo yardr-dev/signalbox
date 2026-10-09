@@ -7,20 +7,21 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    names match their neighbours. Prefer extending what is there over a new
    concept, flag, setting or special case. Where the bead forces one, say
    so in your note, under Choices if the bead asks for that section.
-3. Check your work with the depot's light gate before you hand on, after your
-   last commit: `yardr depot check <depot> --light --dir <your worktree>`. It is
-   read from the depot's base, so editing it on your branch does not change
-   what you must pass. A depot without a light gate runs its full gate there,
-   and the first line of the output says so. Beyond it, run the tests of
-   what you changed, as you judge.
-   The full gate (`yardr depot check <depot> --dir <your worktree>`) runs once,
-   on exactly what lands, after review, and a red one comes back to you. Run
-   it yourself only when your change is of a kind the light gate cannot see:
-   cross-package behaviour or tests in packages it skips, race coverage
-   outside the packages it selects, slow suites, or code reached only by
-   building the binary. What those are depends on the depot's light gate (its
-   `.yardr/check-light` says). An edit to a gate's own script is run by
-   neither gate: run your copy by hand.
+3. Run the depot's test command before you hand on, after your last commit.
+   Your brief prints it as `test:` under the bead's depot (`yardr prime --bead
+   <id>`); run it in your worktree. A depot with none has no command for you:
+   run the project's tests as its developers do, and say in your note what
+   you ran. Beyond it, run the tests of what you changed, as you judge.
+   The bead is tested once more where it lands, after review, on exactly the
+   commit that lands, and a red run there comes back to you. That run sets
+   `YARDR_LANDING=1`, and a depot's test command may do more with it than
+   without (the whole suite, where yours tests what you changed). Run it so
+   yourself only when your change is of a kind your own run cannot see:
+   cross-package behaviour or tests in packages it skips, slow suites, or
+   code reached only by building the binary. What those are, the depot's
+   test command says. Where it is a script in the repository, the landing
+   runs the copy on the depot's base, not yours: an edit to that script is
+   tested by your run alone.
    Every bug you find or fix gets a regression test.
 4. Test anything that starts agents or servers in an isolated environment,
    never mckean's own session:
@@ -45,14 +46,13 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    commands; where the flow has a stage file, its "Stage" section says what
    must be true before the bead leaves the stage and when each outcome
    applies.
-   End your note with the gate line: the command you ran, the commit it ran
+   End your note with the test line: the command you ran, the commit it ran
    on (`git rev-parse --short HEAD`, the branch's last commit) and the
-   result, with the counts the gate printed (tests or packages passed and
-   failed):
-   `gate: yardr depot check <depot> --light --dir <worktree> @ <commit>: pass, <n> ok, 0 failed`
-   The reviewer goes by that line instead of running the gate again, so it
-   must be true of the commit you hand on: commit after it, and you run the
-   gate again.
+   result, with the counts it printed (tests or packages passed and failed):
+   `test: <command> @ <commit>: pass, <n> ok, 0 failed`
+   The reviewer goes by that line instead of running the tests again, so it
+   must be true of the commit you hand on: commit after it, and you run them
+   again.
 
 Each command you run starts a new shell, so a variable set in an earlier
 command is empty in a later one, and `rm -rf "$S"/x` there deletes `/x`. Set
@@ -70,7 +70,7 @@ yardmaster's inbox.
    --depot <depot> --stage backlog -b - --discovered-from <your bead>`, with what
    you saw, where, and how to reproduce. The new bead names the bead it was
    found from. The yardmaster shapes it from backlog.
-2. It blocks you but is no question about the bead (the gate is red on the
+2. It blocks you but is no question about the bead (the tests are red on the
    base, a tool is missing, the base moved under you): file it as above, then
    mail the yardmaster: `yardr mail yardmaster "<bead id>: <one line>"`.
    If you cannot finish without it,
@@ -85,7 +85,8 @@ yardmaster's inbox.
 If you work in a directory depot (the brief says which kind of depot it is): no
 branches, no commits. You work in the depot's directory itself, where other
 beads may be at work too, so touch only the files and folders your bead names.
-The gate is the depot's `.yardr/check` if it has one (`yardr depot check <depot>`
-passes with "no gate" otherwise), the full one and not the light: nothing
-lands from a directory depot, so no later stage runs it for you. The gate line
-has no commit. Steps 3 and 5 apply only as far as that.
+Run the depot's test command with `YARDR_LANDING=1` (the brief prints it as
+`test:`). A depot with none has no command for you: run the project's tests
+as its developers do, and say in your note what you ran. Nothing lands from a
+directory depot, so no later stage runs it for you. The test line has no
+commit. Steps 3 and 5 apply only as far as that.
