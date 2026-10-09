@@ -15,6 +15,7 @@ Built as a web page: TypeScript, Three.js, Vite, with Kenney's CC0 kits: the
 Train Kit, City Kit Industrial and Mini Characters.
 
 Developed in a yardr yard; `.yardr/` holds its flow, roles and merge gate.
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to file an issue or open a pull request.
 
 ## Running it
 

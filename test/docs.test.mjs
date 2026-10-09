@@ -1,8 +1,8 @@
-// The pages a reader is sent through: the README, INSTALL.md and the
-// reference in docs/. The README is kept short, so it is mostly links, and a
-// moved page or a renamed heading would leave one pointing at nothing. This
-// follows every link to a file of the repository, and to a heading where the
-// link names one, as yardr's README test does.
+// The pages a reader is sent through: the README, INSTALL.md, CONTRIBUTING.md
+// and the reference in docs/. The README is kept short, so it is mostly links,
+// and a moved page or a renamed heading would leave one pointing at nothing.
+// This follows every link to a file of the repository, and to a heading where
+// the link names one, as yardr's README test does.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const here = fileURLToPath(new URL("..", import.meta.url));
-const pages = ["README.md", "INSTALL.md", ...readdirSync(join(here, "docs")).filter((f) => f.endsWith(".md")).map((f) => `docs/${f}`)];
+const pages = ["README.md", "INSTALL.md", "CONTRIBUTING.md", ...readdirSync(join(here, "docs")).filter((f) => f.endsWith(".md")).map((f) => `docs/${f}`)];
 
 // The links of a page that name no other site: [text](target), an image's too.
 const links = (page) => [...page.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]).filter((to) => !to.includes("://"));
@@ -48,7 +48,7 @@ describe("the pages' links", () => {
 
   test("the README names its picture and its pages", () => {
     // Not for want of looking: these are the links the README is made of.
-    expect(links(readFileSync(join(here, "README.md"), "utf8"))).toEqual(expect.arrayContaining(["docs/yard.png", "INSTALL.md", "docs/look.md", "docs/replay.md", "docs/code.md", "LICENSE", "NOTICE"]));
+    expect(links(readFileSync(join(here, "README.md"), "utf8"))).toEqual(expect.arrayContaining(["docs/yard.png", "INSTALL.md", "docs/look.md", "docs/replay.md", "docs/code.md", "CONTRIBUTING.md", "LICENSE", "NOTICE"]));
   });
 
   test("a link to a missing file or heading is found", () => {
