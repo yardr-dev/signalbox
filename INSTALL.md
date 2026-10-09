@@ -63,8 +63,35 @@ reach, such as the machine's address on a Tailscale net:
 There is no login. Whoever reaches the port reads what the page shows: the
 yard's depots, flows, groups, crew and peers by name, each open bead's id,
 title, type, stage and labels, the events, and the body and notes of a bead
-whose card is opened. Never a key or a path the yard prints. Do not put it
-on an address strangers reach.
+whose card is opened. Never a key or a path the yard prints.
+
+## The public
+
+A stranger reads what the page shows. There is no login. That is the yard's
+depots, flows, groups, crew and peers by name, each open bead's id, title,
+type, stage and labels, the events, the quota silos with the providers'
+plan names and percentages, and the body and notes of any bead whose card
+they open. Never a key or a path the yard prints. A path or a key written
+into a note is on the card.
+
+The fault report is the one route that writes. It is limited to one line a
+second and kept nowhere.
+
+The feed is one line to the view, however many listen.
+
+A proxy with TLS in front is the way, and serve.mjs stays on loopback.
+Start it as Run does, so it listens at 127.0.0.1. A Cloudflare tunnel is
+the example. Map the hostname to http://127.0.0.1:8792 in the tunnel's
+config. box.example.com shows the shape of that hostname:
+
+    ingress:
+      - hostname: box.example.com
+        service: http://127.0.0.1:8792
+      - service: http_status:404
+
+    cloudflared tunnel run
+
+Any such proxy will do (Tailscale Funnel, Caddy).
 
 ## What the page shows
 
