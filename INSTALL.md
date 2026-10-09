@@ -22,7 +22,8 @@ the yard but one layout file in the yard's home.
 
 What is in it: `dist/` (the built page), `scripts/serve.mjs` and
 `scripts/yard.mjs` (the script), `src/layout.ts`, `src/project.ts` and
-`src/yard.ts` (what the script imports), this file and the README.
+`src/yard.ts` (what the script imports), this file, the README, `LICENSE`
+and `NOTICE`.
 
 ## Run
 
@@ -99,7 +100,9 @@ A depot is a station yard, its flow a track, each stage a platform. A bead
 is a wagon; a train a row of coupled wagons; a session a figure who walks
 out of its group's hut to the wagon it works; review a signal; decide and
 held are sidings; a peer a line to another yard with mail as goods. The
-README has the full key and the look.
+colours and the light picture are in `docs/look.md` of the source
+(https://github.com/yardr-dev/signalbox). This archive does not hold that
+page.
 
 ## Trouble
 

@@ -51,6 +51,21 @@ describe("the pages' links", () => {
     expect(links(readFileSync(join(here, "README.md"), "utf8"))).toEqual(expect.arrayContaining(["docs/yard.png", "INSTALL.md", "docs/look.md", "docs/replay.md", "docs/code.md", "CONTRIBUTING.md", "LICENSE", "NOTICE"]));
   });
 
+  test("INSTALL.md names the licence the archive holds, and the look outside it", () => {
+    // scripts/release.sh packs LICENSE and NOTICE with the page. The look
+    // moved to docs/look.md, and that page is not in the archive, so a
+    // reader of INSTALL.md is sent to the source for it.
+    const install = readFileSync(join(here, "INSTALL.md"), "utf8");
+    const what = install.slice(install.indexOf("What is in it:"), install.indexOf("\n## Run"));
+    expect(what).toContain("`LICENSE`");
+    expect(what).toContain("`NOTICE`");
+    const shows = install.slice(install.indexOf("## What the page shows"), install.indexOf("\n## Trouble"));
+    expect(shows).toContain("`docs/look.md`");
+    expect(shows).toContain("https://github.com/yardr-dev/signalbox");
+    expect(shows).toContain("This archive does not hold that");
+    expect(shows).not.toContain("full key and the look");
+  });
+
   test("the pull request template has three prompts", () => {
     expect(readFileSync(join(here, ".github/PULL_REQUEST_TEMPLATE.md"), "utf8").trim().split("\n")).toEqual(["What:", "Why:", "How tested:"]);
   });
