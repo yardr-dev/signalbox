@@ -70,6 +70,8 @@ describe("the release script", () => {
       [
         "signalbox/",
         "signalbox/INSTALL.md",
+        "signalbox/LICENSE",
+        "signalbox/NOTICE",
         "signalbox/README.md",
         "signalbox/dist/",
         "signalbox/dist/assets/",

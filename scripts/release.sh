@@ -29,10 +29,10 @@ out=$(cd "$out" && pwd)
 cd "$(dirname "$0")/.."
 
 # What the archive holds, and nothing else of the tree: the page, the serve
-# script, what that imports and node runs as it is, and the two files to
-# read. The one place that says so: the test reads this line, and fails when
+# script, what that imports and node runs as it is, the two files to
+# read, and the licence with its notice. The one place that says so: the test reads this line, and fails when
 # the script imports a file that is not on it.
-files="dist scripts/serve.mjs scripts/yard.mjs src/layout.ts src/project.ts src/yard.ts README.md INSTALL.md"
+files="dist scripts/serve.mjs scripts/yard.mjs src/layout.ts src/project.ts src/yard.ts README.md INSTALL.md LICENSE NOTICE"
 
 # The node that packs the script can run it: the lowest is package.json's
 # (engines), the first to take a TypeScript file as it is.
