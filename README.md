@@ -80,3 +80,7 @@ page, [docs/code.md](docs/code.md) each of these files at length.
 
 Apache 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)). The kits are Kenney's,
 CC0, each with its licence in `public/kit/`.
+
+The licence covers the code. It does not cover the names yardr and signalbox
+or the ram, which are the project's marks (Apache 2.0, section 6): a fork
+takes a name and a mark of its own.

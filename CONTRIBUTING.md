@@ -21,6 +21,15 @@ what changed, why, and how you tested it.
 A maintainer looks at every pull request before any of its code is run. The
 label `accepted` means that look is done, and the pull request may be read.
 A maintainer merges on GitHub, or closes the pull request.
+Its commits are signed off, as the next section says.
+
+## Sign your commits
+
+Every commit carries a `Signed-off-by` line with your name and email address
+(`git commit -s`). It certifies the Developer Certificate of Origin,
+<https://developercertificate.org>: that you wrote the change, or may submit
+it, under the project's licence. A pull request whose commits lack the line
+is asked for it before it is read.
 
 ## The yard's bot
 
