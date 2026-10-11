@@ -1,11 +1,12 @@
 // From a yard's structure to positions on the ground: one pure function.
 //
-// Every element is placed by its slot in its parent and by constants, never
-// by how much else there is: the board of a depot, the track of a flow in its
+// Every element is placed by its slot in its parent and by constants, except
+// a board, which starts where the one above ends: the track of a flow in its
 // depot, the platform of a stage in its flow, the line of a peer, the tower
 // of a provider; and by its index building n of its stage, place p before
 // its door, crew member c. So the same structure gives the same picture.
-// Only extents grow: a track's length, a board's size.
+// Only extents grow: a track's length, a board's size, and a taller board
+// moves the boards below it.
 //
 // A slot is given once (place, below) and remembered: public/layout.json
 // holds the slots given so far, and an element in that file keeps its slot
@@ -73,14 +74,16 @@ export const TAIL_PITCH = 0.6;
 // A platform's lamp, from its left end.
 export const LAMP_X = 0.25;
 
-// Down the page. A board has room for three flows whatever it holds (the
-// default, the trains', the wagons'), so a flow added to a depot moves no
-// board below it; a fourth flow would run under the next board.
+// Down the page. A board is as tall as its depot's flows need, at least three
+// (the default, the trains', the wagons'), so a flow added within three moves
+// no board below it; each board starts where the one above ends, a gap on.
+// A slot no depot stands in still takes a board of three.
 export const FLOW_PITCH = 12.5;
 export const FLOWS_PER_BOARD = 3;
 export const BOARD_HEAD = 4;
+export const BOARD_GAP = 2.5;
 export const FIRST_TRACK_Z = BOARD_HEAD + 7.5;
-export const DEPOT_PITCH = BOARD_HEAD + FLOWS_PER_BOARD * FLOW_PITCH + 2.5;
+export const DEPOT_PITCH = BOARD_HEAD + FLOWS_PER_BOARD * FLOW_PITCH + BOARD_GAP;
 // Left of stage 0: the board's edge, with room for the flow's name.
 export const BOARD_X = -16;
 // The headshunt: the rail a track has before its first platform, with a
@@ -536,13 +539,33 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
   const sheds: { shed: Shed; depot: string; rank: number[] }[] = [];
   let right = 0;
 
+  // A board's depth: the slots its flows stand in, gaps and all, at least
+  // three. Each board starts where the one above ends, a gap on, so a depot's
+  // top is the boards and gaps above it; what left leaves a board of three.
+  const depths = new Map<string, number>();
+  for (const depot of yard.depots) {
+    const flowSlots = Object.values(slots.flows[depot.name] ?? {});
+    const tracks = flowSlots.length > 0 ? Math.max(...flowSlots) + 1 : 1;
+    depths.set(depot.name, BOARD_HEAD + Math.max(tracks, FLOWS_PER_BOARD) * FLOW_PITCH);
+  }
+  const tops = new Map<string, number>();
+  const bySlot = [...yard.depots].sort((a, b) => slots.depots[a.name]! - slots.depots[b.name]!);
+  let cursor = 0;
+  let prev = -1;
+  for (const depot of bySlot) {
+    const slot = slots.depots[depot.name]!;
+    cursor += (slot - prev - 1) * DEPOT_PITCH;
+    tops.set(depot.name, cursor);
+    cursor += depths.get(depot.name)! + BOARD_GAP;
+    prev = slot;
+  }
+
   yard.depots.forEach((depot) => {
     const flows = yard.flows.find((f) => f.depot === depot.name)?.flows ?? [];
-    const top = slots.depots[depot.name]! * DEPOT_PITCH;
+    const top = tops.get(depot.name)!;
     const beads = yard.beads.filter((b) => b.depot === depot.name);
-    // How far the board reaches: its last platform, its last track.
+    // How far the board reaches: its last platform.
     let stages = 1;
-    let tracks = 1;
 
     flows.forEach((flow, j) => {
       const track = slots.flows[depot.name]![flow.name]!;
@@ -553,7 +576,6 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
       // A held bead is shunted into the siding, whatever its stage.
       const held = holdStage(flow);
       const stands = (b: Bead) => (b.hold === true && held !== undefined ? held : b.stage);
-      tracks = Math.max(tracks, track + 1);
 
       // The main line runs from the first platform to the last one on it.
       let last = 0;
@@ -725,7 +747,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
       depot: depot.name,
       at: { x: BOARD_X, z: top },
       width,
-      depth: BOARD_HEAD + tracks * FLOW_PITCH,
+      depth: depths.get(depot.name)!,
     });
   });
 

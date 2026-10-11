@@ -4,6 +4,8 @@ import snapshot from "../public/yard.json";
 import {
   age,
   atWork,
+  BOARD_GAP,
+  BOARD_HEAD,
   BOX_FRONT_Z,
   coal,
   CREW_PITCH,
@@ -127,6 +129,43 @@ describe("a structure that only grew keeps every old position", () => {
   });
 });
 
+describe("a depot with more flows than a board holds", () => {
+  test("a fourth flow stays on its own board, under its own heading", () => {
+    const grown = copy();
+    grown.flows
+      .find((f) => f.depot === "yardr")!
+      .flows.push({
+        name: "design",
+        type: "design",
+        stages: [{ stage: "backlog", human: true }, { stage: "draft" }, { stage: "decide", human: true }, { stage: "critique" }, { stage: "approved" }, { stage: "merged", terminal: true }],
+      });
+    const l = layout(grown);
+    const boards = [...l.boards].sort((a, b) => a.at.z - b.at.z);
+    // No board runs under the next: each ends where the next begins.
+    boards.forEach((b, i) => {
+      const next = boards[i + 1];
+      if (next !== undefined) expect(b.at.z + b.depth).toBeLessThanOrEqual(next.at.z);
+    });
+    // Each track sits under its own depot's heading: on its own board, above
+    // the next board's top, and carries its flow's name.
+    for (const t of l.tracks) {
+      const board = l.boards.find((b) => b.depot === t.depot)!;
+      expect(t.flow).toBeTruthy();
+      expect(t.at.z).toBeGreaterThan(board.at.z);
+      expect(t.at.z).toBeLessThan(board.at.z + board.depth);
+      const below = boards.find((b) => b.at.z > board.at.z);
+      if (below !== undefined) expect(t.at.z).toBeLessThan(below.at.z);
+    }
+    // The store flow is drawn, on yardr's board, before yardr.dev's heading.
+    const design = l.tracks.find((t) => t.key === "yardr/design")!;
+    expect(design.flow).toBe("design");
+    const yardr = l.boards.find((b) => b.depot === "yardr")!;
+    const dev = l.boards.find((b) => b.depot === "yardr.dev")!;
+    expect(design.at.z).toBeGreaterThan(yardr.at.z);
+    expect(design.at.z).toBeLessThan(dev.at.z);
+  });
+});
+
 describe("a slot once given is kept when the structure's order changes", () => {
   test("the committed layout.json holds this snapshot, as first seen", () => {
     expect(place(yard, remembered)).toEqual(remembered);
@@ -142,8 +181,9 @@ describe("a slot once given is kept when the structure's order changes", () => {
     expect(at.get(`platform:yardr/${flow.name}/review`)!.x).toBe(9 * STAGE_PITCH);
     expect(at.get(`track:yardr/${flow.name}`)!.z).toBe(7 * DEPOT_PITCH + FIRST_TRACK_Z + 2 * FLOW_PITCH);
     expect(at.get("peer:peer/airy")!.z).toBe(PEER_Z - 4 * PEER_PITCH);
-    // What had no slot stands after what had one, not on it.
-    expect(at.get("board:aiquokka")!.z).toBe(8 * DEPOT_PITCH);
+    // What had no slot stands after what had one, not on it: past yardr's
+    // board, which holds five slots (the remembered 2, then 3 and 4).
+    expect(at.get("board:aiquokka")!.z).toBe(7 * DEPOT_PITCH + BOARD_HEAD + 5 * FLOW_PITCH + BOARD_GAP);
     expect(at.get(`platform:yardr/${flow.name}/backlog`)!.x).toBe(10 * STAGE_PITCH);
   });
 
