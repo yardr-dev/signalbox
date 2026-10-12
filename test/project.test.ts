@@ -15,7 +15,7 @@ const lists = {
   ],
   groups: [{ name: "builders", runner: "herdr", limit: 2, args: [SECRET], provider: "zai", config: { kind: "pi", provider: "zai", model: "a-model", env_file: SECRET } }],
   routes: [{ id: "r1", stage: "new", type: null, group: "builders", priority: 0 }],
-  crew: [{ name: "yardmaster", config: { kind: "claude", env_file: SECRET }, state: "running", dir: SECRET, handle: { pid: 1 } }],
+  crew: [{ name: "yardmaster", provider: "openai", config: { kind: "claude", provider: "secret-config", env_file: SECRET }, state: "running", dir: SECRET, handle: { pid: 1 } }],
   peers: [{ name: "airy", send: ["mail"], url: SECRET, key: SECRET }],
   beads: [
     { id: "signalbox-a", title: "a", body: SECRET, type: "task", stage: "new", status: "open", depot: "signalbox", session: "4wbdbdwypgzzjr5vgfwr", priority: 2, created_at: "2099-01-01T00:00:00Z" },
@@ -33,7 +33,7 @@ describe("the projection", () => {
       flows: [{ depot: "signalbox", flows: [{ name: "default", stages: [{ stage: "new", group: "builders", next: ["review"] }] }] }],
       groups: [{ name: "builders", runner: "herdr", limit: 2, kind: "pi", provider: "zai" }],
       routes: [{ stage: "new", group: "builders", priority: 0 }],
-      crew: [{ name: "yardmaster", kind: "claude", state: "running" }],
+      crew: [{ name: "yardmaster", kind: "claude", provider: "openai", state: "running" }],
       peers: [{ name: "airy", send: ["mail"] }],
       beads: [
         { id: "signalbox-a", title: "a", type: "task", stage: "new", depot: "signalbox", working: true, priority: 2, created_at: "2099-01-01T00:00:00Z" },
