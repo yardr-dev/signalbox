@@ -52,9 +52,12 @@ export interface Group {
   name: string;
   // manual is people; any other runner starts sessions.
   runner: string;
-  // The agent its sessions are (claude, codex, kimi): the provider whose
-  // quota they burn. A group of people or of scripts has none.
+  // The agent its sessions are (claude, codex, kimi).
   kind?: string;
+  // The subscription they burn, as the web resolved it: the provider setting
+  // where set, else the kinds table's word for the kind. None where neither
+  // answers, and none for people or scripts.
+  provider?: string;
   limit: number;
   members?: string[];
 }
@@ -72,6 +75,8 @@ export interface CrewMember {
   name: string;
   // The agent it is, as a group's kind.
   kind?: string;
+  // The subscription it burns, as a group's provider.
+  provider?: string;
   state?: string;
   status?: string;
 }
@@ -133,7 +138,7 @@ export interface Quota {
 }
 
 export interface Provider {
-  // As a group's kind names it: claude, codex, kimi.
+  // As a tower names it: claude, codex, kimi.
   key: string;
   // As it is written: Claude.
   name: string;

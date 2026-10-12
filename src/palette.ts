@@ -136,7 +136,7 @@ export const smoke = 0x70757c;
 // The iron of the coal in a silo's indicators.
 export const iron = 0x33373d;
 // A silo's band by the provider whose quota it holds, the key as the yard
-// has it (a group's kind): peach for Claude's orange, green for OpenAI's of
+// has it: peach for Claude's orange, green for OpenAI's of
 // codex, blue for kimi, and overlay for any other.
 export const livery: Record<string, Accent> = { claude: "peach", codex: "green", kimi: "blue" };
 export function liveried(provider: string): Accent {

@@ -330,7 +330,7 @@ export interface SignalBox {
 // in the indicators beside it.
 export interface Tower {
   key: string;
-  // The provider, as a group's kind names it.
+  // The provider, as the row names it.
   provider: string;
   at: Point;
 }
@@ -351,13 +351,14 @@ export function coal(percent: number): Coal {
   return percent <= 0 ? "out" : percent < LAST ? "last" : percent < LOW ? "low" : "plenty";
 }
 
-// The providers the yard burns the quota of: the kind of every group that
-// starts agents, then of every crew member, each once. People and scripts
-// burn none.
+// The providers the yard burns the quota of: the provider of every group
+// that starts agents, then of every crew member, each once, or the kind
+// where the row carries none: a yard with no limits source keeps today's
+// towers. People and scripts burn none.
 export function providers(yard: Yard): string[] {
   const agents = yard.groups.filter((g) => g.runner !== "manual" && g.runner !== "exec");
-  const kinds = [...agents, ...yard.crew].map((of) => of.kind).filter((kind) => typeof kind === "string");
-  return [...new Set(kinds)];
+  const names = [...agents, ...yard.crew].map((of) => of.provider ?? of.kind).filter((name) => typeof name === "string");
+  return [...new Set(names)];
 }
 
 export interface PeerLine {

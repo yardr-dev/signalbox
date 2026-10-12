@@ -808,13 +808,23 @@ describe("a wagon that waits for another bead has a lamp naming it", () => {
 });
 
 describe("a coaling tower for every provider the yard burns the quota of", () => {
-  const groups = (kinds: [runner: string, kind?: string][]) => kinds.map(([runner, kind], n) => ({ name: `g${n}`, runner, limit: 1, ...(kind !== undefined ? { kind } : {}) }));
+  const groups = (rows: [runner: string, kind?: string, provider?: string][]) => rows.map(([runner, kind, provider], n) => ({ name: `g${n}`, runner, limit: 1, ...(kind !== undefined ? { kind } : {}), ...(provider !== undefined ? { provider } : {}) }));
 
   test("the kind of each group that starts agents, then of each crew member, once; none for people and scripts", () => {
     const y: Yard = { ...yard, groups: groups([["herdr", "codex"], ["manual"], ["exec"], ["herdr", "claude"], ["herdr", "codex"], ["herdr"], ["exec", "grok"]]), crew: [{ name: "a", kind: "kimi" }, { name: "b", kind: "claude" }, { name: "c" }] };
     expect(providers(y)).toEqual(["codex", "claude", "kimi"]);
     expect(providers({ ...y, groups: groups([["manual"], ["exec"]]), crew: [] })).toEqual([]);
     expect(layout({ ...y, groups: [], crew: [] }).towers).toEqual([]);
+  });
+
+  test("a row's provider where it carries one, its kind where it carries none: one tower for every distinct provider", () => {
+    const y: Yard = {
+      ...yard,
+      groups: groups([["herdr", "pi", "zai"], ["herdr", "pi", "openai"], ["herdr", "claude", "claude"], ["herdr", "codex"]]),
+      crew: [{ name: "a", kind: "pi", provider: "zai" }, { name: "b", kind: "kimi" }],
+    };
+    expect(providers(y)).toEqual(["zai", "openai", "claude", "codex", "kimi"]);
+    expect(layout(y).towers.map((t) => t.provider)).toEqual(["zai", "openai", "claude", "codex", "kimi"]);
   });
 
   test("this yard: its crew are kimi and claude, in the signal boxes' row, at their pitch, left of the first box", () => {
