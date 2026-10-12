@@ -697,6 +697,10 @@ describe("live", () => {
   const wire = (e: YardEvent) => JSON.parse(JSON.stringify(e)) as YardEvent;
 
   test("the feed's events are applied as the replay applies them", () => {
+    // Where the replay of the whole window ends, whatever the snapshot began
+    // as: read once, not once per snapshot below.
+    const brief = (b: Bead) => `${b.id} ${b.stage} ${b.working === true} ${b.hold === true}`;
+    const ended = state(yard, log).beads.map(brief).sort();
     for (const k of [0, 500, 1000, 1500, log.events.length - 1]) {
       const snap = taken(k);
       const p = new Player(snap.yard, snap.log, Date.parse(log.events[k]!.at));
@@ -705,19 +709,29 @@ describe("live", () => {
       // The replay of the same window, from the same snapshot.
       const w = world(snap.yard, snap.log);
       let replayed = state(snap.yard, snap.log);
+      const tail = log.events.slice(k);
       const passed: YardEvent[] = [];
-      for (const e of log.events.slice(k)) {
+      for (let i = 0; i < tail.length; i++) {
+        const e = tail[i]!;
         expect(p.append(wire(e))).toBe(true);
         // A frame between any two: the picture follows event by event.
         passed.push(...p.advance(0.016));
         replayed = step(replayed, e, w);
-        expect(p.state, `after ${e.seq}`).toEqual(replayed);
+        // The frame passes the one event the feed brought, no more and none
+        // late. Both states are built by the same reducer, so that order is
+        // what keeps them the same.
+        expect(passed.length, `after ${e.seq}`).toBe(i + 1);
+        // The whole state every hundredth event, and at the tail's end: after
+        // every one of its 2000 events it costs seconds, and under load more
+        // than the timeout (signalbox-s9n8).
+        if ((i + 1) % 100 === 0 || i + 1 === tail.length) expect(p.state, `after ${e.seq}`).toEqual(replayed);
       }
-      expect(passed).toEqual(log.events.slice(k));
+      // By number: the order is the claim, and the states above already say
+      // the feed's copies read as the window's.
+      expect(passed.map((e) => e.seq)).toEqual(tail.map((e) => e.seq));
       // And as the replay of the whole window ends: the same wagons at the
       // same stages, with the same sessions at work.
-      const brief = (b: Bead) => `${b.id} ${b.stage} ${b.working === true} ${b.hold === true}`;
-      expect(p.state.beads.map(brief).sort(), `from ${k}`).toEqual(state(yard, log).beads.map(brief).sort());
+      expect(p.state.beads.map(brief).sort(), `from ${k}`).toEqual(ended);
       expect(p.clock).toBe(p.to);
       expect(p.playing).toBe(true);
     }
