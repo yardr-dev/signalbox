@@ -1,15 +1,14 @@
-summary: What has landed on the base is deployed from here, one bead at a time.
+summary: Base landings are deployed from here, one bead at a time.
 
-The bead has landed: its commit is on the depot's base. From here the base
-is deployed to where the page runs, by a deploy script, one bead at a time.
-Nothing about the bead or the base is changed here.
+The bead has landed: its commit is on the depot's base, or on its train's
+branch. A base landing is deployed from here, by a deploy script, one bead at
+a time. Nothing about the bead or the base is changed here.
 
 What is deployed is the base as it stands when the script runs, which may
 hold a later landing than this bead's. A bead that landed on a train's
 branch deploys nothing: the train does, when it lands on the base.
 
-A bead here with no route waits: the yard has no deploy group for the stage
-yet, and the bead starts when one is routed.
+A bead here with no route waits until the yard routes the stage.
 
 Outcomes:
 
