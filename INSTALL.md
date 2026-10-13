@@ -96,6 +96,16 @@ config. box.example.com shows the shape of that hostname:
 
 Any such proxy will do (Tailscale Funnel, Caddy).
 
+## Deployed by the yard
+
+After a landing, the yard's stage `merged` runs yardr's
+`contrib/deploy/deploy-dokku`, which pushes the base to a Dokku app. Dokku
+builds this repository's Dockerfile: it runs `npm ci` and `npm run build`
+on Node 24 and copies `dist/` into an nginx image, which serves the built
+page as plain files on port 80 (the demo yard, as from any static server).
+The bead's note then carries the address, and `live` closes the bead. The
+host and the key are the yard's, not this repository's: neither is here.
+
 ## What the page shows
 
 A depot is a station yard, its flow a track, each stage a platform. A bead
