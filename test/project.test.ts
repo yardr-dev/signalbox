@@ -16,7 +16,7 @@ const lists = {
   groups: [{ name: "builders", runner: "herdr", limit: 2, args: [SECRET], provider: "zai", config: { kind: "pi", provider: "zai", model: "a-model", env_file: SECRET } }],
   routes: [{ id: "r1", stage: "new", type: null, group: "builders", priority: 0 }],
   crew: [{ name: "yardmaster", provider: "openai", config: { kind: "claude", provider: "secret-config", env_file: SECRET }, state: "running", dir: SECRET, handle: { pid: 1 } }],
-  peers: [{ name: "airy", send: ["mail"], url: SECRET, key: SECRET }],
+  peers: [{ name: "quay", send: ["mail"], url: SECRET, key: SECRET }],
   beads: [
     { id: "signalbox-a", title: "a", body: SECRET, type: "task", stage: "new", status: "open", depot: "signalbox", session: "4wbdbdwypgzzjr5vgfwr", priority: 2, created_at: "2099-01-01T00:00:00Z" },
     { id: "signalbox-b", title: "b", type: "task", stage: "backlog", status: "open", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" },
@@ -34,7 +34,7 @@ describe("the projection", () => {
       groups: [{ name: "builders", runner: "herdr", limit: 2, kind: "pi", provider: "zai" }],
       routes: [{ stage: "new", group: "builders", priority: 0 }],
       crew: [{ name: "yardmaster", kind: "claude", provider: "openai", state: "running" }],
-      peers: [{ name: "airy", send: ["mail"] }],
+      peers: [{ name: "quay", send: ["mail"] }],
       beads: [
         { id: "signalbox-a", title: "a", type: "task", stage: "new", depot: "signalbox", working: true, priority: 2, created_at: "2099-01-01T00:00:00Z" },
         { id: "signalbox-b", title: "b", type: "task", stage: "backlog", depot: "signalbox", working: false, priority: 2, created_at: "2099-01-01T00:00:00Z" },
@@ -108,7 +108,7 @@ describe("the projection", () => {
       edge("signalbox-a", "signalbox-b", "blocks"),
       edge("signalbox-b", "signalbox-a", "discovered-from"),
       edge("signalbox-t", "signalbox-a", "parent"),
-      edge("yardr-x", "signalbox-a", "blocks"),
+      edge("wharf-x", "signalbox-a", "blocks"),
       // Every edge of the yard is listed: these two beads have closed.
       edge("signalbox-gone", "signalbox-done", "blocks"),
       edge({ path: SECRET }, "signalbox-a", "blocks"),
@@ -116,7 +116,7 @@ describe("the projection", () => {
     const yard = yardOf({ ...lists, edges }, "2099-01-01T00:00:00Z");
     expect(yard.edges).toEqual([
       { from: "signalbox-a", to: "signalbox-b" },
-      { from: "yardr-x", to: "signalbox-a" },
+      { from: "wharf-x", to: "signalbox-a" },
     ]);
     expect(JSON.stringify(yard)).not.toMatch(/secret/);
   });

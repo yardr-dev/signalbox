@@ -3,10 +3,13 @@
     npm run snapshot   # YARDR_WEB=http://127.0.0.1:8791 names the yard's web view
     npm run dev
 
-The snapshot writes `public/yard.json` (the yard now) and, beside it,
-`public/events.json`: the events of the yard's newest 2000 sequence numbers
+The snapshot writes `public/snapshot/yard.json` (the yard now) and, beside
+it, `events.json`: the events of the yard's newest 2000 sequence numbers
 (the view's stream starts after a number, not at a time), which is the
-window the page plays. The page
+window the page plays. `public/snapshot/` is not tracked: it is your yard,
+and stays on your machine. Without a snapshot the page plays the demo, a
+made-up yard and one day of it (`public/yard.json`, written by
+`scripts/demo.mjs`), and the bar says "Demo". The page
 opens at the window's start, paused. The bar at the bottom plays and pauses,
 sets the speed (60x makes an hour a minute), and scrubs over the window; it
 shows the yard's clock in your own time and the last event in one line.
@@ -44,7 +47,7 @@ another. Every building has its door to
 its platform; a crew stand idle in a row from the door's corner down the
 line, where the building does not hide them from the reader, a place for
 each session the group may run, and the sign
-counts who is out (`yardr-builders · 1 of 3 out`), so an empty place is a
+counts who is out (`wharf-builders · 1 of 3 out`), so an empty place is a
 session at work. The count is the group's in the whole yard, and each of
 its buildings shows it: with one of three out, two stand idle before every
 door of the group, and the third is at its wagon on its own board. When a session starts, the first figure at home walks over
@@ -172,8 +175,8 @@ same platform, at another one of the board, on another board, or only
 counted at its platform. Nothing is drawn between the two: coupled wagons
 move together, and a wagon does not follow its blocker.
 
-Under the pointer the wagon says what it waits for ("waits for yardr-xyz
-(aiquokka · review)": the bead, the board it is on and its stage there), a
+Under the pointer the wagon says what it waits for ("waits for wharf-e2jc
+(wharf · review)": the bead, the board it is on and its stage there), a
 line for each blocker. The snapshot has the edges as `edges` in
 `yard.json`: of every edge of the yard (the view's `/deps`) the ones with
 an open bead at an end. The replay keeps them from
@@ -250,7 +253,7 @@ is four routes beside the files of `dist/`:
   rest), and what is no report is a 400. Nothing is kept: the log is the
   record.
 
-What it exposes: what the committed snapshot holds, for the yard as it is
+What it exposes: what a snapshot holds, for the yard as it is
 now. Depots, flows, stages, groups, routes, crew and peers by name; of each
 open bead its id, title, type, stage, labels, whether a session works it and
 what went wrong with it last (a kind and a time);
@@ -267,7 +270,8 @@ the port reads all of that. So it listens on this machine alone, and
 machine's on a Tailscale net, for a phone on the same net.
 
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
-of this is there, and the page is the committed snapshot and its replay.
+of this is there, and the page is the replay of a snapshot's files: your
+own from `public/snapshot/`, else the demo.
 
 A machine with no checkout takes a release's archive instead: the built
 page and the script, run by Node alone, with no `npm ci` and no build.

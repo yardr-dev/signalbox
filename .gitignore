@@ -1,3 +1,5 @@
 node_modules/
 dist/
 release/
+# A snapshot of one's own yard (npm run snapshot): never the repository's.
+public/snapshot/

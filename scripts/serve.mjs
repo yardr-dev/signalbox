@@ -40,8 +40,8 @@
 // The slots it gives are the yard's, not the built page's: it keeps them in
 // a file in the yard's home (layoutFile, below; --layout names another), which
 // is not there for a yard it has not served, so that yard is laid out from
-// slot 0. The layout.json beside the page is the committed snapshot's, another
-// yard's as a rule, and is not read here.
+// slot 0. The layout.json beside the page is the demo's, another yard's, and
+// is not read here.
 //
 // The quota is asked of aiquokka, a call over the network for every provider:
 // once a minute at most (QUOTA_EVERY), however many pages ask and listen, and

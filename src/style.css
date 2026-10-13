@@ -170,6 +170,19 @@ body.replay #note {
   min-width: 56px;
 }
 
+/* The word for the made-up yard: a button's shape, filled, and no button. */
+#demo {
+  padding: 3px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 11px;
+  color: var(--pill);
+  background: var(--ink);
+}
+
+#demo[hidden] {
+  display: none;
+}
+
 #speeds {
   display: flex;
   gap: 3px;

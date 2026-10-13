@@ -1,6 +1,7 @@
-// The shape of public/yard.json, as scripts/snapshot.sh writes it: the
-// structure of one yard, cut down to what the picture needs. A field yardr
-// leaves out when unset is optional here.
+// The shape of a snapshot's yard.json, as scripts/snapshot.sh writes it and
+// scripts/demo.mjs writes the demo's: the structure of one yard, cut down to
+// what the picture needs. A field yardr leaves out when unset is optional
+// here.
 
 export interface Yard {
   taken_at: string;

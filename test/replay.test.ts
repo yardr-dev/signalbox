@@ -6,13 +6,13 @@ import { Player } from "../src/player";
 import { FAULTS, line, opening, outgrown, SHOWN, state, step, STRUCTURE, trains, world, type Log, type State, type YardEvent } from "../src/replay";
 import type { Bead, Yard } from "../src/yard";
 
-// The committed snapshot and its events are the fixture: this yard's last
-// 2000 events, as scripts/snapshot.sh wrote them.
+// The committed snapshot and its events are the fixture: the demo yard and
+// its day, as scripts/demo.mjs wrote them.
 const yard = snapshot as Yard;
 const log = window as Log;
 
 function bead(id: string, over: Partial<Bead> = {}): Bead {
-  return { id, title: id, type: "task", stage: "new", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z", ...over };
+  return { id, title: id, type: "task", stage: "new", depot: "sextant", priority: 2, created_at: "2099-01-01T00:00:00Z", ...over };
 }
 
 let seq = 0;
@@ -21,10 +21,10 @@ function event(kind: string, id?: string, data?: YardEvent["data"]): YardEvent {
   return { seq, at: new Date(Date.UTC(2099, 0, 1, 0, 0, seq)).toISOString(), kind, ...(id !== undefined ? { bead: id } : {}), ...(data ? { data } : {}) };
 }
 
-// A yard of this one's structure with one wagon in it, signalbox-a at new,
-// and a cast that knows signalbox-b too.
-const one: Yard = { ...yard, beads: [bead("signalbox-a")] };
-const cast: Log = { taken_at: yard.taken_at, beads: [bead("signalbox-b", { stage: "merged" })], events: [] };
+// A yard of this one's structure with one wagon in it, sextant-a at new,
+// and a cast that knows sextant-b too.
+const one: Yard = { ...yard, beads: [bead("sextant-a")] };
+const cast: Log = { taken_at: yard.taken_at, beads: [bead("sextant-b", { stage: "merged" })], events: [] };
 const w = world(one, cast);
 const start: State = { beads: one.beads, sessions: {}, edges: [], works: {} };
 const run = (events: YardEvent[], from: State = start) => events.reduce((s, e) => step(s, e, w), from);
@@ -34,107 +34,107 @@ const platform = (s: State, id: string) => layout({ ...one, beads: s.beads }).ve
 
 describe("the reducer", () => {
   test("a created bead is a wagon at its flow's first platform, behind what stands there", () => {
-    const older = bead("signalbox-o", { stage: "backlog", created_at: "2098-01-01T00:00:00Z" });
-    const s = run([event("created", "signalbox-b")], { beads: [...start.beads, older], sessions: {}, edges: [], works: {} });
-    expect(at(s, "signalbox-b")).toMatchObject({ stage: "backlog" });
+    const older = bead("sextant-o", { stage: "backlog", created_at: "2098-01-01T00:00:00Z" });
+    const s = run([event("created", "sextant-b")], { beads: [...start.beads, older], sessions: {}, edges: [], works: {} });
+    expect(at(s, "sextant-b")).toMatchObject({ stage: "backlog" });
     const l = layout({ ...one, beads: s.beads });
-    const [first, last] = ["signalbox-o", "signalbox-b"].map((id) => l.vehicles.find((v) => v.key === id)!);
-    expect(last!.platform).toBe("signalbox/default/backlog");
+    const [first, last] = ["sextant-o", "sextant-b"].map((id) => l.vehicles.find((v) => v.key === id)!);
+    expect(last!.platform).toBe("sextant/default/backlog");
     expect(last!.at.x).toBeLessThan(first!.at.x);
   });
 
   test("a created that names its stage puts the wagon there, not on the flow's first", () => {
-    const s = run([event("created", "signalbox-b", { stage: "new" })]);
-    expect(at(s, "signalbox-b")).toMatchObject({ stage: "new" });
-    expect(platform(s, "signalbox-b")).toBe("signalbox/default/new");
+    const s = run([event("created", "sextant-b", { stage: "new" })]);
+    expect(at(s, "sextant-b")).toMatchObject({ stage: "new" });
+    expect(platform(s, "sextant-b")).toBe("sextant/default/new");
     // Made past the buffer, it never was in the picture.
-    expect(run([event("created", "signalbox-b", { stage: "merged" })])).toBe(start);
+    expect(run([event("created", "sextant-b", { stage: "merged" })])).toBe(start);
   });
 
   test("after an advance the wagon is at the new platform", () => {
-    const s = run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done" })]);
-    expect(at(s, "signalbox-a")!.stage).toBe("review");
-    expect(platform(s, "signalbox-a")).toBe("signalbox/default/review");
+    const s = run([event("advanced", "sextant-a", { from: "new", to: "review", outcome: "done" })]);
+    expect(at(s, "sextant-a")!.stage).toBe("review");
+    expect(platform(s, "sextant-a")).toBe("sextant/default/review");
     // To the siding, and back along the line.
-    const aside = run([event("advanced", "signalbox-a", { from: "review", to: "decide", outcome: "question" })], s);
-    expect(platform(aside, "signalbox-a")).toBe("signalbox/default/decide");
-    const back = run([event("advanced", "signalbox-a", { from: "decide", to: "new" })], aside);
-    expect(platform(back, "signalbox-a")).toBe("signalbox/default/new");
+    const aside = run([event("advanced", "sextant-a", { from: "review", to: "decide", outcome: "question" })], s);
+    expect(platform(aside, "sextant-a")).toBe("sextant/default/decide");
+    const back = run([event("advanced", "sextant-a", { from: "decide", to: "new" })], aside);
+    expect(platform(back, "sextant-a")).toBe("sextant/default/new");
   });
 
   test("an advance is when the bead last moved; a bead made in the window has not moved yet", () => {
-    const e = event("advanced", "signalbox-a", { from: "new", to: "decide", outcome: "question" });
-    expect(at(run([e]), "signalbox-a")!.moved_at).toBe(e.at);
+    const e = event("advanced", "sextant-a", { from: "new", to: "decide", outcome: "question" });
+    expect(at(run([e]), "sextant-a")!.moved_at).toBe(e.at);
     // The cast has it as it is at the window's end, after its moves.
-    const later = world(one, { ...cast, beads: [bead("signalbox-b", { stage: "merged", moved_at: "2099-01-02T00:00:00Z" })] });
-    const made = step(start, event("created", "signalbox-b"), later);
-    expect(at(made, "signalbox-b")).toMatchObject({ stage: "backlog" });
-    expect(at(made, "signalbox-b")!.moved_at).toBeUndefined();
+    const later = world(one, { ...cast, beads: [bead("sextant-b", { stage: "merged", moved_at: "2099-01-02T00:00:00Z" })] });
+    const made = step(start, event("created", "sextant-b"), later);
+    expect(at(made, "sextant-b")).toMatchObject({ stage: "backlog" });
+    expect(at(made, "sextant-b")!.moved_at).toBeUndefined();
   });
 
   test("after a terminal stage it is gone, and its close changes nothing more", () => {
-    const s = run([event("advanced", "signalbox-a", { from: "approved", to: "merged" })]);
+    const s = run([event("advanced", "sextant-a", { from: "approved", to: "merged" })]);
     expect(s.beads).toEqual([]);
-    expect(run([event("closed", "signalbox-a")], s)).toBe(s);
+    expect(run([event("closed", "sextant-a")], s)).toBe(s);
   });
 
   test("a close takes out a wagon that has not left", () => {
-    expect(run([event("closed", "signalbox-a")]).beads).toEqual([]);
+    expect(run([event("closed", "sextant-a")]).beads).toEqual([]);
   });
 
   test("after a session start a figure is at work at its wagon, and none when the session ends", () => {
-    const claimed = run([event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" })]);
-    expect(at(claimed, "signalbox-a")).toMatchObject({ working: true, group: "yardr-builders" });
+    const claimed = run([event("claimed", "sextant-a", { group: "wharf-builders", session: "s1" })]);
+    expect(at(claimed, "sextant-a")).toMatchObject({ working: true, group: "wharf-builders" });
     const crews = (s: State) => people(layout({ ...one, beads: s.beads })).filter((p) => p.bead !== undefined);
     expect(crews(start)).toEqual([]);
-    expect(crews(claimed)).toMatchObject([{ bead: { id: "signalbox-a" }, platform: "signalbox/default/new", group: "yardr-builders" }]);
+    expect(crews(claimed)).toMatchObject([{ bead: { id: "sextant-a" }, platform: "sextant/default/new", group: "wharf-builders" }]);
     // The start that follows a claim says nothing new.
-    const started = run([event("started", "signalbox-a", { session: "s1" })], claimed);
+    const started = run([event("started", "sextant-a", { session: "s1" })], claimed);
     expect(started).toBe(claimed);
 
     for (const end of ["workspace_removed", "released"]) {
-      expect(crews(run([event(end, "signalbox-a", { session: "s1" })], claimed)), end).toEqual([]);
+      expect(crews(run([event(end, "sextant-a", { session: "s1" })], claimed)), end).toEqual([]);
     }
-    expect(crews(run([event("held", "signalbox-a", { session: "s1" })], claimed))).toEqual([]);
-    expect(crews(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], claimed))).toEqual([]);
+    expect(crews(run([event("held", "sextant-a", { session: "s1" })], claimed))).toEqual([]);
+    expect(crews(run([event("advanced", "sextant-a", { from: "new", to: "review" })], claimed))).toEqual([]);
   });
 
   test("a start with no claim before it sets a figure to work too", () => {
-    const owned = { beads: [bead("signalbox-a", { group: "yardr-builders" })], sessions: {}, edges: [], works: {} };
-    expect(at(run([event("started", "signalbox-a", { session: "s1" })], owned), "signalbox-a")!.working).toBe(true);
+    const owned = { beads: [bead("sextant-a", { group: "wharf-builders" })], sessions: {}, edges: [], works: {} };
+    expect(at(run([event("started", "sextant-a", { session: "s1" })], owned), "sextant-a")!.working).toBe(true);
   });
 
   test("the end of an older session leaves the one at work alone", () => {
-    const claimed = run([event("claimed", "signalbox-a", { group: "yardr-builders", session: "s2" })]);
-    expect(run([event("workspace_removed", "signalbox-a", { session: "s1" })], claimed)).toBe(claimed);
+    const claimed = run([event("claimed", "sextant-a", { group: "wharf-builders", session: "s2" })]);
+    expect(run([event("workspace_removed", "sextant-a", { session: "s1" })], claimed)).toBe(claimed);
   });
 
   test("held shunts the wagon into the siding, unheld back", () => {
-    const held = run([event("held", "signalbox-a")]);
-    expect(at(held, "signalbox-a")).toMatchObject({ stage: "new", hold: true });
-    expect(platform(held, "signalbox-a")).toBe("signalbox/default/decide");
-    expect(platform(run([event("unheld", "signalbox-a")], held), "signalbox-a")).toBe("signalbox/default/new");
+    const held = run([event("held", "sextant-a")]);
+    expect(at(held, "sextant-a")).toMatchObject({ stage: "new", hold: true });
+    expect(platform(held, "sextant-a")).toBe("sextant/default/decide");
+    expect(platform(run([event("unheld", "sextant-a")], held), "sextant-a")).toBe("sextant/default/new");
   });
 
   test("unknown kinds leave the state unchanged", () => {
     expect(FAULTS.has("constructor")).toBe(false);
     const kinds = ["noted", "crew_status", "hook", "peer_message_sent", "peer_message_received", "a_kind_of_tomorrow", ""];
     for (const kind of kinds) {
-      expect(step(start, event(kind, "signalbox-a", { from: "new", to: "review", session: "s1" }), w), kind).toBe(start);
+      expect(step(start, event(kind, "sextant-a", { from: "new", to: "review", session: "s1" }), w), kind).toBe(start);
       expect(step(start, event(kind), w), kind).toBe(start);
     }
     // Nor does a known kind about a bead the snapshot does not know.
     for (const kind of SHOWN) {
-      expect(step(start, event(kind, "signalbox-zzzz", { from: "new", to: "review" }), w), kind).toBe(start);
+      expect(step(start, event(kind, "sextant-zzzz", { from: "new", to: "review" }), w), kind).toBe(start);
     }
   });
 
   test("no step changes the state it was given", () => {
     const before = JSON.stringify(start);
     run([
-      event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" }),
-      event("created", "signalbox-b"),
-      event("advanced", "signalbox-a", { from: "new", to: "merged" }),
+      event("claimed", "sextant-a", { group: "wharf-builders", session: "s1" }),
+      event("created", "sextant-b"),
+      event("advanced", "sextant-a", { from: "new", to: "merged" }),
     ]);
     expect(JSON.stringify(start)).toBe(before);
   });
@@ -142,22 +142,22 @@ describe("the reducer", () => {
 
 // What the picture makes of a state: the wagon's marks, the figure at it, the
 // platforms' lamps, and how many of the builders the hut's sign counts out.
-const seen = (s: State, id = "signalbox-a") => {
+const seen = (s: State, id = "sextant-a") => {
   const l = layout({ ...one, beads: s.beads });
   const wagon = l.vehicles.find((v) => v.key === id);
   const figure = people(l).find((p) => p.bead?.id === id);
-  return { chocked: wagon?.chocked === true, lamp: wagon?.lamp === true, figure: figure && (figure.sat ? "sat" : "at work"), lamps: l.lamps.map((p) => p.platform), out: atWork(l, "yardr-builders") };
+  return { chocked: wagon?.chocked === true, lamp: wagon?.lamp === true, figure: figure && (figure.sat ? "sat" : "at work"), lamps: l.lamps.map((p) => p.platform), out: atWork(l, "wharf-builders") };
 };
 const well = { chocked: false, lamp: false, figure: undefined, lamps: [], out: 0 };
 
 describe("the faults of the reducer", () => {
-  const claim = event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" });
+  const claim = event("claimed", "sextant-a", { group: "wharf-builders", session: "s1" });
   const claimed = run([claim]);
 
   test("held: chocks and a flag at the wagon until unheld", () => {
-    const held = run([event("held", "signalbox-a")]);
+    const held = run([event("held", "sextant-a")]);
     expect(seen(held)).toEqual({ ...well, chocked: true });
-    expect(seen(run([event("unheld", "signalbox-a")], held))).toEqual(well);
+    expect(seen(run([event("unheld", "sextant-a")], held))).toEqual(well);
   });
 
   test("a session that stalled, was blocked, gave up or died leaves its figure sat at the wagon, and is not out", () => {
@@ -170,195 +170,195 @@ describe("the faults of the reducer", () => {
       ["session_died", "died"],
       ["gave_up", "gave_up"],
     ] as const) {
-      const e = event(kind, "signalbox-a", { session: "s1" });
+      const e = event(kind, "sextant-a", { session: "s1" });
       const sat = run([e], claimed);
-      expect(at(sat, "signalbox-a"), kind).toMatchObject({ working: false, group: "yardr-builders", fault: { kind: fault, at: e.at } });
+      expect(at(sat, "sextant-a"), kind).toMatchObject({ working: false, group: "wharf-builders", fault: { kind: fault, at: e.at } });
       expect(seen(sat), kind).toEqual({ ...well, figure: "sat" });
       // Its end, when the yard comes to it, sends no one home.
-      const ended = run([event("released", "signalbox-a", { session: "s1" }), event("workspace_removed", "signalbox-a", { session: "s1" })], sat);
+      const ended = run([event("released", "sextant-a", { session: "s1" }), event("workspace_removed", "sextant-a", { session: "s1" })], sat);
       expect(seen(ended), kind).toEqual({ ...well, figure: "sat" });
       // The next session on the bead stands it up; so does the bead moving on, and then nobody is at it.
       for (const start of ["claimed", "started"]) {
-        const next = run([event(start, "signalbox-a", { group: "yardr-builders", session: "s2" })], ended);
-        expect(at(next, "signalbox-a")!.fault, `${kind}, ${start}`).toBeUndefined();
-        expect(next.sessions, `${kind}, ${start}`).toEqual({ "signalbox-a": "s2" });
+        const next = run([event(start, "sextant-a", { group: "wharf-builders", session: "s2" })], ended);
+        expect(at(next, "sextant-a")!.fault, `${kind}, ${start}`).toBeUndefined();
+        expect(next.sessions, `${kind}, ${start}`).toEqual({ "sextant-a": "s2" });
         expect(seen(next), `${kind}, ${start}`).toEqual({ ...well, figure: "at work", out: 1 });
       }
-      expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done" })], sat)), kind).toEqual(well);
-      expect(run([event("closed", "signalbox-a")], sat).beads, kind).toEqual([]);
+      expect(seen(run([event("advanced", "sextant-a", { from: "new", to: "review", outcome: "done" })], sat)), kind).toEqual(well);
+      expect(run([event("closed", "sextant-a")], sat).beads, kind).toEqual([]);
     }
   });
 
   test("a session nobody claimed in the window sits too, with the group its fault names", () => {
-    const sat = run([event("session_stalled", "signalbox-a", { group: "yardr-builders", session: "s1" })]);
+    const sat = run([event("session_stalled", "sextant-a", { group: "wharf-builders", session: "s1" })]);
     expect(seen(sat)).toEqual({ ...well, figure: "sat" });
   });
 
   test("the fault of an older session leaves the one at work alone", () => {
-    expect(run([event("session_stalled", "signalbox-a", { session: "s0" })], claimed)).toBe(claimed);
+    expect(run([event("session_stalled", "sextant-a", { session: "s0" })], claimed)).toBe(claimed);
   });
 
   test("a blocked session that was answered is at work again", () => {
-    const blocked = run([event("session_blocked", "signalbox-a", { session: "s1" })], claimed);
-    const back = run([event("session_unblocked", "signalbox-a", { session: "s1" })], blocked);
+    const blocked = run([event("session_blocked", "sextant-a", { session: "s1" })], claimed);
+    const back = run([event("session_unblocked", "sextant-a", { session: "s1" })], blocked);
     expect(back).toEqual(claimed);
     // Only what was blocked: it puts no other fault right, and starts nothing.
-    const stalled = run([event("session_stalled", "signalbox-a", { session: "s1" })], claimed);
-    expect(run([event("session_unblocked", "signalbox-a", { session: "s1" })], stalled)).toBe(stalled);
-    expect(run([event("session_unblocked", "signalbox-a", { session: "s1" })])).toBe(start);
+    const stalled = run([event("session_stalled", "sextant-a", { session: "s1" })], claimed);
+    expect(run([event("session_unblocked", "sextant-a", { session: "s1" })], stalled)).toBe(stalled);
+    expect(run([event("session_unblocked", "sextant-a", { session: "s1" })])).toBe(start);
   });
 
   test("an advance with another outcome than done seats the group it left where the wagon arrives", () => {
-    const e = event("advanced", "signalbox-a", { from: "new", to: "decide", outcome: "question", group: "yardr-builders" });
+    const e = event("advanced", "sextant-a", { from: "new", to: "decide", outcome: "question", group: "wharf-builders" });
     const asked = run([e], claimed);
-    expect(at(asked, "signalbox-a")).toMatchObject({ stage: "decide", group: "yardr-builders", fault: { kind: "ended_question", at: e.at } });
-    expect(platform(asked, "signalbox-a")).toBe("signalbox/default/decide");
+    expect(at(asked, "sextant-a")).toMatchObject({ stage: "decide", group: "wharf-builders", fault: { kind: "ended_question", at: e.at } });
+    expect(platform(asked, "sextant-a")).toBe("sextant/default/decide");
     expect(seen(asked)).toEqual({ ...well, figure: "sat" });
-    expect(people(layout({ ...one, beads: asked.beads })).find((p) => p.sat)!.platform).toBe("signalbox/default/decide");
+    expect(people(layout({ ...one, beads: asked.beads })).find((p) => p.sat)!.platform).toBe("sextant/default/decide");
     // Done, and an advance that names no outcome, are no fault; the next move clears one.
-    expect(seen(run([event("advanced", "signalbox-a", { from: "decide", to: "new" })], asked))).toEqual(well);
-    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done", group: "yardr-builders" })], claimed))).toEqual(well);
+    expect(seen(run([event("advanced", "sextant-a", { from: "decide", to: "new" })], asked))).toEqual(well);
+    expect(seen(run([event("advanced", "sextant-a", { from: "new", to: "review", outcome: "done", group: "wharf-builders" })], claimed))).toEqual(well);
     // A script's bad end has no figure to sit: the wagon's lamp says it.
-    const failed = run([event("advanced", "signalbox-a", { from: "approved", to: "new", outcome: "failed", group: "signalbox-assembly" })]);
+    const failed = run([event("advanced", "sextant-a", { from: "approved", to: "new", outcome: "failed", group: "sextant-assembly" })]);
     expect(seen(failed)).toEqual({ ...well, lamp: true });
     expect(seen(run([claim], failed))).toEqual({ ...well, figure: "at work", out: 1 });
   });
 
   test("move_refused: a lamp on the wagon until the bead moves or closes, whoever is at it", () => {
-    const e = event("move_refused", "signalbox-a", { session: "s1", group: "yardr-builders" });
+    const e = event("move_refused", "sextant-a", { session: "s1", group: "wharf-builders" });
     const refused = run([e], claimed);
-    expect(at(refused, "signalbox-a")).toMatchObject({ working: true, fault: { kind: "move_refused", at: e.at } });
+    expect(at(refused, "sextant-a")).toMatchObject({ working: true, fault: { kind: "move_refused", at: e.at } });
     expect(refused.sessions).toEqual(claimed.sessions);
     expect(seen(refused)).toEqual({ ...well, lamp: true, figure: "at work", out: 1 });
     // The session's end and the next one's start put nothing right.
-    const later = run([event("workspace_removed", "signalbox-a", { session: "s1" }), event("claimed", "signalbox-a", { group: "yardr-builders", session: "s2" })], refused);
+    const later = run([event("workspace_removed", "sextant-a", { session: "s1" }), event("claimed", "sextant-a", { group: "wharf-builders", session: "s2" })], refused);
     expect(seen(later)).toEqual({ ...well, lamp: true, figure: "at work", out: 1 });
-    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review", outcome: "done" })], later))).toEqual(well);
-    expect(run([event("closed", "signalbox-a")], later).beads).toEqual([]);
+    expect(seen(run([event("advanced", "sextant-a", { from: "new", to: "review", outcome: "done" })], later))).toEqual(well);
+    expect(run([event("closed", "sextant-a")], later).beads).toEqual([]);
     // Nobody at it: the lamp all the same.
     expect(seen(run([e]))).toEqual({ ...well, lamp: true });
   });
 
   test("stranded: a lamp on the wagon until the bead moves", () => {
-    const stranded = run([event("stranded", "signalbox-a")]);
-    expect(at(stranded, "signalbox-a")!.fault!.kind).toBe("stranded");
+    const stranded = run([event("stranded", "sextant-a")]);
+    expect(at(stranded, "sextant-a")!.fault!.kind).toBe("stranded");
     expect(seen(stranded)).toEqual({ ...well, lamp: true });
-    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], stranded))).toEqual(well);
+    expect(seen(run([event("advanced", "sextant-a", { from: "new", to: "review" })], stranded))).toEqual(well);
   });
 
   test("unrouted: the lamp is the platform's the bead sits at, until the bead moves", () => {
-    const unrouted = run([event("unrouted", "signalbox-a")]);
-    expect(at(unrouted, "signalbox-a")!.fault!.kind).toBe("unrouted");
-    expect(seen(unrouted)).toEqual({ ...well, lamps: ["signalbox/default/new"] });
-    expect(seen(run([event("advanced", "signalbox-a", { from: "new", to: "review" })], unrouted))).toEqual(well);
+    const unrouted = run([event("unrouted", "sextant-a")]);
+    expect(at(unrouted, "sextant-a")!.fault!.kind).toBe("unrouted");
+    expect(seen(unrouted)).toEqual({ ...well, lamps: ["sextant/default/new"] });
+    expect(seen(run([event("advanced", "sextant-a", { from: "new", to: "review" })], unrouted))).toEqual(well);
   });
 
   test("the last fault is the one shown; a held bead keeps its own", () => {
-    const both = run([event("session_stalled", "signalbox-a", { session: "s1" }), event("move_refused", "signalbox-a")], claimed);
-    expect(at(both, "signalbox-a")).toMatchObject({ working: false, fault: { kind: "move_refused" } });
-    const held = run([event("held", "signalbox-a")], both);
+    const both = run([event("session_stalled", "sextant-a", { session: "s1" }), event("move_refused", "sextant-a")], claimed);
+    expect(at(both, "sextant-a")).toMatchObject({ working: false, fault: { kind: "move_refused" } });
+    const held = run([event("held", "sextant-a")], both);
     expect(seen(held)).toEqual({ ...well, chocked: true, lamp: true });
-    expect(seen(run([event("unheld", "signalbox-a")], held))).toEqual({ ...well, lamp: true });
+    expect(seen(run([event("unheld", "sextant-a")], held))).toEqual({ ...well, lamp: true });
   });
 
   test("a fault from before the window is the snapshot's, unless the window says more of the bead", () => {
     const fault = { kind: "died", at: "2098-12-31T23:00:00Z" };
-    const end: Yard = { ...one, beads: [bead("signalbox-a", { group: "yardr-builders", working: false, fault })] };
-    const quiet: Log = { ...cast, events: [event("noted", "signalbox-a")] };
+    const end: Yard = { ...one, beads: [bead("sextant-a", { group: "wharf-builders", working: false, fault })] };
+    const quiet: Log = { ...cast, events: [event("noted", "sextant-a")] };
     expect(seen(state(end, quiet))).toEqual({ ...well, figure: "sat" });
     // The fault the snapshot has is the one this window saw happen: not before it did.
-    const loud: Log = { ...cast, events: [event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" }), event("session_died", "signalbox-a", { session: "s1" })] };
+    const loud: Log = { ...cast, events: [event("claimed", "sextant-a", { group: "wharf-builders", session: "s1" }), event("session_died", "sextant-a", { session: "s1" })] };
     expect(seen(state(end, loud, 0))).toEqual(well);
     expect(seen(state(end, loud, 1))).toEqual({ ...well, figure: "at work", out: 1 });
     expect(seen(state(end, loud))).toEqual({ ...well, figure: "sat" });
-    const only: Log = { ...cast, events: [event("move_refused", "signalbox-a")] };
-    const refused: Yard = { ...one, beads: [bead("signalbox-a", { fault: { kind: "move_refused", at: only.events[0]!.at } })] };
+    const only: Log = { ...cast, events: [event("move_refused", "sextant-a")] };
+    const refused: Yard = { ...one, beads: [bead("sextant-a", { fault: { kind: "move_refused", at: only.events[0]!.at } })] };
     expect(seen(state(refused, only, 0))).toEqual(well);
     expect(seen(state(refused, only))).toEqual({ ...well, lamp: true });
   });
 
   test("the bar names a fault as it passes", () => {
     for (const kind of FAULTS.keys()) expect(SHOWN.has(kind), kind).toBe(true);
-    expect(line({ seq: 1, at: "", kind: "session_stalled", bead: "signalbox-a", data: { group: "yardr-builders" } })).toBe("session stalled · signalbox-a");
-    expect(line({ seq: 2, at: "", kind: "move_refused", bead: "signalbox-a" })).toBe("move refused · signalbox-a");
+    expect(line({ seq: 1, at: "", kind: "session_stalled", bead: "sextant-a", data: { group: "wharf-builders" } })).toBe("session stalled · sextant-a");
+    expect(line({ seq: 2, at: "", kind: "move_refused", bead: "sextant-a" })).toBe("move refused · sextant-a");
   });
 });
 
 describe("the window's start, read off the window", () => {
   const events = [
-    event("advanced", "signalbox-a", { from: "new", to: "review", group: "yardr-builders" }),
-    event("created", "signalbox-b"),
-    event("advanced", "signalbox-b", { from: "backlog", to: "new" }),
-    event("advanced", "signalbox-b", { from: "new", to: "merged" }),
-    event("closed", "signalbox-b"),
+    event("advanced", "sextant-a", { from: "new", to: "review", group: "wharf-builders" }),
+    event("created", "sextant-b"),
+    event("advanced", "sextant-b", { from: "backlog", to: "new" }),
+    event("advanced", "sextant-b", { from: "new", to: "merged" }),
+    event("closed", "sextant-b"),
   ];
   const day: Log = { ...cast, events };
-  const end: Yard = { ...yard, beads: [bead("signalbox-a", { stage: "review" }), bead("signalbox-idle", { stage: "backlog", group: "backlog", working: true })] };
+  const end: Yard = { ...yard, beads: [bead("sextant-a", { stage: "review" }), bead("sextant-idle", { stage: "backlog", group: "backlog", working: true })] };
 
   test("a bead stands where its first advance left, with the crew that advance names", () => {
-    expect(at(opening(end, day), "signalbox-a")).toMatchObject({ stage: "new", group: "yardr-builders", working: true });
+    expect(at(opening(end, day), "sextant-a")).toMatchObject({ stage: "new", group: "wharf-builders", working: true });
   });
 
   test("a bead made in the window is not there yet; one nothing happened to is as it is now", () => {
     const s = opening(end, day);
-    expect(at(s, "signalbox-b")).toBeUndefined();
-    expect(at(s, "signalbox-idle")).toEqual(end.beads[1]);
+    expect(at(s, "sextant-b")).toBeUndefined();
+    expect(at(s, "sextant-idle")).toEqual(end.beads[1]);
   });
 
   test("a bead the window moves counts from when it was made until it does; a scrub forward weathers what waits", () => {
     const made = "2099-01-01T00:00:00Z";
-    const asked: YardEvent = { seq: 9001, at: "2099-01-09T00:00:00Z", kind: "advanced", bead: "signalbox-a", data: { from: "backlog", to: "decide" } };
+    const asked: YardEvent = { seq: 9001, at: "2099-01-09T00:00:00Z", kind: "advanced", bead: "sextant-a", data: { from: "backlog", to: "decide" } };
     const last: YardEvent = { seq: 9002, at: "2099-01-13T00:00:00Z", kind: "hook" };
     const window: Log = { ...cast, events: [{ seq: 9000, at: "2099-01-04T00:00:00Z", kind: "hook" }, asked, last] };
-    const now: Yard = { ...yard, beads: [bead("signalbox-a", { stage: "decide", created_at: made, moved_at: asked.at })] };
-    expect(at(opening(now, window), "signalbox-a")).toEqual(bead("signalbox-a", { stage: "backlog", created_at: made }));
+    const now: Yard = { ...yard, beads: [bead("sextant-a", { stage: "decide", created_at: made, moved_at: asked.at })] };
+    expect(at(opening(now, window), "sextant-a")).toEqual(bead("sextant-a", { stage: "backlog", created_at: made }));
     expect(state(now, window)).toEqual({ beads: now.beads, sessions: {}, edges: [], works: {} });
 
     const player = new Player(now, window);
-    const wagon = () => layout({ ...now, beads: player.state.beads }, {}, player.clock).vehicles.find((v) => v.key === "signalbox-a")!;
+    const wagon = () => layout({ ...now, beads: player.state.beads }, {}, player.clock).vehicles.find((v) => v.key === "sextant-a")!;
     const day = 24 * 60 * 60 * 1000;
-    expect(wagon()).toMatchObject({ platform: "signalbox/default/backlog", age: 3, weather: "dull" });
+    expect(wagon()).toMatchObject({ platform: "sextant/default/backlog", age: 3, weather: "dull" });
     player.seek(player.from + 4.5 * day);
-    expect(wagon()).toMatchObject({ platform: "signalbox/default/backlog", weather: "rusted" });
+    expect(wagon()).toMatchObject({ platform: "sextant/default/backlog", weather: "rusted" });
     // Moved to decide: fresh again, and older from there.
     player.seek(Date.parse(asked.at));
-    expect(wagon()).toMatchObject({ platform: "signalbox/default/decide", age: 0 });
+    expect(wagon()).toMatchObject({ platform: "sextant/default/decide", age: 0 });
     expect(wagon().weather).toBeUndefined();
     player.seek(player.to);
-    expect(wagon()).toMatchObject({ platform: "signalbox/default/decide", age: 4, weather: "dull" });
+    expect(wagon()).toMatchObject({ platform: "sextant/default/decide", age: 4, weather: "dull" });
   });
 
-  // signalbox-mt44: made with --stage new, by a yard whose created names no
+  // sextant-mt44: made with --stage new, by a yard whose created names no
   // stage. The wagon stood on backlog while the yard and the card said new.
   test("a bead made at a later stage, its created naming none, stands where the snapshot has it", () => {
-    const made = event("created", "signalbox-c");
-    const now: Yard = { ...yard, beads: [bead("signalbox-c", { stage: "new" })] };
+    const made = event("created", "sextant-c");
+    const now: Yard = { ...yard, beads: [bead("sextant-c", { stage: "new" })] };
     const window: Log = { ...cast, beads: [], events: [made, event("hook")] };
-    expect(at(opening(now, window), "signalbox-c")).toBeUndefined();
-    expect(at(state(now, window, 1), "signalbox-c")).toMatchObject({ stage: "new" });
+    expect(at(opening(now, window), "sextant-c")).toBeUndefined();
+    expect(at(state(now, window, 1), "sextant-c")).toMatchObject({ stage: "new" });
     expect(state(now, window).beads).toEqual(now.beads);
     // The player, as the page runs it: at the window's end, and following.
     const player = new Player(now, window);
     player.seek(player.to);
-    expect(layout({ ...now, beads: player.state.beads }).vehicles.find((v) => v.key === "signalbox-c")!.platform).toBe("signalbox/default/new");
+    expect(layout({ ...now, beads: player.state.beads }).vehicles.find((v) => v.key === "sextant-c")!.platform).toBe("sextant/default/new");
 
     // Moved since: the snapshot's stage is of now, and the past is where its
     // first advance left.
-    const on = event("advanced", "signalbox-c", { from: "new", to: "review" });
-    const later: Yard = { ...yard, beads: [bead("signalbox-c", { stage: "review", moved_at: on.at })] };
+    const on = event("advanced", "sextant-c", { from: "new", to: "review" });
+    const later: Yard = { ...yard, beads: [bead("sextant-c", { stage: "review", moved_at: on.at })] };
     const longer: Log = { ...window, events: [made, on] };
-    expect(at(state(later, longer, 1), "signalbox-c")).toMatchObject({ stage: "new" });
+    expect(at(state(later, longer, 1), "sextant-c")).toMatchObject({ stage: "new" });
     expect(state(later, longer).beads).toEqual(later.beads);
     // What the event says of the past stands over both.
     const said: Log = { ...window, events: [{ ...made, data: { stage: "backlog" } }, { ...on, data: { from: "backlog", to: "review" } }] };
-    expect(at(state(later, said, 1), "signalbox-c")).toMatchObject({ stage: "backlog" });
+    expect(at(state(later, said, 1), "sextant-c")).toMatchObject({ stage: "backlog" });
     expect(state(later, said).beads).toEqual(later.beads);
   });
 
   test("state(snapshot, events[0..n]) walks the window to the snapshot", () => {
     expect(state(end, day, 0)).toEqual(opening(end, day));
-    expect(at(state(end, day, 3), "signalbox-b")!.stage).toBe("new");
-    expect(at(state(end, day, 4), "signalbox-b")).toBeUndefined();
+    expect(at(state(end, day, 3), "sextant-b")!.stage).toBe("new");
+    expect(at(state(end, day, 4), "sextant-b")).toBeUndefined();
     expect(state(end, day).beads.map((b) => [b.id, b.stage]).sort()).toEqual(end.beads.map((b) => [b.id, b.stage]).sort());
   });
 });
@@ -367,7 +367,7 @@ describe("the committed day", () => {
   const brief = (b: Bead) => [b.id, b.stage, b.working === true ? b.group : undefined, b.hold === true];
 
   test("played to its end it is the snapshot: every open bead, its stage, its crew", () => {
-    expect(log.events.length).toBe(2000);
+    expect(log.events.length).toBeGreaterThan(500);
     expect(state(yard, log).beads.map(brief).sort()).toEqual(yard.beads.map(brief).sort());
   });
 
@@ -440,33 +440,33 @@ describe("the player", () => {
   });
 
   test("an event in one line: kind, bead, from -> to", () => {
-    expect(line({ seq: 1, at: "", kind: "advanced", bead: "signalbox-a", data: { from: "new", to: "review", outcome: "done" } })).toBe("advanced · signalbox-a · new -> review (done)");
-    expect(line({ seq: 2, at: "", kind: "peer_message_sent", data: { peer: "airy", kind: "mail" } })).toBe("peer message sent · airy · mail");
-    expect(line({ seq: 3, at: "", kind: "closed", bead: "signalbox-a" })).toBe("closed · signalbox-a");
-    expect(line({ seq: 4, at: "", kind: "dep_added", bead: "signalbox-b", data: { from: "signalbox-a", kind: "blocks" } })).toBe("dep added · signalbox-b · waits for signalbox-a");
-    expect(line({ seq: 5, at: "", kind: "dep_removed", bead: "signalbox-b", data: { from: "signalbox-a", kind: "discovered-from" } })).toBe("dep removed · signalbox-b · discovered-from signalbox-a");
+    expect(line({ seq: 1, at: "", kind: "advanced", bead: "sextant-a", data: { from: "new", to: "review", outcome: "done" } })).toBe("advanced · sextant-a · new -> review (done)");
+    expect(line({ seq: 2, at: "", kind: "peer_message_sent", data: { peer: "quay", kind: "mail" } })).toBe("peer message sent · quay · mail");
+    expect(line({ seq: 3, at: "", kind: "closed", bead: "sextant-a" })).toBe("closed · sextant-a");
+    expect(line({ seq: 4, at: "", kind: "dep_added", bead: "sextant-b", data: { from: "sextant-a", kind: "blocks" } })).toBe("dep added · sextant-b · waits for sextant-a");
+    expect(line({ seq: 5, at: "", kind: "dep_removed", bead: "sextant-b", data: { from: "sextant-a", kind: "discovered-from" } })).toBe("dep removed · sextant-b · discovered-from sextant-a");
   });
 });
 
 describe("a peer's trains", () => {
-  const sent = (kind: string, peer = "airy") => event("peer_message_sent", undefined, { peer, kind });
-  const received = (kind: string, peer = "airy") => event("peer_message_received", undefined, { peer, kind });
+  const sent = (kind: string, peer = "quay") => event("peer_message_sent", undefined, { peer, kind });
+  const received = (kind: string, peer = "quay") => event("peer_message_received", undefined, { peer, kind });
 
   test("a plain mail is a train with no file, out or in; a file alone is none", () => {
-    expect(trains([sent("mail")], new Map())).toEqual([{ peer: "airy", way: "out", kind: "mail", files: 0 }]);
-    expect(trains([received("mail")], new Map())).toEqual([{ peer: "airy", way: "in", kind: "mail", files: 0 }]);
+    expect(trains([sent("mail")], new Map())).toEqual([{ peer: "quay", way: "out", kind: "mail", files: 0 }]);
+    expect(trains([received("mail")], new Map())).toEqual([{ peer: "quay", way: "in", kind: "mail", files: 0 }]);
     expect(trains([sent("file"), received("file")], new Map())).toEqual([]);
     expect(trains([sent("ping"), received("bead")], new Map()).map((t) => [t.way, t.kind, t.files])).toEqual([["out", "ping", 0], ["in", "bead", 0]]);
     // Not a peer's, or not a message that crossed.
-    expect(trains([event("hook"), event("peer_message_sent"), event("advanced", "signalbox-a", { from: "new", to: "review" })], new Map())).toEqual([]);
+    expect(trains([event("hook"), event("peer_message_sent"), event("advanced", "sextant-a", { from: "new", to: "review" })], new Map())).toEqual([]);
   });
 
   test("the files that crossed before a mail are that mail's: one run for it, either way", () => {
     for (const [message, way] of [[sent, "out"], [received, "in"]] as const) {
       const loaded = new Map<string, number>();
       expect(trains([message("file"), message("file"), message("mail"), message("mail")], loaded)).toEqual([
-        { peer: "airy", way, kind: "mail", files: 2 },
-        { peer: "airy", way, kind: "mail", files: 0 },
+        { peer: "quay", way, kind: "mail", files: 2 },
+        { peer: "quay", way, kind: "mail", files: 0 },
       ]);
       expect(loaded.size).toBe(0);
     }
@@ -476,33 +476,33 @@ describe("a peer's trains", () => {
     const loaded = new Map<string, number>();
     expect(trains([sent("file"), received("file"), sent("file", "bern")], loaded)).toEqual([]);
     // A ping between them takes none along.
-    expect(trains([sent("ping"), sent("file")], loaded)).toEqual([{ peer: "airy", way: "out", kind: "ping", files: 0 }]);
+    expect(trains([sent("ping"), sent("file")], loaded)).toEqual([{ peer: "quay", way: "out", kind: "ping", files: 0 }]);
     expect(trains([received("mail"), sent("mail", "bern"), sent("mail")], loaded).map((t) => [t.peer, t.way, t.files])).toEqual([
-      ["airy", "in", 1],
+      ["quay", "in", 1],
       ["bern", "out", 1],
-      ["airy", "out", 2],
+      ["quay", "out", 2],
     ]);
   });
 
   test("a file that did not cross is no wagon, and the files of mail that did not are not the next one's", () => {
-    const refused = (kind: string, direction: string) => event("peer_message_refused", undefined, { peer: "airy", kind, direction });
-    const failed = (kind: string) => event("peer_message_failed", undefined, { peer: "airy", kind });
+    const refused = (kind: string, direction: string) => event("peer_message_refused", undefined, { peer: "quay", kind, direction });
+    const failed = (kind: string) => event("peer_message_failed", undefined, { peer: "quay", kind });
     expect(trains([sent("file"), failed("file"), sent("mail")], new Map())[0]!.files).toBe(1);
     expect(trains([received("file"), refused("file", "in"), received("mail")], new Map())[0]!.files).toBe(1);
-    expect(trains([sent("file"), failed("mail"), sent("mail")], new Map())).toEqual([{ peer: "airy", way: "out", kind: "mail", files: 0 }]);
-    expect(trains([received("file"), refused("mail", "in"), received("mail")], new Map())).toEqual([{ peer: "airy", way: "in", kind: "mail", files: 0 }]);
+    expect(trains([sent("file"), failed("mail"), sent("mail")], new Map())).toEqual([{ peer: "quay", way: "out", kind: "mail", files: 0 }]);
+    expect(trains([received("file"), refused("mail", "in"), received("mail")], new Map())).toEqual([{ peer: "quay", way: "in", kind: "mail", files: 0 }]);
     // Mail refused the other way is another rail's.
     expect(trains([received("file"), refused("mail", "out"), received("mail")], new Map())[0]!.files).toBe(1);
   });
 });
 
-// A works runs the gate and the merge: signalbox-a at approved, where the
+// A works runs the gate and the merge: sextant-a at approved, where the
 // assembly takes it.
 describe("the works of the replay", () => {
-  const key = "signalbox/default/approved/signalbox-assembly";
-  const approved: State = { ...start, beads: [bead("signalbox-a", { stage: "approved" })] };
-  const claim = () => event("claimed", "signalbox-a", { group: "signalbox-assembly", session: "s1" });
-  const begin = () => event("started", "signalbox-a", { session: "s1" });
+  const key = "sextant/default/approved/sextant-assembly";
+  const approved: State = { ...start, beads: [bead("sextant-a", { stage: "approved" })] };
+  const claim = () => event("claimed", "sextant-a", { group: "sextant-assembly", session: "s1" });
+  const begin = () => event("started", "sextant-a", { session: "s1" });
   const shed = (s: State) => layout({ ...one, beads: s.beads }, {}, undefined, s.works).sheds.find((x) => x.key === key)!;
 
   test("a session that starts at a works' stage opens a run there, from that moment", () => {
@@ -510,69 +510,69 @@ describe("the works of the replay", () => {
     expect(claimed.works).toEqual({});
     const started = begin();
     const running = run([started], claimed);
-    expect(running.works).toEqual({ [key]: { runs: [{ bead: "signalbox-a", since: started.at }] } });
+    expect(running.works).toEqual({ [key]: { runs: [{ bead: "sextant-a", since: started.at }] } });
     expect(shed(running).gate).toEqual(running.works[key]);
     // Said again, and whatever else is said of the bead while it runs: the same state.
-    expect(run([begin(), event("noted", "signalbox-a")], running)).toBe(running);
+    expect(run([begin(), event("noted", "sextant-a")], running)).toBe(running);
     // The window began between the claim and the start: the stage's route says whose it is.
     expect(run([begin()], approved).works[key]!.runs).toHaveLength(1);
   });
 
   test("a crew's session, and one of people, is no works' run", () => {
-    const built = run([event("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" }), begin()]);
+    const built = run([event("claimed", "sextant-a", { group: "wharf-builders", session: "s1" }), begin()]);
     expect(built.works).toEqual({});
-    const backlog: State = { ...start, beads: [bead("signalbox-a", { stage: "backlog" })] };
-    expect(run([event("claimed", "signalbox-a", { group: "backlog", session: "s1" }), begin()], backlog).works).toEqual({});
+    const backlog: State = { ...start, beads: [bead("sextant-a", { stage: "backlog" })] };
+    expect(run([event("claimed", "sextant-a", { group: "backlog", session: "s1" }), begin()], backlog).works).toEqual({});
     // A crew's bead that stands at a works' stage: its group is not routed there.
-    const stray: State = { ...start, beads: [bead("signalbox-a", { stage: "approved", group: "yardr-builders" })] };
+    const stray: State = { ...start, beads: [bead("sextant-a", { stage: "approved", group: "wharf-builders" })] };
     expect(run([begin()], stray).works).toEqual({});
-    expect(w.works(bead("signalbox-a"), "new")).toBeUndefined();
-    expect(w.works(bead("signalbox-a"), "approved")).toBe(key);
+    expect(w.works(bead("sextant-a"), "new")).toBeUndefined();
+    expect(w.works(bead("sextant-a"), "approved")).toBe(key);
   });
 
   test("an advance past the buffer is a landing; the close that follows changes nothing", () => {
     const running = run([claim(), begin()], approved);
-    const landed = run([event("advanced", "signalbox-a", { group: "signalbox-assembly", from: "approved", to: "merged" })], running);
+    const landed = run([event("advanced", "sextant-a", { group: "sextant-assembly", from: "approved", to: "merged" })], running);
     expect(landed.works).toEqual({ [key]: { runs: [], last: "landed" } });
-    expect(run([event("closed", "signalbox-a", { reason: "merged" }), event("workspace_removed", "signalbox-a", { session: "s2" })], landed)).toBe(landed);
+    expect(run([event("closed", "sextant-a", { reason: "merged" }), event("workspace_removed", "sextant-a", { session: "s2" })], landed)).toBe(landed);
     // A close as merged with no advance before it is the landing itself.
-    expect(run([event("closed", "signalbox-a", { reason: "merged" })], running).works[key]).toEqual({ runs: [], last: "landed" });
+    expect(run([event("closed", "sextant-a", { reason: "merged" })], running).works[key]).toEqual({ runs: [], last: "landed" });
   });
 
   test("an advance with the outcome failed is a gate that failed, until the next run starts", () => {
     const running = run([claim(), begin()], approved);
-    const failed = run([event("advanced", "signalbox-a", { group: "signalbox-assembly", from: "approved", to: "new", outcome: "failed" })], running);
+    const failed = run([event("advanced", "sextant-a", { group: "sextant-assembly", from: "approved", to: "new", outcome: "failed" })], running);
     expect(failed.works).toEqual({ [key]: { runs: [], last: "failed" } });
     expect(shed(failed).gate).toEqual({ runs: [], last: "failed" });
     // The builder's session on it is none of the works'.
-    const rebuilt = run([event("claimed", "signalbox-a", { group: "yardr-builders", session: "s2" }), event("started", "signalbox-a", { session: "s2" })], failed);
+    const rebuilt = run([event("claimed", "sextant-a", { group: "wharf-builders", session: "s2" }), event("started", "sextant-a", { session: "s2" })], failed);
     expect(rebuilt.works).toBe(failed.works);
-    const again = run([event("advanced", "signalbox-a", { from: "new", to: "approved", outcome: "done" }), claim(), begin()], rebuilt);
+    const again = run([event("advanced", "sextant-a", { from: "new", to: "approved", outcome: "done" }), claim(), begin()], rebuilt);
     expect(again.works[key]!.last).toBeUndefined();
-    expect(again.works[key]!.runs.map((r) => r.bead)).toEqual(["signalbox-a"]);
+    expect(again.works[key]!.runs.map((r) => r.bead)).toEqual(["sextant-a"]);
   });
 
   test("a run that ends any other way is over, and the lamp is as the run before left it", () => {
-    const failed: State = { ...approved, works: { [key]: { runs: [{ bead: "signalbox-a" }], last: "failed" } } };
-    const working: State = { ...failed, beads: [bead("signalbox-a", { stage: "approved", group: "signalbox-assembly", working: true })] };
-    for (const end of [event("held", "signalbox-a"), event("session_died", "signalbox-a"), event("advanced", "signalbox-a", { from: "approved", to: "backlog" }), event("closed", "signalbox-a")]) {
+    const failed: State = { ...approved, works: { [key]: { runs: [{ bead: "sextant-a" }], last: "failed" } } };
+    const working: State = { ...failed, beads: [bead("sextant-a", { stage: "approved", group: "sextant-assembly", working: true })] };
+    for (const end of [event("held", "sextant-a"), event("session_died", "sextant-a"), event("advanced", "sextant-a", { from: "approved", to: "backlog" }), event("closed", "sextant-a")]) {
       expect(run([end], working).works, end.kind).toEqual({ [key]: { runs: [], last: "failed" } });
     }
-    const unlit = run([event("held", "signalbox-a")], run([claim(), begin()], approved));
+    const unlit = run([event("held", "sextant-a")], run([claim(), begin()], approved));
     expect(unlit.works).toEqual({ [key]: { runs: [] } });
   });
 
   test("a window that begins in a run has it open, since nobody knows when", () => {
-    const out: YardEvent = event("advanced", "signalbox-a", { group: "signalbox-assembly", from: "approved", to: "merged" });
-    const window: Log = { taken_at: yard.taken_at, beads: [bead("signalbox-a", { stage: "merged" })], events: [out, event("closed", "signalbox-a", { reason: "merged" })] };
+    const out: YardEvent = event("advanced", "sextant-a", { group: "sextant-assembly", from: "approved", to: "merged" });
+    const window: Log = { taken_at: yard.taken_at, beads: [bead("sextant-a", { stage: "merged" })], events: [out, event("closed", "sextant-a", { reason: "merged" })] };
     const now: Yard = { ...yard, beads: [] };
-    expect(opening(now, window).works).toEqual({ [key]: { runs: [{ bead: "signalbox-a" }] } });
+    expect(opening(now, window).works).toEqual({ [key]: { runs: [{ bead: "sextant-a" }] } });
     expect(state(now, window).works).toEqual({ [key]: { runs: [], last: "landed" } });
   });
 
   test("layout gives a gate to its works and to no other building", () => {
     const gate = { runs: [], last: "landed" as const };
-    const hut = "signalbox/default/new/yardr-builders";
+    const hut = "sextant/default/new/wharf-builders";
     const l = layout(one, {}, undefined, { [key]: gate, [hut]: gate });
     expect(l.sheds.find((s) => s.key === key)!.gate).toBe(gate);
     expect(l.sheds.find((s) => s.key === hut)).not.toHaveProperty("gate");
@@ -605,10 +605,10 @@ describe("the works of the replay", () => {
   });
 });
 
-// Who waits for whom: signalbox-b in backlog for signalbox-a at new, on one
-// board, and for yardr-x on another.
+// Who waits for whom: sextant-b in backlog for sextant-a at new, on one
+// board, and for wharf-x on another.
 describe("the waits of the replay", () => {
-  const beads = [bead("signalbox-a"), bead("signalbox-b", { stage: "backlog" }), bead("yardr-x", { depot: "yardr" })];
+  const beads = [bead("sextant-a"), bead("sextant-b", { stage: "backlog" }), bead("wharf-x", { depot: "wharf" })];
   const three: Yard = { ...yard, beads };
   const none: Log = { taken_at: yard.taken_at, beads: [], events: [] };
   const w3 = world(three, none);
@@ -619,58 +619,58 @@ describe("the waits of the replay", () => {
   const lamps = (s: State) => layout({ ...three, beads: s.beads, edges: s.edges }).vehicles.flatMap((v) => (v.waits ?? []).map((w) => [v.key, w.on]));
 
   test("a blocks edge added is a lamp, on one board and across two alike; removed, it is gone", () => {
-    const one = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
-    expect(one.edges).toEqual([{ from: "signalbox-a", to: "signalbox-b" }]);
-    expect(lamps(one)).toEqual([["signalbox-b", "signalbox-a"]]);
-    const both = go([blocks("dep_added", "signalbox-b", "yardr-x")], one);
+    const one = go([blocks("dep_added", "sextant-b", "sextant-a")]);
+    expect(one.edges).toEqual([{ from: "sextant-a", to: "sextant-b" }]);
+    expect(lamps(one)).toEqual([["sextant-b", "sextant-a"]]);
+    const both = go([blocks("dep_added", "sextant-b", "wharf-x")], one);
     expect(lamps(both)).toEqual([
-      ["signalbox-b", "signalbox-a"],
-      ["signalbox-b", "yardr-x"],
+      ["sextant-b", "sextant-a"],
+      ["sextant-b", "wharf-x"],
     ]);
     // Said again, it is the same state.
-    expect(go([blocks("dep_added", "signalbox-b", "yardr-x")], both)).toBe(both);
-    const less = go([blocks("dep_removed", "signalbox-b", "signalbox-a")], both);
-    expect(lamps(less)).toEqual([["signalbox-b", "yardr-x"]]);
-    expect(go([blocks("dep_removed", "signalbox-b", "signalbox-a")], less)).toBe(less);
+    expect(go([blocks("dep_added", "sextant-b", "wharf-x")], both)).toBe(both);
+    const less = go([blocks("dep_removed", "sextant-b", "sextant-a")], both);
+    expect(lamps(less)).toEqual([["sextant-b", "wharf-x"]]);
+    expect(go([blocks("dep_removed", "sextant-b", "sextant-a")], less)).toBe(less);
     // The beads are as they were.
     expect(less.beads).toBe(from.beads);
   });
 
   test("only a blocks edge is a wait, and only for a bead the snapshot knows", () => {
     for (const kind of ["parent", "discovered-from"]) {
-      expect(go([event("dep_added", "signalbox-b", { from: "signalbox-a", kind })])).toBe(from);
+      expect(go([event("dep_added", "sextant-b", { from: "sextant-a", kind })])).toBe(from);
     }
-    expect(go([event("dep_added", "signalbox-b", { kind: "blocks" })])).toBe(from);
-    expect(go([blocks("dep_added", "signalbox-zzzz", "signalbox-a")])).toBe(from);
+    expect(go([event("dep_added", "sextant-b", { kind: "blocks" })])).toBe(from);
+    expect(go([blocks("dep_added", "sextant-zzzz", "sextant-a")])).toBe(from);
   });
 
   test("closing a blocker takes its wait, and the last one puts the lamp out; the wagon that waited stands as it did", () => {
-    const both = go([blocks("dep_added", "signalbox-b", "signalbox-a"), blocks("dep_added", "signalbox-b", "yardr-x")]);
-    const less = go([event("closed", "signalbox-a")], both);
-    expect(lamps(less)).toEqual([["signalbox-b", "yardr-x"]]);
-    const free = go([event("closed", "yardr-x")], less);
+    const both = go([blocks("dep_added", "sextant-b", "sextant-a"), blocks("dep_added", "sextant-b", "wharf-x")]);
+    const less = go([event("closed", "sextant-a")], both);
+    expect(lamps(less)).toEqual([["sextant-b", "wharf-x"]]);
+    const free = go([event("closed", "wharf-x")], less);
     expect(free.edges).toEqual([]);
     expect(lamps(free)).toEqual([]);
-    expect(free.beads).toEqual([bead("signalbox-b", { stage: "backlog" })]);
+    expect(free.beads).toEqual([bead("sextant-b", { stage: "backlog" })]);
   });
 
   test("a blocker past the buffer is waited for no more, before its close and after", () => {
-    const waiting = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
-    const landed = go([event("advanced", "signalbox-a", { from: "approved", to: "merged" })], waiting);
+    const waiting = go([blocks("dep_added", "sextant-b", "sextant-a")]);
+    const landed = go([event("advanced", "sextant-a", { from: "approved", to: "merged" })], waiting);
     expect(lamps(landed)).toEqual([]);
     // The close finds no wagon, and still takes the edge.
-    expect(go([event("closed", "signalbox-a")], landed).edges).toEqual([]);
+    expect(go([event("closed", "sextant-a")], landed).edges).toEqual([]);
   });
 
   test("a wagon that closes waits for nothing", () => {
-    const waiting = go([blocks("dep_added", "signalbox-b", "signalbox-a")]);
-    expect(go([event("closed", "signalbox-b")], waiting).edges).toEqual([]);
+    const waiting = go([blocks("dep_added", "sextant-b", "sextant-a")]);
+    expect(go([event("closed", "sextant-b")], waiting).edges).toEqual([]);
   });
 
   test("the window's start: an edge it adds is not there yet, one it removes is, any other is the snapshot's", () => {
-    const kept = { from: "signalbox-a", to: "signalbox-b" };
-    const added = { from: "yardr-x", to: "signalbox-b" };
-    const removed = { from: "yardr-x", to: "signalbox-a" };
+    const kept = { from: "sextant-a", to: "sextant-b" };
+    const added = { from: "wharf-x", to: "sextant-b" };
+    const removed = { from: "wharf-x", to: "sextant-a" };
     const events = [blocks("dep_added", added.to, added.from), blocks("dep_removed", removed.to, removed.from), blocks("dep_added", removed.to, removed.from), blocks("dep_removed", removed.to, removed.from)];
     const now: Yard = { ...three, edges: [kept, added] };
     const window: Log = { ...none, events };
@@ -701,7 +701,7 @@ describe("live", () => {
     // as: read once, not once per snapshot below.
     const brief = (b: Bead) => `${b.id} ${b.stage} ${b.working === true} ${b.hold === true}`;
     const ended = state(yard, log).beads.map(brief).sort();
-    for (const k of [0, 500, 1000, 1500, log.events.length - 1]) {
+    for (const k of [0, 0.25, 0.5, 0.75].map((part) => Math.floor(part * log.events.length)).concat(log.events.length - 1)) {
       const snap = taken(k);
       const p = new Player(snap.yard, snap.log, Date.parse(log.events[k]!.at));
       p.follow();
@@ -722,8 +722,8 @@ describe("live", () => {
         // what keeps them the same.
         expect(passed.length, `after ${e.seq}`).toBe(i + 1);
         // The whole state every hundredth event, and at the tail's end: after
-        // every one of its 2000 events it costs seconds, and under load more
-        // than the timeout (signalbox-s9n8).
+        // every one of a day's events it costs seconds, and under load more
+        // than the timeout (sextant-s9n8).
         if ((i + 1) % 100 === 0 || i + 1 === tail.length) expect(p.state, `after ${e.seq}`).toEqual(replayed);
       }
       // By number: the order is the claim, and the states above already say
@@ -783,19 +783,19 @@ describe("live", () => {
       expect(at(kind), kind).toBe(true);
     }
     // A new shed for a group the yard has: the projected event, as the feed gives it.
-    const routeAdded = wire(event("route_added", undefined, { group: "yardr-builders", depot: "signalbox", type: "task" }));
+    const routeAdded = wire(event("route_added", undefined, { group: "wharf-builders", depot: "sextant", type: "task" }));
     expect(outgrown(routeAdded, w)).toBe(true);
     // A bead the cast does not know, when the event brings it in.
-    expect(at("created", "signalbox-new")).toBe(true);
-    expect(at("advanced", "signalbox-new", { from: "backlog", to: "new" })).toBe(true);
-    expect(at("noted", "signalbox-new")).toBe(false);
-    expect(at("crew_status", "brakeman-journal")).toBe(false);
+    expect(at("created", "sextant-new")).toBe(true);
+    expect(at("advanced", "sextant-new", { from: "backlog", to: "new" })).toBe(true);
+    expect(at("noted", "sextant-new")).toBe(false);
+    expect(at("crew_status", "flagman-journal")).toBe(false);
     // What it knows moves by the reducer alone.
-    expect(at("created", "signalbox-b")).toBe(false);
-    expect(at("advanced", "signalbox-a", { from: "new", to: "review" })).toBe(false);
-    expect(at("claimed", "signalbox-a", { group: "yardr-builders", session: "s1" })).toBe(false);
+    expect(at("created", "sextant-b")).toBe(false);
+    expect(at("advanced", "sextant-a", { from: "new", to: "review" })).toBe(false);
+    expect(at("claimed", "sextant-a", { group: "wharf-builders", session: "s1" })).toBe(false);
     // A group comes by its group_set, never by the claim that names it.
-    expect(at("claimed", "signalbox-a", { group: "a-new-group", session: "s1" })).toBe(false);
+    expect(at("claimed", "sextant-a", { group: "a-new-group", session: "s1" })).toBe(false);
     expect(at("hook")).toBe(false);
   });
 });

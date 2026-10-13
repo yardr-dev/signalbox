@@ -60,6 +60,7 @@ const note = document.getElementById("note")!;
 const bar = document.getElementById("bar")!;
 const play = document.getElementById("play")!;
 const live = document.getElementById("live")!;
+const made = document.getElementById("demo")!;
 const speeds = document.getElementById("speeds")!;
 const mute = document.getElementById("sound")!;
 const dusk = document.getElementById("night")!;
@@ -104,11 +105,19 @@ dressed();
 // And an error from here on is told to the script, when one serves the page.
 listen();
 
+// Where a snapshot of one's own yard lies (npm run snapshot), beside the
+// demo the page is committed with: it is played before the demo.
+const OWN = `${base}snapshot/`;
+
+// Whether a file is there and is JSON. A static server may answer the page
+// itself for a path it does not have.
+const json = (response: Response) => response.ok && response.headers.get("content-type")?.startsWith("application/json") === true;
+
 // The yard's events, when the snapshot came with them. Without the file the
 // page is the still picture.
-async function events(): Promise<Log | undefined> {
+async function events(dir: string): Promise<Log | undefined> {
   try {
-    const response = await fetch(`${base}events.json`);
+    const response = await fetch(`${dir}events.json`);
     const log = response.ok ? ((await response.json()) as Log) : undefined;
     return log && log.events.length > 0 ? log : undefined;
   } catch {
@@ -117,9 +126,9 @@ async function events(): Promise<Log | undefined> {
 }
 
 // What is left of the providers' quota, when the snapshot came with it.
-async function fuel(): Promise<Quota | undefined> {
+async function fuel(dir: string): Promise<Quota | undefined> {
   try {
-    const response = await fetch(`${base}quota.json`);
+    const response = await fetch(`${dir}quota.json`);
     const quota = response.ok ? ((await response.json()) as Quota) : undefined;
     return Array.isArray(quota?.providers) ? quota : undefined;
   } catch {
@@ -138,7 +147,7 @@ interface Snapshot {
 
 // The yard as it is now, where the serve script serves the page. A static
 // server has no such path: it answers that, or the page itself, and the page
-// is then the committed snapshot. A yard that does not answer is an error.
+// is then a snapshot's files. A yard that does not answer is an error.
 async function snapshot(): Promise<Snapshot | undefined> {
   let response: Response;
   try {
@@ -195,20 +204,28 @@ async function start() {
     throw err;
   });
   served(api !== undefined);
-  const files = async (): Promise<Snapshot> => {
-    const response = await fetch(`${base}yard.json`);
-    if (!response.ok) throw new Error(`yard.json: ${response.status}`);
+  const files = async (dir: string): Promise<Snapshot | undefined> => {
+    const response = await fetch(`${dir}yard.json`).catch(() => undefined);
+    // Nobody took a snapshot of their own: most pages have none.
+    if (dir === OWN && (response === undefined || !json(response))) return undefined;
+    if (!response?.ok) throw new Error(`yard.json: ${response?.status ?? "no answer"}`);
     // The slots given so far. The page only reads them. A depot, a flow, a
     // peer and a tower keep the slot the file gave them. A flow's stages are
     // seated again when the file's are not the order a bead travels.
-    const remembered = await fetch(`${base}layout.json`);
+    const remembered = await fetch(`${dir}layout.json`);
     return {
       yard: (await response.json()) as Yard,
-      layout: remembered.ok ? ((await remembered.json()) as Partial<Slots>) : {},
+      layout: remembered.ok && (dir === base || json(remembered)) ? ((await remembered.json()) as Partial<Slots>) : {},
       log: { taken_at: "", beads: [], events: [] },
     };
   };
-  let { yard, layout: slots } = api ?? (await files());
+  const own = api ? undefined : await files(OWN);
+  // Neither a yard as it runs nor a snapshot of one: the made-up yard the
+  // page is committed with. The bar says so, where a served page says Live.
+  const demo = !api && !own;
+  const dir = own ? OWN : base;
+  made.hidden = !demo;
+  let { yard, layout: slots } = api ?? own ?? (await files(base))!;
   const kit = await loadKit(base);
   // The structure stands through a replay; only the beads change. Live, a
   // new snapshot may bring another structure: see adopt.
@@ -220,11 +237,11 @@ async function start() {
   // The quota is as it is now, whatever time the picture is of. Live, a tower
   // stands for every provider in use, and says "unknown" when nobody knows
   // its level. A snapshot's files without a quota have no tower.
-  let quota = api ? (api.quota ?? undefined) : await fuel();
+  let quota = api ? (api.quota ?? undefined) : await fuel(dir);
   const stands = (): ReturnType<typeof plan> => ({ ...plan(yard), ...(api || quota ? {} : { towers: [] }) });
   let picture = draw(stands(), kit);
   refuel(picture.towers, quota);
-  const log = api ? api.log : await events();
+  const log = api ? api.log : await events(dir);
   // Live, the window ends when the snapshot was taken, and the page opens
   // there; a replay opens at its start.
   const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
@@ -639,7 +656,7 @@ async function start() {
       const window = api
         ? `following the yard, events since ${time.format(player.from)}`
         : `${log.events.length} events, ${time.format(player.from)} to ${time.format(player.to)}`;
-      say(`${yard.depots.length} depots · ${window} · ${hint}`);
+      say(`${demo ? "a made-up yard · " : ""}${yard.depots.length} depots · ${window} · ${hint}`);
     };
     if (api) follow();
 
@@ -773,7 +790,7 @@ async function start() {
     stock.still = true;
     controls.addEventListener("change", render);
     window.addEventListener("resize", render);
-    say(`${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`);
+    say(`${demo ? "a made-up yard · " : ""}${yard.depots.length} depots · ${yard.beads.length} open beads · as of ${yard.taken_at.replace("T", " ").replace("Z", " UTC")} · ${hint}`);
   }
   // Now that the bar and the note are on the page.
   fit();

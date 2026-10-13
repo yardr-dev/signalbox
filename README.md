@@ -9,7 +9,7 @@ riding as goods. The picture is drawn from the yard's structure and moves on
 its events, both read from the yard's web view (`yardr web serve`): its JSON
 and its stream.
 
-![This yard as a railway: four depots, their flows as tracks](docs/yard.png)
+![The demo yard as a railway: four depots, their flows as tracks](docs/yard.png)
 
 Built as a web page: TypeScript, Three.js, Vite, with Kenney's CC0 kits: the
 Train Kit, City Kit Industrial and Mini Characters.
@@ -24,11 +24,12 @@ Developed in a yardr yard; `.yardr/` holds its flow, roles and merge gate.
     npm run build      # the page as static files in dist/, for any static server
     npm run live       # the page following the yard this machine runs
     npm run check      # types
-    npm test           # the tests of the layout, the replay, the motion, the shunters, the scene, the serve script and the release script
+    npm test           # the tests of the layout, the replay, the motion, the shunters, the scene, the demo, the serve script and the release script
     npm run release -- v1.2.3   # the release archive of that tag, in release/
 
 The page replays a day of one yard from its event log, and follows a yard as
-it runs when the serve script serves it.
+it runs when the serve script serves it. With no yard behind it, it plays
+the demo: a made-up yard, and the bar says "Demo".
 
 ## Following a yard as it runs
 
@@ -39,9 +40,11 @@ it beside a yard and how to put it before the public.
 ## Replaying a day
 
 The page replays a day of one yard from its event log. `npm run snapshot`
-writes `public/yard.json` and the newest 2000 events in
-`public/events.json`; the page opens at the window's start, paused. What
-moves and what a fault looks like are in
+writes `yard.json` and the newest 2000 events in `events.json` to
+`public/snapshot/`; the page opens at the window's start, paused. That
+directory is your own yard and is not tracked: do not commit a snapshot.
+What the repository holds in `public/` is the demo, written by
+`npm run demo`. What moves and what a fault looks like are in
 [docs/replay.md](docs/replay.md).
 
 ## Where things are
@@ -50,14 +53,15 @@ Three pages have the reference: [docs/look.md](docs/look.md) the colours and
 the light picture, [docs/replay.md](docs/replay.md) the replay and the live
 page, [docs/code.md](docs/code.md) each of these files at length.
 
-- `scripts/snapshot.sh`: writes the snapshot from the yard's web view (`npm run snapshot`).
+- `scripts/snapshot.sh`: writes the snapshot from the yard's web view to `public/snapshot/` (`npm run snapshot`).
 - `scripts/snapshot.mjs`: writes `yard.json`, `events.json` and `quota.json` for it.
 - `scripts/slots.mjs`: writes the layout's memory beside a snapshot.
 - `scripts/yard.mjs`: asks the view, and runs `aiquokka`, for the snapshot and the serve script alike.
 - `scripts/serve.mjs`: serves `dist/` and the routes a page follows a yard by (`npm run live`).
 - `scripts/release.sh`: builds a release (`npm run release -- v1.2.3`, the tag).
-- `public/yard.json`, `public/events.json`: the committed snapshot, the demo data and the tests' fixture.
-- `public/layout.json`: the layout's memory for the committed snapshot.
+- `scripts/demo.mjs`: writes the demo, a made-up yard and its day (`npm run demo`).
+- `public/yard.json`, `public/events.json`, `public/quota.json`: the demo, and the tests' fixture.
+- `public/layout.json`: the layout's memory for the demo.
 - `public/kit/`: the models, each pack's subset with its licence.
 - `src/yard.ts`: the shape of the snapshot, and of `quota.json`.
 - `src/project.ts`: the one place that decides which fields are passed on.

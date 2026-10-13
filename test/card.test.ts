@@ -14,7 +14,7 @@ describe("the card", () => {
       notes: [
         { author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "built" },
         { author: "signalbox-a-review", at: "2099-01-02T01:00:00Z", text: "approved\nwith a line" },
-        { author: "brakeman", at: "2099-01-02T01:00:00Z", text: "landed" },
+        { author: "flagman", at: "2099-01-02T01:00:00Z", text: "landed" },
       ],
     };
     expect(card(detail, when)).toEqual({
@@ -35,7 +35,7 @@ describe("the card", () => {
       body: "Show a card.\n\nOn a click.",
       // Two of one moment: the one written later comes first.
       notes: [
-        { head: "brakeman · <2099-01-02T01:00:00Z>", text: "landed" },
+        { head: "flagman · <2099-01-02T01:00:00Z>", text: "landed" },
         { head: "signalbox-a-review · <2099-01-02T01:00:00Z>", text: "approved\nwith a line" },
         { head: "signalbox-a-new · <2099-01-01T01:00:00Z>", text: "built" },
       ],

@@ -432,7 +432,7 @@ describe("the snapshot", () => {
     const built = join(dir, "built");
     mkdirSync(built, { recursive: true });
     writeFileSync(join(built, "index.html"), "<!doctype html><title>signalbox</title>");
-    writeFileSync(join(built, "layout.json"), JSON.stringify({ depots: { aiquokka: 0, signalbox: 1, yardr: 2, "yardr.dev": 3 }, peers: { airy: 0 } }));
+    writeFileSync(join(built, "layout.json"), JSON.stringify({ depots: { gauge: 0, sextant: 1, wharf: 2, "wharf.dev": 3 }, peers: { quay: 0 } }));
     // Nothing of this session's: its yard's view and aiquokka are not asked,
     // and there is no yardr to run: none is on the PATH, and YARDR names one
     // that would say so.

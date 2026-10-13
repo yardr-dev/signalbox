@@ -1,6 +1,6 @@
 // The yard at a moment of its day: one pure reducer over its event log.
 //
-// public/events.json (scripts/snapshot.sh) holds a window of the log, oldest
+// A snapshot's events.json (scripts/snapshot.sh) holds a window of the log, oldest
 // first, cut down to what is read here (src/project.ts); the serve script's
 // feed carries single events of the same shape. state(yard, log, n) is the open
 // beads after the window's first n events, in the shape yard.json lists

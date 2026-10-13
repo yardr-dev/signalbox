@@ -521,10 +521,10 @@ describe("the kit's own models", () => {
   });
 
   test("a wagon in the yard wears the kit's texture and nothing else, whatever its bead's type, and night changes none of it", () => {
-    const bead = (id: string, type: string): Bead => ({ id, title: id, type, stage: "backlog", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z" });
-    const stock = new Stock(layout({ ...yard, beads: [bead("signalbox-a", "task"), bead("signalbox-m", "memory"), bead("signalbox-s", "spike")] }), own);
+    const bead = (id: string, type: string): Bead => ({ id, title: id, type, stage: "backlog", depot: "sextant", priority: 2, created_at: "2099-01-01T00:00:00Z" });
+    const stock = new Stock(layout({ ...yard, beads: [bead("sextant-a", "task"), bead("sextant-m", "memory"), bead("sextant-s", "spike")] }), own);
     const wears = new Set<THREE.MeshStandardMaterial>();
-    for (const id of ["signalbox-a", "signalbox-m", "signalbox-s"]) {
+    for (const id of ["sextant-a", "sextant-m", "sextant-s"]) {
       stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!.traverse((part) => {
         if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) wears.add(m as THREE.MeshStandardMaterial);
       });
@@ -541,8 +541,8 @@ describe("the kit's own models", () => {
 
   test("weathering tints the whole wagon, the kit's texture with it, and leaves the kit's own material as it was", () => {
     const now = Date.parse("2099-01-20T00:00:00Z");
-    const aged = (id: string, days: number): Bead => ({ id, title: id, type: "task", stage: "backlog", depot: "signalbox", priority: 2, created_at: new Date(now - days * 24 * 60 * 60 * 1000).toISOString() });
-    const stock = new Stock(layout({ ...yard, beads: [aged("signalbox-fresh", 0), aged("signalbox-dull", 3), aged("signalbox-rusted", 7)] }, {}, now), own);
+    const aged = (id: string, days: number): Bead => ({ id, title: id, type: "task", stage: "backlog", depot: "sextant", priority: 2, created_at: new Date(now - days * 24 * 60 * 60 * 1000).toISOString() });
+    const stock = new Stock(layout({ ...yard, beads: [aged("sextant-fresh", 0), aged("sextant-dull", 3), aged("sextant-rusted", 7)] }, {}, now), own);
     const wears = (id: string) => {
       const seen = new Set<THREE.MeshStandardMaterial>();
       stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!.traverse((part) => {
@@ -550,9 +550,9 @@ describe("the kit's own models", () => {
       });
       return [...seen];
     };
-    const [fresh] = wears("signalbox-fresh");
+    const [fresh] = wears("sextant-fresh");
     expect(fresh!.map).not.toBeNull();
-    for (const [id, by] of [["signalbox-dull", weathering.dull], ["signalbox-rusted", weathering.rusted]] as const) {
+    for (const [id, by] of [["sextant-dull", weathering.dull], ["sextant-rusted", weathering.rusted]] as const) {
       const worn = wears(id);
       // Every part of it: no face keeps the fresh paint.
       expect(worn.length, id).toBe(1);
@@ -783,12 +783,12 @@ describe("the box the first view holds", () => {
 });
 
 describe("the figures of the stock", () => {
-  const idle = yard.beads.filter((b) => b.group !== "yardr-builders");
-  const work: Bead = { id: "signalbox-w", title: "w", type: "task", stage: "new", depot: "signalbox", group: "yardr-builders", working: true, priority: 2, created_at: "2000-01-01T00:00:00Z" };
+  const idle = yard.beads.filter((b) => b.group !== "wharf-builders");
+  const work: Bead = { id: "sextant-w", title: "w", type: "task", stage: "new", depot: "sextant", group: "wharf-builders", working: true, priority: 2, created_at: "2000-01-01T00:00:00Z" };
   const quiet = layout({ ...yard, beads: [...idle, { ...work, working: false }] });
   const busy = layout({ ...yard, beads: [...idle, work] });
   // The wagon's board has a hut of its own: the figure comes from there.
-  const place = people(quiet).find((p) => p.key.startsWith("signalbox/default/new/yardr-builders#"))!;
+  const place = people(quiet).find((p) => p.key.startsWith("sextant/default/new/wharf-builders#"))!;
   const post = busy.work.find((w) => w.key === work.id)!;
   // The figure of the first place of the builders' hut.
   const first = (stock: Stock) => {
@@ -826,7 +826,7 @@ describe("the figures of the stock", () => {
     stock.tick(1);
     expect(figure.rotation.y).toBeCloseTo(Math.PI / 2);
     expect(stock.beads).toContain(figure);
-    expect(tip(figure.userData.bead as Bead, figure.userData.crew === true)).toContain("signalbox-w — session of yardr-builders");
+    expect(tip(figure.userData.bead as Bead, figure.userData.crew === true)).toContain("sextant-w — session of wharf-builders");
     // A box figure at work moves nothing more.
     expect(stock.tick(0.1)).toBe(false);
 
@@ -950,16 +950,16 @@ describe("the figures of the stock", () => {
   });
 
   test("the first place is out from the door; a sign counts who is out; a building says whose it is", () => {
-    const hut = quiet.sheds.find((s) => s.group === "yardr-builders")!;
+    const hut = quiet.sheds.find((s) => s.group === "wharf-builders")!;
     expect(place.at.x).toBeCloseTo(hut.at.x + SHED_WIDTH / 2 + PLACE_X);
-    expect(sign(hut)).toBe("yardr-builders · 0 of 3 out");
-    expect(sign(hut, 2)).toBe("yardr-builders · 2 of 3 out");
-    expect(house(hut)).toBe("yardr-builders\nherdr · limit 3");
+    expect(sign(hut)).toBe("wharf-builders · 0 of 3 out");
+    expect(sign(hut, 2)).toBe("wharf-builders · 2 of 3 out");
+    expect(house(hut)).toBe("wharf-builders\nherdr · limit 3");
     const station = quiet.sheds.find((s) => s.kind === "station")!;
     expect(sign(station)).toBe(station.group);
     expect(house(station)).toBe(`${station.group}\nmanual · limit 50`);
-    const works = quiet.sheds.find((s) => s.key === "signalbox/default/approved/signalbox-assembly")!;
-    expect(sign(works)).toBe("signalbox-assembly · 1");
+    const works = quiet.sheds.find((s) => s.key === "sextant/default/approved/sextant-assembly")!;
+    expect(sign(works)).toBe("sextant-assembly · 1");
   });
 });
 
@@ -967,7 +967,7 @@ describe("the figures of the stock", () => {
 const clock = (at: string) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(Date.parse(at));
 
 describe("the faults of the stock", () => {
-  const bead = (id: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type: "task", stage: "new", depot: "signalbox", priority: 2, created_at: "2000-01-01T00:00:00Z", ...over });
+  const bead = (id: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type: "task", stage: "new", depot: "sextant", priority: 2, created_at: "2000-01-01T00:00:00Z", ...over });
   const at = (...beads: Bead[]) => layout({ ...yard, beads });
   const wagon = (stock: Stock, id: string) => stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id && o.userData.crew !== true)!;
   const when = "2000-01-01T06:27:00Z";
@@ -984,11 +984,11 @@ describe("the faults of the stock", () => {
   };
 
   test("a held wagon has chocks at its wheels and a red flag, until it is let go", () => {
-    const well = at(bead("signalbox-a"));
+    const well = at(bead("sextant-a"));
     const stock = new Stock(well, kit);
-    const a = wagon(stock, "signalbox-a");
+    const a = wagon(stock, "sextant-a");
     expect(meshes(a)).toBe(1);
-    stock.show(at(bead("signalbox-a", { hold: true })), { tween: true });
+    stock.show(at(bead("sextant-a", { hold: true })), { tween: true });
     expect(colours(a).filter((c) => c === tint.chock).length).toBe(2);
     expect(colours(a)).toContain(lamp.stop);
     // No chocks under it while the shunter takes it into the siding: they lie where it stands.
@@ -1012,9 +1012,9 @@ describe("the faults of the stock", () => {
   });
 
   test("a refused move is a lamp on the wagon, flashing red until the bead moves", () => {
-    const refused = at(bead("signalbox-a", { fault: { kind: "move_refused", at: when } }));
-    const stock = new Stock(at(bead("signalbox-a")), kit);
-    const a = wagon(stock, "signalbox-a");
+    const refused = at(bead("sextant-a", { fault: { kind: "move_refused", at: when } }));
+    const stock = new Stock(at(bead("sextant-a")), kit);
+    const a = wagon(stock, "sextant-a");
     expect(stock.tick(0.1)).toBe(false);
     stock.show(refused, { tween: true });
     expect(meshes(a)).toBe(3);
@@ -1035,16 +1035,16 @@ describe("the faults of the stock", () => {
     expect(colours(a)).toContain(lamp.stop);
     stock.still = false;
 
-    stock.show(at(bead("signalbox-a", { stage: "review" })), { tween: true });
+    stock.show(at(bead("sextant-a", { stage: "review" })), { tween: true });
     expect(meshes(a)).toBe(1);
     run(stock);
     expect(stock.tick(0.1)).toBe(false);
   });
 
   test("a bead with no route lights its platform's lamp, not its wagon's", () => {
-    const lost = at(bead("signalbox-a", { fault: { kind: "unrouted", at: when } }));
+    const lost = at(bead("sextant-a", { fault: { kind: "unrouted", at: when } }));
     const stock = new Stock(lost, kit);
-    expect(meshes(wagon(stock, "signalbox-a"))).toBe(1);
+    expect(meshes(wagon(stock, "sextant-a"))).toBe(1);
     const post = lost.lamps[0]!;
     const bulbs = () => {
       const found: THREE.Mesh[] = [];
@@ -1057,21 +1057,21 @@ describe("the faults of the stock", () => {
     };
     expect(bulbs().map((b) => [b.position.x, b.position.z])).toEqual([[post.at.x, post.at.z]]);
     expect(stock.tick(0.1)).toBe(true);
-    stock.show(at(bead("signalbox-a")), { tween: true });
+    stock.show(at(bead("sextant-a")), { tween: true });
     expect(bulbs()).toEqual([]);
     expect(stock.tick(1)).toBe(false);
   });
 
   test("the tip names what is wrong in words", () => {
-    expect(wrong(bead("signalbox-a"))).toBeUndefined();
-    expect(wrong(bead("signalbox-a", { hold: true }))).toBe("held");
-    expect(wrong(bead("signalbox-a", { fault: { kind: "gave_up", at: when } }))).toBe(`session gave up ${clock(when)}`);
-    expect(wrong(bead("signalbox-a", { fault: { kind: "harness_error", at: when } }))).toBe(`session harness error ${clock(when)}`);
-    expect(wrong(bead("signalbox-a", { fault: { kind: "ended_question", at: when } }))).toBe(`session ended with question ${clock(when)}`);
-    expect(wrong(bead("signalbox-a", { fault: { kind: "stranded", at: when } }))).toBe(`stranded ${clock(when)}`);
-    expect(wrong(bead("signalbox-a", { fault: { kind: "unrouted", at: when } }))).toBe(`unrouted ${clock(when)}`);
-    expect(wrong(bead("signalbox-a", { hold: true, fault: { kind: "move_refused", at: "" } }))).toBe("held · move refused");
-    expect(tip(bead("signalbox-a", { fault: { kind: "move_refused", at: when } }), false)).toBe(`signalbox-a\nsignalbox-a\nsignalbox · task · new · move refused ${clock(when)}`);
+    expect(wrong(bead("sextant-a"))).toBeUndefined();
+    expect(wrong(bead("sextant-a", { hold: true }))).toBe("held");
+    expect(wrong(bead("sextant-a", { fault: { kind: "gave_up", at: when } }))).toBe(`session gave up ${clock(when)}`);
+    expect(wrong(bead("sextant-a", { fault: { kind: "harness_error", at: when } }))).toBe(`session harness error ${clock(when)}`);
+    expect(wrong(bead("sextant-a", { fault: { kind: "ended_question", at: when } }))).toBe(`session ended with question ${clock(when)}`);
+    expect(wrong(bead("sextant-a", { fault: { kind: "stranded", at: when } }))).toBe(`stranded ${clock(when)}`);
+    expect(wrong(bead("sextant-a", { fault: { kind: "unrouted", at: when } }))).toBe(`unrouted ${clock(when)}`);
+    expect(wrong(bead("sextant-a", { hold: true, fault: { kind: "move_refused", at: "" } }))).toBe("held · move refused");
+    expect(tip(bead("sextant-a", { fault: { kind: "move_refused", at: when } }), false)).toBe(`sextant-a\nsextant-a\nsextant · task · new · move refused ${clock(when)}`);
   });
 });
 
@@ -1083,7 +1083,7 @@ describe("the weather of the stock", () => {
     title: id,
     type: "task",
     stage: "backlog",
-    depot: "signalbox",
+    depot: "sextant",
     priority: 2,
     created_at: new Date(now - days * day).toISOString(),
     ...over,
@@ -1100,9 +1100,9 @@ describe("the weather of the stock", () => {
   };
 
   test("the paint dulls, rusts, and moss grows on top; a wagon that moves on is fresh again", () => {
-    const beads = [bead("signalbox-a", 0), bead("signalbox-b", 0)];
+    const beads = [bead("sextant-a", 0), bead("sextant-b", 0)];
     const stock = new Stock(at(beads), kit);
-    const a = wagon(stock, "signalbox-a");
+    const a = wagon(stock, "sextant-a");
     const [fresh] = paint(a);
     const tinted = (colour: number) => fresh!.color.clone().multiply(new THREE.Color(colour)).getHex();
 
@@ -1137,8 +1137,8 @@ describe("the weather of the stock", () => {
       ...kit,
       make: (part, pick) => (part === "wagon" ? new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(2.7, 1.3, 1.2), shared)) : kit.make(part, pick)),
     };
-    const stock = new Stock(at([bead("signalbox-a", 8), bead("signalbox-b", 9), bead("signalbox-c", 4)]), twins);
-    const [a, b, c] = ["signalbox-a", "signalbox-b", "signalbox-c"].map((id) => paint(wagon(stock, id))[0]!);
+    const stock = new Stock(at([bead("sextant-a", 8), bead("sextant-b", 9), bead("sextant-c", 4)]), twins);
+    const [a, b, c] = ["sextant-a", "sextant-b", "sextant-c"].map((id) => paint(wagon(stock, id))[0]!);
     expect(a).toBe(b);
     expect(a).not.toBe(shared);
     expect(c).not.toBe(a);
@@ -1150,14 +1150,14 @@ describe("the weather of the stock", () => {
     expect(waited("backlog", 9.7)).toBe("in backlog 9 days");
     expect(waited("decide", 1.2)).toBe("in decide 1 day");
     expect(waited("decide", 0.04)).toBe("in decide under a day");
-    const old = bead("signalbox-a", 9);
-    expect(tip(old, false, 9.2)).toBe("signalbox-a\nsignalbox-a\nsignalbox · task · backlog\nin backlog 9 days");
-    expect(tip(old, false)).toBe("signalbox-a\nsignalbox-a\nsignalbox · task · backlog");
+    const old = bead("sextant-a", 9);
+    expect(tip(old, false, 9.2)).toBe("sextant-a\nsextant-a\nsextant · task · backlog\nin backlog 9 days");
+    expect(tip(old, false)).toBe("sextant-a\nsextant-a\nsextant · task · backlog");
   });
 });
 
 describe("the colours of the stock", () => {
-  const bead = (id: string, type: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type, stage: "backlog", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z", ...over });
+  const bead = (id: string, type: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type, stage: "backlog", depot: "sextant", priority: 2, created_at: "2099-01-01T00:00:00Z", ...over });
   // The paint of a thing's body: its own parts, and not what is put on it.
   const body = (o: THREE.Object3D) => {
     const seen: THREE.Material[] = [];
@@ -1168,13 +1168,13 @@ describe("the colours of the stock", () => {
   };
   // A train stands at its platform with its wagons alone: the others are
   // at their own.
-  const beads = [bead("signalbox-a", "task", { stage: "new" }), bead("yardr-b", "task", { depot: "yardr" }), bead("signalbox-t", "train"), bead("signalbox-w", "wagon", { train: "signalbox-t" }), bead("aiquokka-s", "spike", { depot: "aiquokka" })];
+  const beads = [bead("sextant-a", "task", { stage: "new" }), bead("wharf-b", "task", { depot: "wharf" }), bead("sextant-t", "train"), bead("sextant-w", "wagon", { train: "sextant-t" }), bead("gauge-s", "spike", { depot: "gauge" })];
 
   test("a wagon says nothing of its bead's type by its paint: a box is the kit's blue for every type, a locomotive's the kit's green", () => {
     const stock = new Stock(layout({ ...yard, beads }), kit);
     const of = (id: string) => body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!);
-    for (const id of ["signalbox-a", "yardr-b", "signalbox-w", "aiquokka-s"]) expect(of(id), id).toEqual([paint(stand.wagon)]);
-    expect(of("signalbox-t")).toEqual([paint(stand.locomotive)]);
+    for (const id of ["sextant-a", "wharf-b", "sextant-w", "gauge-s"]) expect(of(id), id).toEqual([paint(stand.wagon)]);
+    expect(of("sextant-t")).toEqual([paint(stand.locomotive)]);
     // Nothing that rolls is left for the scene to paint, a shunter neither.
     stock.root.traverse((part) => {
       if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) expect((m as THREE.Material).name).not.toBe(TINT);
@@ -1183,12 +1183,12 @@ describe("the colours of the stock", () => {
 
   test("night leaves a wagon's colour as it is, under the weather too: the kit's is the same by day and by night", () => {
     const now = Date.parse("2099-01-09T00:00:00Z");
-    const stock = new Stock(layout({ ...yard, beads: [bead("signalbox-a", "task"), bead("signalbox-b", "task", { created_at: "2099-01-08T23:00:00Z" })] }, {}, now), kit);
+    const stock = new Stock(layout({ ...yard, beads: [bead("sextant-a", "task"), bead("sextant-b", "task", { created_at: "2099-01-08T23:00:00Z" })] }, {}, now), kit);
     const of = (id: string) => (body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!)[0] as THREE.MeshLambertMaterial).color.getHex();
     const rusted = new THREE.Color(stand.wagon).multiply(new THREE.Color(weathering.rusted)).getHex();
-    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([stand.wagon, rusted]);
+    expect([of("sextant-b"), of("sextant-a")]).toEqual([stand.wagon, rusted]);
     dress(true);
-    expect([of("signalbox-b"), of("signalbox-a")]).toEqual([stand.wagon, rusted]);
+    expect([of("sextant-b"), of("sextant-a")]).toEqual([stand.wagon, rusted]);
     dress(false);
   });
 
@@ -1208,9 +1208,9 @@ describe("the colours of the stock", () => {
 });
 
 describe("the shunters of the stock", () => {
-  // signalbox's track, with nothing on it but what a test puts there.
-  const TRACK = "signalbox/default";
-  const bead = (id: string, stage: string): Bead => ({ id, title: id, type: "task", stage, depot: "signalbox", priority: 2, created_at: "2000-01-01T00:00:00Z" });
+  // sextant's track, with nothing on it but what a test puts there.
+  const TRACK = "sextant/default";
+  const bead = (id: string, stage: string): Bead => ({ id, title: id, type: "task", stage, depot: "sextant", priority: 2, created_at: "2000-01-01T00:00:00Z" });
   const at = (...beads: Bead[]) => layout({ ...yard, beads });
   const empty = at();
   const track = empty.tracks.find((t) => t.key === TRACK)!;
@@ -1450,7 +1450,7 @@ describe("the shunters of the stock", () => {
 });
 
 describe("the lamps of the wagons that wait", () => {
-  const bead = (id: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type: "task", stage: "backlog", depot: "signalbox", priority: 2, created_at: "2000-01-01T00:00:00Z", ...over });
+  const bead = (id: string, over: Partial<Bead> = {}): Bead => ({ id, title: id, type: "task", stage: "backlog", depot: "sextant", priority: 2, created_at: "2000-01-01T00:00:00Z", ...over });
   const at = (beads: Bead[], edges: Edge[]) => layout({ ...yard, beads, edges });
   const wagon = (stock: Stock, id: string) => stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id && o.userData.crew !== true)!;
   const amber = (o: THREE.Object3D) => {
@@ -1476,18 +1476,18 @@ describe("the lamps of the wagons that wait", () => {
     });
     return n;
   };
-  const a = bead("signalbox-a", { stage: "new" });
-  const b = bead("signalbox-b");
-  const waits = [{ from: "signalbox-a", to: "signalbox-b" }];
+  const a = bead("sextant-a", { stage: "new" });
+  const b = bead("sextant-b");
+  const waits = [{ from: "sextant-a", to: "sextant-b" }];
 
   test("across platforms of one board: an amber lamp on the wagon that waits, and no line between the two", () => {
     const stock = new Stock(at([a, b], waits), kit);
-    const [waiting, blocker] = [wagon(stock, "signalbox-b"), wagon(stock, "signalbox-a")];
+    const [waiting, blocker] = [wagon(stock, "sextant-b"), wagon(stock, "sextant-a")];
     expect(amber(waiting)).toBe(1);
     expect(amber(blocker)).toBe(0);
     // The edge adds the lamp to its wagon and nothing else to the yard.
     expect(loose(stock)).toBe(loose(new Stock(at([a, b], []), kit)));
-    expect(tip(waiting.userData.bead as Bead, false, undefined, waiting.userData.waits as string[])).toContain("\nwaits for signalbox-a (signalbox · new)");
+    expect(tip(waiting.userData.bead as Bead, false, undefined, waiting.userData.waits as string[])).toContain("\nwaits for sextant-a (sextant · new)");
     expect(tip(blocker.userData.bead as Bead, false, undefined, blocker.userData.waits as string[])).not.toContain("waits for");
     // The lamp is lit and still: the picture comes to a stand.
     expect(stock.tick(0.1)).toBe(false);
@@ -1496,44 +1496,44 @@ describe("the lamps of the wagons that wait", () => {
   test("at one platform: the same lamp, and no line", () => {
     const beside = { ...a, stage: "backlog" };
     const stock = new Stock(at([beside, b], waits), kit);
-    expect(amber(wagon(stock, "signalbox-b"))).toBe(1);
-    expect(amber(wagon(stock, "signalbox-a"))).toBe(0);
+    expect(amber(wagon(stock, "sextant-b"))).toBe(1);
+    expect(amber(wagon(stock, "sextant-a"))).toBe(0);
     expect(loose(stock)).toBe(loose(new Stock(at([beside, b], []), kit)));
-    expect(wagon(stock, "signalbox-b").userData.waits).toEqual(["waits for signalbox-a (signalbox · backlog)"]);
+    expect(wagon(stock, "sextant-b").userData.waits).toEqual(["waits for sextant-a (sextant · backlog)"]);
   });
 
   test("the lamp stays lit and its tip follows the blocker when a shunter moves it", () => {
     const stock = new Stock(at([a, b], waits), kit);
-    const waiting = wagon(stock, "signalbox-b");
+    const waiting = wagon(stock, "sextant-b");
     stock.show(at([{ ...a, stage: "review" }, b], waits), { tween: true });
     expect(amber(waiting)).toBe(1);
-    expect(waiting.userData.waits).toEqual(["waits for signalbox-a (signalbox · review)"]);
+    expect(waiting.userData.waits).toEqual(["waits for sextant-a (sextant · review)"]);
   });
 
   test("a wagon that waits for one on another board has the same lamp, and its tip names the bead, the board and the stage", () => {
-    const far = bead("yardr-x", { depot: "yardr" });
-    const edges = [{ from: "yardr-x", to: "signalbox-b" }];
+    const far = bead("wharf-x", { depot: "wharf" });
+    const edges = [{ from: "wharf-x", to: "sextant-b" }];
     const l = at([far, b], edges);
     const stock = new Stock(l, kit);
-    const waiting = wagon(stock, "signalbox-b");
+    const waiting = wagon(stock, "sextant-b");
     expect(amber(waiting)).toBe(1);
-    expect(amber(wagon(stock, "yardr-x"))).toBe(0);
-    expect(awaits({ on: "yardr-x", depot: "yardr", stage: "backlog" })).toBe("waits for yardr-x (yardr · backlog)");
-    expect(tip(waiting.userData.bead as Bead, false, 9, waiting.userData.waits as string[])).toBe("signalbox-b\nsignalbox-b\nsignalbox · task · backlog\nin backlog 9 days\nwaits for yardr-x (yardr · backlog)");
+    expect(amber(wagon(stock, "wharf-x"))).toBe(0);
+    expect(awaits({ on: "wharf-x", depot: "wharf", stage: "backlog" })).toBe("waits for wharf-x (wharf · backlog)");
+    expect(tip(waiting.userData.bead as Bead, false, 9, waiting.userData.waits as string[])).toBe("sextant-b\nsextant-b\nsextant · task · backlog\nin backlog 9 days\nwaits for wharf-x (wharf · backlog)");
     expect(stock.tick(0.1)).toBe(false);
   });
 
   test("a wagon that waits for two has one lamp, and a line of its tip for each", () => {
-    const far = bead("yardr-x", { depot: "yardr" });
-    const stock = new Stock(at([a, far, b], [...waits, { from: "yardr-x", to: "signalbox-b" }]), kit);
-    const waiting = wagon(stock, "signalbox-b");
+    const far = bead("wharf-x", { depot: "wharf" });
+    const stock = new Stock(at([a, far, b], [...waits, { from: "wharf-x", to: "sextant-b" }]), kit);
+    const waiting = wagon(stock, "sextant-b");
     expect(amber(waiting)).toBe(1);
-    expect(waiting.userData.waits).toEqual(["waits for signalbox-a (signalbox · new)", "waits for yardr-x (yardr · backlog)"]);
+    expect(waiting.userData.waits).toEqual(["waits for sextant-a (sextant · new)", "waits for wharf-x (wharf · backlog)"]);
   });
 
   test("closing the blocker puts the lamp out, and the tip says no more of it", () => {
     const stock = new Stock(at([a, b], waits), kit);
-    const waiting = wagon(stock, "signalbox-b");
+    const waiting = wagon(stock, "sextant-b");
     stock.show(at([b], waits), { tween: true });
     expect(amber(waiting)).toBe(0);
     expect(waiting.userData.waits).toEqual([]);
@@ -1541,10 +1541,10 @@ describe("the lamps of the wagons that wait", () => {
 });
 
 describe("the works of the stock", () => {
-  const key = "signalbox/default/approved/signalbox-assembly";
+  const key = "sextant/default/approved/sextant-assembly";
   const bare: Yard = { ...yard, beads: [] };
   const at = (gate?: Gate) => layout(bare, {}, undefined, gate ? { [key]: gate } : {});
-  const running: Gate = { runs: [{ bead: "signalbox-a", since: "2000-01-01T06:27:00Z" }] };
+  const running: Gate = { runs: [{ bead: "sextant-a", since: "2000-01-01T06:27:00Z" }] };
   const landed: Gate = { runs: [], last: "landed" };
   const failed: Gate = { runs: [], last: "failed" };
   // The puffs in the air, and the lit lamps of the works: no wagon is there
@@ -1597,7 +1597,7 @@ describe("the works of the stock", () => {
     expect(lamps(stock)).toEqual([]);
     // The pointer is told of the run.
     const told = picture.sheds.find((o) => (o.userData.shed as Shed).key === key)!.userData.shed as Shed;
-    expect(house(told)).toBe(`signalbox-assembly\nexec · limit 1\nruns the gate on signalbox-a since ${clock(running.runs[0]!.since!)}`);
+    expect(house(told)).toBe(`sextant-assembly\nexec · limit 1\nruns the gate on sextant-a since ${clock(running.runs[0]!.since!)}`);
 
     stock.show(at(landed), { tween: true });
     expect(lamps(stock)).toEqual([lamp.clear]);
@@ -1636,9 +1636,9 @@ describe("the works of the stock", () => {
     stock.show(at(landed), { tween: true });
     expect(puffs(stock)).toEqual([]);
     const shed = (gate: Gate) => at(gate).sheds.find((s) => s.key === key)!;
-    expect(house(shed(landed))).toBe("signalbox-assembly\nexec · limit 1\nlast run landed");
-    expect(house(shed(failed))).toBe("signalbox-assembly\nexec · limit 1\nlast gate failed");
-    expect(house(shed({ runs: [{ bead: "signalbox-a" }] }))).toBe("signalbox-assembly\nexec · limit 1\nruns the gate on signalbox-a");
+    expect(house(shed(landed))).toBe("sextant-assembly\nexec · limit 1\nlast run landed");
+    expect(house(shed(failed))).toBe("sextant-assembly\nexec · limit 1\nlast gate failed");
+    expect(house(shed({ runs: [{ bead: "sextant-a" }] }))).toBe("sextant-assembly\nexec · limit 1\nruns the gate on sextant-a");
   });
 });
 

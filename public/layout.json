@@ -1,29 +1,29 @@
 {
   "depots": {
-    "aiquokka": 0,
-    "signalbox": 1,
-    "yardr": 2,
-    "yardr.dev": 3
+    "gauge": 0,
+    "sextant": 1,
+    "wharf": 2,
+    "wharf.dev": 3
   },
   "flows": {
-    "aiquokka": {
-      "aiquokka": 0,
+    "gauge": {
+      "gauge": 0,
       "pr-review": 1
     },
-    "signalbox": {
+    "sextant": {
       "default": 0
     },
-    "yardr": {
+    "wharf": {
       "default": 0,
-      "yardr.train": 1,
+      "wharf.train": 1,
       "type/wagon": 2
     },
-    "yardr.dev": {
+    "wharf.dev": {
       "default": 0
     }
   },
   "stages": {
-    "aiquokka/aiquokka": {
+    "gauge/gauge": {
       "backlog": 0,
       "new": 1,
       "decide": 2,
@@ -31,12 +31,12 @@
       "approved": 4,
       "merged": 5
     },
-    "aiquokka/pr-review": {
+    "gauge/pr-review": {
       "review": 0,
       "decide": 1,
       "done": 2
     },
-    "signalbox/default": {
+    "sextant/default": {
       "backlog": 0,
       "new": 1,
       "decide": 2,
@@ -44,7 +44,7 @@
       "approved": 4,
       "merged": 5
     },
-    "yardr/default": {
+    "wharf/default": {
       "backlog": 0,
       "new": 1,
       "decide": 2,
@@ -52,7 +52,7 @@
       "approved": 4,
       "merged": 5
     },
-    "yardr/yardr.train": {
+    "wharf/wharf.train": {
       "backlog": 0,
       "open": 1,
       "review": 2,
@@ -63,14 +63,14 @@
       "land": 7,
       "merged": 8
     },
-    "yardr/type/wagon": {
+    "wharf/type/wagon": {
       "backlog": 0,
       "new": 1,
       "approved": 2,
       "decide": 3,
       "merged": 4
     },
-    "yardr.dev/default": {
+    "wharf.dev/default": {
       "backlog": 0,
       "new": 1,
       "decide": 2,
@@ -80,7 +80,7 @@
     }
   },
   "peers": {
-    "airy": 0
+    "quay": 0
   },
   "towers": {
     "kimi": 0,

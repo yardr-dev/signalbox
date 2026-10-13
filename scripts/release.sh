@@ -97,6 +97,9 @@ for file in $files; do
   mkdir -p "$stage/signalbox/$(dirname "$file")"
   cp -R "$file" "$stage/signalbox/$file"
 done
+# A snapshot of the packer's own yard (scripts/snapshot.sh) is built into
+# dist/ with the rest of public/: it is nobody else's to have.
+rm -rf "$stage/signalbox/dist/snapshot"
 # A Mac does not always let the provenance attribute go, so this is on top
 # of the tar flags, not in their place.
 if command -v xattr >/dev/null 2>&1; then

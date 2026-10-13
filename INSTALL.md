@@ -38,7 +38,9 @@ and `NOTICE`.
 
    It prints `signalbox: the yard, live, at http://127.0.0.1:8792/`. Open
    that in a browser. The bar says `Live` and the yard's clock; scrub back
-   for the replay of the newest 2000 events.
+   for the replay of the newest 2000 events. A bar that says `Demo` is not
+   your yard: the page was opened without the script (from `dist/` by
+   another server), and plays the made-up yard it comes with.
 
 3. To keep it running, put that line in whatever keeps things running on
    your machine (launchd, systemd, tmux). Restart it on the same `--port`:

@@ -30,6 +30,10 @@ function tree(name) {
   mkdirSync(join(root, "dist/assets"), { recursive: true });
   writeFileSync(join(root, "dist/index.html"), "<!doctype html><title>signalbox</title>");
   writeFileSync(join(root, "dist/assets/index.js"), "");
+  // A snapshot of the packer's own yard, as the build takes it from
+  // public/: no archive holds it.
+  mkdirSync(join(root, "dist/snapshot"));
+  writeFileSync(join(root, "dist/snapshot/yard.json"), "{}");
   return root;
 }
 

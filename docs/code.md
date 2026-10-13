@@ -1,15 +1,26 @@
 # Where things are
 
-- `scripts/snapshot.sh` writes `public/yard.json` and `public/events.json`
-  from the yard's web view (`npm run snapshot`, with `YARDR_WEB=` to name a
+- `scripts/snapshot.sh` writes `public/snapshot/yard.json` and `events.json`
+  beside it from the yard's web view (`npm run snapshot`, with `YARDR_WEB=` to name a
   view that is not at `http://127.0.0.1:8791`: it runs no command of yardr's
-  either, so `yardr web serve` has to run), and `public/quota.json` beside them from `aiquokka --json`
+  either, so `yardr web serve` has to run), and `quota.json` beside them from `aiquokka --json`
   (`AIQUOKKA=`): the silos' levels. Without `aiquokka` there is no
-  `quota.json`, and one from an earlier snapshot is removed. The committed files are the demo data and the tests' fixture: the
-  tests name the yard's depots, groups and beads, so a new snapshot may need
-  them brought along. Of an event the file keeps its number, time, kind and
-  bead, and a few names from its data; a session is an alias, and a close
-  says only whether it was a landing.
+  `quota.json`, and one from an earlier snapshot is removed. `public/snapshot/`
+  is your own yard: it is not tracked, the page plays it before the demo,
+  and no release archive holds it. Of an event the file keeps its number,
+  time, kind and bead, and a few names from its data; a session is an alias,
+  and a close says only whether it was a landing.
+- `scripts/demo.mjs` writes the demo (`npm run demo`): `public/yard.json`,
+  `events.json`, `layout.json` and `quota.json`, a made-up yard and one day
+  of it. They are committed: the page plays them when no yard is behind it,
+  with "Demo" on the bar, and the tests read them as their fixture. Nothing
+  of a real yard is in them, and none belongs there. The script holds the
+  yard's description (its depots, flows, groups and routes, and each bead
+  with the stages it passes on the day), plays it, and passes the lists and
+  the log that come out through `src/project.ts`, as a snapshot's are. A
+  test holds the committed files to what the script writes. The tests name
+  the demo's depots, groups and some of its beads, so a change to the
+  description may need them brought along.
 - `scripts/yard.mjs` asks the view, and runs `aiquokka`, for the snapshot and
   the serve script alike, and `src/project.ts` cuts what they answer down to what the
   page reads: the one place that decides which fields are passed on.
@@ -33,13 +44,14 @@
   list is one line of the script, and a test fails when the serve script
   imports a file that is not on it. It needs the Node the archive needs,
   22.6 or later (`engines`).
-- `public/layout.json` is the layout's memory for the committed snapshot: the
+- `layout.json` beside a `yard.json` is the layout's memory for it: the
   slot of every depot, flow, stage, peer and provider's silo drawn so far. The
   snapshot script writes it when it is missing and brings it up to date
   otherwise (`scripts/slots.mjs`): a depot, a flow, a peer and a tower keep
   their slot, and a flow's stages are seated again when the flow changes.
   The static page and the tests only read it.
-  Delete it to have that yard laid out afresh.
+  Delete it to have that yard laid out afresh. The demo's is written with
+  the demo, from slot 0.
 - `src/yard.ts`: the shape of the snapshot, and of `quota.json`.
 - `src/layout.ts`: from the structure to positions, one pure function. A
   flow's stages stand in the order a bead travels them, its terminal stage

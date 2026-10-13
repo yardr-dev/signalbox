@@ -1,0 +1,26 @@
+{
+  "taken_at": "2026-05-12T19:30:00Z",
+  "providers": [
+    {
+      "key": "kimi",
+      "name": "Kimi",
+      "weekly": {
+        "used_percent": 41
+      },
+      "short": {
+        "used_percent": 22
+      }
+    },
+    {
+      "key": "claude",
+      "name": "Claude",
+      "plan": "Max",
+      "weekly": {
+        "used_percent": 63
+      },
+      "short": {
+        "used_percent": 84
+      }
+    }
+  ]
+}
