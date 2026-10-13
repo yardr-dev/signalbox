@@ -47,6 +47,7 @@ import {
   travelOrder,
   weather,
   WORK_Z,
+  type Slots,
 } from "../src/layout";
 import type { Bead, Flow, Yard } from "../src/yard";
 
@@ -84,10 +85,12 @@ describe("the same structure gives the same picture", () => {
 });
 
 describe("a structure that only grew keeps every old position", () => {
-  test("a new stage appends a platform", () => {
+  test("a new terminal stands at the end of the track", () => {
     const grown = copy();
     const flow = grown.flows[0]!.flows[0]!;
-    flow.stages.push({ stage: "shipped" });
+    // A terminal stands last, so the platforms already there keep their
+    // slots. A stage the order puts earlier is seated again, below.
+    flow.stages.push({ stage: "shipped", terminal: true });
     const { was, is } = expectKept(yard, grown);
     const key = `platform:${grown.flows[0]!.depot}/${flow.name}/shipped`;
     expect(was.has(key)).toBe(false);
@@ -178,13 +181,16 @@ describe("a slot once given is kept when the structure's order changes", () => {
     const memory = { depots: { yardr: 7 }, flows: { yardr: { [flow.name]: 2 } }, stages: { [`yardr/${flow.name}`]: { review: 9 } }, peers: { airy: 4 } };
     const at = positions(layout(yard, memory));
     expect(at.get("board:yardr")!.z).toBe(7 * DEPOT_PITCH);
-    expect(at.get(`platform:yardr/${flow.name}/review`)!.x).toBe(9 * STAGE_PITCH);
     expect(at.get(`track:yardr/${flow.name}`)!.z).toBe(7 * DEPOT_PITCH + FIRST_TRACK_Z + 2 * FLOW_PITCH);
     expect(at.get("peer:peer/airy")!.z).toBe(PEER_Z - 4 * PEER_PITCH);
     // What had no slot stands after what had one, not on it: past yardr's
     // board, which holds five slots (the remembered 2, then 3 and 4).
     expect(at.get("board:aiquokka")!.z).toBe(7 * DEPOT_PITCH + BOARD_HEAD + 5 * FLOW_PITCH + BOARD_GAP);
-    expect(at.get(`platform:yardr/${flow.name}/backlog`)!.x).toBe(10 * STAGE_PITCH);
+    // This flow's remembered stages are not its stages, so they are seated
+    // in travel order, and review does not keep slot 9.
+    const order = travelOrder(flow);
+    expect(at.get(`platform:yardr/${flow.name}/backlog`)!.x).toBe(order.indexOf("backlog") * STAGE_PITCH);
+    expect(at.get(`platform:yardr/${flow.name}/review`)!.x).toBe(order.indexOf("review") * STAGE_PITCH);
   });
 
   test("a depot named before the others is a board below, not one that pushes them down", () => {
@@ -216,16 +222,125 @@ describe("a slot once given is kept when the structure's order changes", () => {
     // Without the slots, the same structure is another picture.
     expect(positions(layout(turned)).get("board:yardr")).not.toEqual(positions(layout(yard)).get("board:yardr"));
   });
+});
 
-  test("a stage that left and came back stands where it stood", () => {
-    const without = copy();
-    const flow = without.flows.find((f) => f.depot === "yardr")!.flows[0]!;
-    flow.stages = flow.stages.filter((s) => s.stage !== "review");
-    const memory = place(without, place(yard));
-    expect(memory).toEqual(place(yard));
-    without.flows.find((f) => f.depot === "yardr")!.flows[0]!.stages.push({ stage: "audit" });
-    const key = `yardr/${flow.name}`;
-    expect(place(without, memory).stages[key]!.audit).toBe(Math.max(...Object.values(memory.stages[key]!)) + 1);
+describe("a flow's stages are seated again when it changes", () => {
+  const journey = (names: string[]): Flow["stages"] =>
+    names.map((stage, i) => ({
+      stage,
+      ...(i < names.length - 1 ? { next: [names[i + 1]!] } : { terminal: true }),
+    }));
+  // Two depots, and a second flow, so a stage added to one track can be told
+  // from a depot or a flow that moved.
+  const yardOf = (stages: Flow["stages"]): Yard => ({
+    taken_at: yard.taken_at,
+    depots: [
+      { name: "yardr", kind: "git", base: "main" },
+      { name: "signalbox", kind: "git", base: "main" },
+    ],
+    flows: [
+      {
+        depot: "yardr",
+        flows: [
+          { name: "default", stages },
+          { name: "other", stages: journey(["backlog", "end"]) },
+        ],
+      },
+      { depot: "signalbox", flows: [{ name: "default", stages: journey(["backlog", "merged"]) }] },
+    ],
+    groups: [],
+    routes: [],
+    crew: [],
+    peers: [{ name: "airy" }],
+    beads: [],
+  });
+  const five = () => yardOf(journey(["backlog", "new", "review", "approved", "merged"]));
+  const along = (y: Yard, memory: Partial<Slots> = {}) =>
+    layout(y, memory)
+      .platforms.filter((p) => p.key.startsWith("yardr/default/"))
+      .sort((a, b) => a.at.x - b.at.x)
+      .map((p) => p.stage);
+
+  test("a stage added between review and approved stands there, and merged stays last", () => {
+    const before = five();
+    const memory = place(before);
+    expect(memory.stages["yardr/default"]).toEqual({ backlog: 0, new: 1, review: 2, approved: 3, merged: 4 });
+    const grown = structuredClone(before);
+    grown.flows[0]!.flows[0]!.stages = journey(["backlog", "new", "review", "review-security", "approved", "merged"]);
+    const after = place(grown, memory);
+    expect(after.stages["yardr/default"]).toEqual({ backlog: 0, new: 1, review: 2, "review-security": 3, approved: 4, merged: 5 });
+    expect(along(grown, memory)).toEqual(["backlog", "new", "review", "review-security", "approved", "merged"]);
+    const merged = layout(grown, memory).platforms.find((p) => p.key === "yardr/default/merged")!;
+    expect(merged.terminal).toBe(true);
+    expect(merged.at.x).toBe(5 * STAGE_PITCH);
+  });
+
+  test("a flow whose stages did not change keeps its slots, gap and all", () => {
+    const y = five();
+    const memory: Partial<Slots> = {
+      stages: { "yardr/default": { backlog: 0, new: 1, review: 4, approved: 5, merged: 8 } },
+    };
+    const given = structuredClone(memory);
+    expect(place(y, memory).stages["yardr/default"]).toEqual(given.stages!["yardr/default"]);
+    expect(memory).toEqual(given);
+    // The gap stays, and the platforms still run in travel order.
+    expect(along(y, memory)).toEqual(["backlog", "new", "review", "approved", "merged"]);
+    const review = layout(y, memory).platforms.find((p) => p.key === "yardr/default/review")!;
+    expect(review.at.x).toBe(4 * STAGE_PITCH);
+  });
+
+  test("a transition that changes the order seats the stages again", () => {
+    const y = yardOf([
+      { stage: "backlog", next: ["new", "review"] },
+      { stage: "new", next: ["approved"] },
+      { stage: "review", next: ["approved"] },
+      { stage: "approved", next: ["merged"] },
+      { stage: "merged", terminal: true },
+    ]);
+    const memory = place(y);
+    expect(memory.stages["yardr/default"]).toEqual({ backlog: 0, new: 1, review: 2, approved: 3, merged: 4 });
+    const turned = structuredClone(y);
+    turned.flows[0]!.flows[0]!.stages[0]!.next = ["review", "new"];
+    expect(place(turned, memory).stages["yardr/default"]).toEqual({ backlog: 0, review: 1, new: 2, approved: 3, merged: 4 });
+    expect(along(turned, memory)).toEqual(["backlog", "review", "new", "approved", "merged"]);
+    // A gap kept while the order holds is closed when the order changes.
+    const gapped: Partial<Slots> = { stages: { "yardr/default": { backlog: 2, new: 3, review: 4, approved: 7, merged: 8 } } };
+    expect(place(y, gapped).stages["yardr/default"]).toEqual(gapped.stages!["yardr/default"]);
+    expect(place(turned, gapped).stages["yardr/default"]).toEqual({ backlog: 0, review: 1, new: 2, approved: 3, merged: 4 });
+  });
+
+  test("depots and flows keep their slots when a stage is added", () => {
+    const before = five();
+    const memory = place(before);
+    memory.depots = { signalbox: 0, yardr: 2 };
+    memory.flows = { yardr: { other: 0, default: 1 }, signalbox: { default: 4 } };
+    const grown = structuredClone(before);
+    grown.flows[0]!.flows[0]!.stages = journey(["backlog", "new", "review", "review-security", "approved", "merged"]);
+    const after = place(grown, memory);
+    expect(after.depots).toEqual({ signalbox: 0, yardr: 2 });
+    expect(after.flows).toEqual(memory.flows);
+    expect(after.peers).toEqual(memory.peers);
+    expect(after.stages["signalbox/default"]).toEqual(memory.stages["signalbox/default"]);
+    expect(after.stages["yardr/other"]).toEqual(memory.stages["yardr/other"]);
+    expect(after.stages["yardr/default"]!["review-security"]).toBe(3);
+  });
+
+  test("a stage that left closes the track, and one that returns stands in the order", () => {
+    const before = five();
+    const memory = place(before);
+    expect(memory.stages["yardr/default"]!.review).toBe(2);
+    const gone = structuredClone(before);
+    gone.flows[0]!.flows[0]!.stages = journey(["backlog", "new", "approved", "merged"]);
+    const closed = place(gone, memory);
+    // review's slot is not kept. approved stands where review stood.
+    expect(closed.stages["yardr/default"]).toEqual({ backlog: 0, new: 1, approved: 2, merged: 3 });
+    expect(closed.stages["yardr/default"]).not.toHaveProperty("review");
+    expect(along(gone, memory)).toEqual(["backlog", "new", "approved", "merged"]);
+    const back = structuredClone(before);
+    back.flows[0]!.flows[0]!.stages = journey(["backlog", "new", "review", "review-security", "approved", "merged"]);
+    const after = place(back, closed);
+    expect(after.stages["yardr/default"]).toEqual({ backlog: 0, new: 1, review: 2, "review-security": 3, approved: 4, merged: 5 });
+    expect(along(back, closed)).toEqual(["backlog", "new", "review", "review-security", "approved", "merged"]);
   });
 });
 

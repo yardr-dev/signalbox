@@ -5,14 +5,17 @@
 // depot, the platform of a stage in its flow, the line of a peer, the tower
 // of a provider; and by its index building n of its stage, place p before
 // its door, crew member c. So the same structure gives the same picture.
-// Only extents grow: a track's length, a board's size, and a taller board
-// moves the boards below it.
 //
-// A slot is given once (place, below) and remembered: public/layout.json
-// holds the slots given so far, and an element in that file keeps its slot
-// whatever happens around it. So a depot named before an old one, or a
-// transition that changes how a flow's stages follow each other, moves
-// nothing that was placed; what is new takes the next free slot.
+// A slot is given once (place, below) and remembered. public/layout.json
+// holds the slots given so far. A depot, a flow, a peer and a tower keep
+// theirs: a depot named before an old one moves nothing, and what is new
+// takes the next free slot. What left leaves a gap and finds its place if
+// it returns. A flow's stages are the exception. They stand in the order a
+// bead travels them. While that order is the one remembered, the slots stay,
+// gaps and all. When the stages or the transitions change the order, the
+// stages are seated again from slot 0 and the track closes up. A stage that
+// left leaves no gap; if it returns it is seated in the order, not in the
+// slot it had.
 //
 // The ground is the x/z plane, in the train kit's units (a wagon is 2.7 long
 // and 1.2 wide): x runs along the tracks, to the right; z runs down the page,
@@ -422,6 +425,7 @@ export function travelOrder(flow: Flow): string[] {
 // The names that have a slot keep it; the others take the slots after the
 // last one given, in the order they come. A slot once given is not given
 // again, so what left the yard leaves a gap and finds its place if it returns.
+// A flow's stages are seated by seatStages, not here.
 function seat(taken: Record<string, number> | undefined, names: string[]): Record<string, number> {
   const out: Record<string, number> = { ...taken };
   let free = Math.max(-1, ...Object.values(out)) + 1;
@@ -431,11 +435,29 @@ function seat(taken: Record<string, number> | undefined, names: string[]): Recor
   return out;
 }
 
+// A flow's stages, in travel order. The remembered slots are kept while they
+// are exactly these stages in this order, so a gap in a flow that did not
+// change stays, and the platforms still run in that order. Otherwise the
+// stages are seated again from slot 0: a stage that left is dropped, and the
+// track closes up. The caller's record is not written.
+function seatStages(taken: Record<string, number> | undefined, flow: Flow): Record<string, number> {
+  const order = travelOrder(flow);
+  const memory = taken ?? {};
+  const same = order.every((name) => Object.hasOwn(memory, name)) && Object.keys(memory).length === order.length;
+  if (same) {
+    const slots = order.map((name) => memory[name]!);
+    const bySlot = [...order].sort((a, b) => memory[a]! - memory[b]!);
+    if (new Set(slots).size === order.length && bySlot.every((name, i) => name === order[i])) return { ...memory };
+  }
+  return Object.fromEntries(order.map((name, i) => [name, i]));
+}
+
 // A slot for every depot, flow, stage, peer and provider of the yard: the
 // remembered one, else the next free one in order of first sight (depots,
-// flows and peers as the yard lists them, stages as a bead travels them,
-// providers as its groups and then its crew name them). What memory
-// holds and the yard does not is kept.
+// flows and peers as the yard lists them, providers as its groups and then
+// its crew name them). A flow's stages are seated in the order a bead
+// travels them. What memory holds and the yard does not is kept, except a
+// stage a flow no longer has: that flow's track closes up.
 export function place(yard: Yard, memory: Partial<Slots> = {}): Slots {
   const out: Slots = {
     depots: seat(memory.depots, yard.depots.map((d) => d.name)),
@@ -448,7 +470,7 @@ export function place(yard: Yard, memory: Partial<Slots> = {}): Slots {
     out.flows[depot] = seat(out.flows[depot], flows.map((f) => f.name));
     for (const flow of flows) {
       const id = `${depot}/${flow.name}`;
-      out.stages[id] = seat(out.stages[id], travelOrder(flow));
+      out.stages[id] = seatStages(out.stages[id], flow);
     }
   }
   return out;

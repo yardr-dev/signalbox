@@ -198,8 +198,9 @@ async function start() {
   const files = async (): Promise<Snapshot> => {
     const response = await fetch(`${base}yard.json`);
     if (!response.ok) throw new Error(`yard.json: ${response.status}`);
-    // The slots given so far. The page only reads them: what the file does
-    // not hold yet is placed after what it does, the same way on every load.
+    // The slots given so far. The page only reads them. A depot, a flow, a
+    // peer and a tower keep the slot the file gave them. A flow's stages are
+    // seated again when the file's are not the order a bead travels.
     const remembered = await fetch(`${base}layout.json`);
     return {
       yard: (await response.json()) as Yard,

@@ -21,7 +21,8 @@
   whose view `YARDR_WEB` names and whose home `YARDR_HOME` does not: the view
   does not say where its yard's home is). It is written at the
   first snapshot of a yard, laid out from slot 0, and added to when the yard
-  grows. The `layout.json` beside the built page is not read by the script.
+  grows. A flow's stages are seated again when that flow changes. The
+  `layout.json` beside the built page is not read by the script.
   Delete the yard's file, with the script stopped, to have it laid out afresh.
 - `scripts/release.sh` builds a release (`npm run release -- v1.2.3`, the
   tag): it writes the version into `package.json` and the lockfile, runs
@@ -34,15 +35,20 @@
   22.6 or later (`engines`).
 - `public/layout.json` is the layout's memory for the committed snapshot: the
   slot of every depot, flow, stage, peer and provider's silo drawn so far. The
-  snapshot script writes it when it is missing and adds what is new to it
-  otherwise (`scripts/slots.mjs`); the static page and the tests only read it.
+  snapshot script writes it when it is missing and brings it up to date
+  otherwise (`scripts/slots.mjs`): a depot, a flow, a peer and a tower keep
+  their slot, and a flow's stages are seated again when the flow changes.
+  The static page and the tests only read it.
   Delete it to have that yard laid out afresh.
 - `src/yard.ts`: the shape of the snapshot, and of `quota.json`.
 - `src/layout.ts`: from the structure to positions, one pure function. A
   flow's stages stand in the order a bead travels them, its terminal stage
-  last; an element with a slot in `layout.json` keeps it, so a yard that grows
-  or is listed in another order keeps what it had where it was. The mapping
-  from yard to railway is decided here.
+  last. A depot, a flow, a peer and a tower with a slot in `layout.json` keep
+  it, so a yard that grows or is listed in another order keeps what it had
+  where it was. A flow's stages keep theirs only while that order is the one
+  remembered; when the stages or the transitions change, they are seated
+  again and the track closes up. The mapping from yard to railway is
+  decided here.
 - `src/kit.ts`: the models, behind `loadKit`, all Kenney's and CC0, each
   pack's subset with its licence in `public/kit/`: the Train Kit (rails,
   wagons, locomotives), City Kit Industrial in `city/` (the hut is
