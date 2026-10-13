@@ -86,7 +86,7 @@
   image with a peer's mail rides the load of logs. A
   wagon's box, when its model does not load, is the blue of the kit's blue
   container (`0x658dd6`), a locomotive's its livery's navy
-  (`0x0e2846`): `stand` in `src/palette.ts`. Rail alone is painted
+  (`0x1f4f95`): `stand` in `src/palette.ts`. Rail alone is painted
   flat (`flat`), in the track's tone, its rails dark by how light the pack
   had them (`toned`). A figure keeps the pack's texture.
   Platforms, signals and the silos' indicators are boxes in the palette's

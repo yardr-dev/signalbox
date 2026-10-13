@@ -45,11 +45,13 @@ A wagon is the kit's, in the colours the pack painted it: a blue, a green or
 a red container, a tank with red ends, a load of logs, by the bead's id, so a
 bead keeps its wagon. A train's locomotive is the pack's steam engine in the
 colours of footplate's icon, a navy tank engine with brass fittings, so the
-map and the app's icon are one family: navy (`0x0e2846`) where the pack had
-painted it green, the boiler and the cab, and brass (`0xe8b355`) where red
-and yellow, the beams, the running board and the wheels (`engine` and `steam`
-in `src/palette.ts`), the same by day and by night. Both are read from the
-icon where the light is on it. The model has no headlamp to light. A shunter
+map and the app's icon are one family: navy (`0x1f4f95`) where the pack had
+painted it green, the boiler barrel, the cab and the tanks, and brass
+(`0xe8b355`) where red and yellow, the beams, the running board and the
+wheels (`engine` and `steam` in `src/palette.ts`), the same by day and by
+night. Brass is read from the icon where the light is on it; navy is the
+icon's own, lifted for the dark map, where the icon's reads as nearly black.
+The model has no headlamp to light. A shunter
 is the pack's yellow diesel as it came, and a peer's line is
 worked by the locomotive too: its goods ride behind one, in the two kinds
 the pack left iron all over, the box van and the coal wagon. The paint says nothing of the bead: its type is read from its label
@@ -73,7 +75,7 @@ told at a glance):
 The clear lamp is a brighter green (`0x55f744`) so it reads even on the kit's
 green container. The amber of a wait lies on the roof and
 reads on all of them: a locomotive's brass alone is near it, and that lies
-low, on the beams and the wheels, while its roof is navy and iron (0.59 from
+low, on the beams and the wheels, while its roof is navy and iron (0.48 from
 the navy). The kit's red is a fault's red (the blue container has
 it too, at its darkest), and its logs are near the chocks' orange: by colour
 alone a red lamp and a flag are not told from a red container. They stand on

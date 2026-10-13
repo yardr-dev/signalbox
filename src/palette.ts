@@ -124,12 +124,13 @@ export type Building = keyof typeof building;
 
 // The steam locomotive's livery is footplate's, the app whose icon is a navy
 // tank engine with brass fittings (assets/icon.png there, at ebfae2c), so the
-// map and the icon are one family. Both are read from the icon where the
-// light is on it, since paint here is a face's colour in the sun: navy from
-// the roof (the panels in shadow are 0x06182d), brass from the top of the
-// plate (0xcf9242 lower down). They are the engine's own, the same by day
-// and by night.
-export const engine = { navy: 0x0e2846, brass: 0xe8b355 } as const;
+// map and the icon are one family. Brass is read from the icon where the
+// light is on it, from the top of the plate (0xcf9242 lower down), since
+// paint here is a face's colour in the sun; navy is the icon's own, lifted
+// for the dark map, where the icon's (0x0e2846, from its lit roof) reads as
+// nearly black: the same hue, lighter, and still the darker relative of the
+// wagon's 0x658dd6. They are the engine's own, the same by day and by night.
+export const engine = { navy: 0x1f4f95, brass: 0xe8b355 } as const;
 // What the locomotive wears where the kit had painted it a colour, read as a
 // building's pair is (kit.ts): the first where the kit's lightest colour is
 // and its hue's neighbours, the second where another. The lightest is the

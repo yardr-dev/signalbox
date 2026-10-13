@@ -145,9 +145,10 @@ describe("a kit whose files are missing", () => {
     for (const part of ["station", "hut", "office", "silo"] as const) expect(wears(kit.make(part))[0], part).toBe(paint(building[part][0]));
     expect(wears(kit.make("works"))).toEqual([paint(building.works[0]), paint(building.works[1])]);
     // The lightest of the kit's blue container, as its texture has it, and
-    // the navy of footplate's icon. Nothing of them is left for the scene.
+    // the lifted navy of footplate's icon. Nothing of them is left for the
+    // scene.
     expect([stand.wagon, stand.locomotive]).toEqual([0x658dd6, engine.navy]);
-    expect(engine).toEqual({ navy: 0x0e2846, brass: 0xe8b355 });
+    expect(engine).toEqual({ navy: 0x1f4f95, brass: 0xe8b355 });
     for (const part of ["wagon", "locomotive"] as const) expect(wears(kit.make(part)), part).toEqual([paint(stand[part])]);
     expect(wears(kit.make("shunter"))).toEqual([paint("slate")]);
     expect(wears(kit.make("van"))).toEqual([paint("roof")]);
@@ -512,7 +513,7 @@ describe("the kit's own models", () => {
       // beams and the wheels: over its roof the amber is seen against the
       // navy, and reads there.
       if (name !== "locomotive") expect(figures[name]!.amber, `amber on ${name}`).toBeGreaterThan(READS);
-      else expect(least(marks.amber!, [engine.navy]), "amber on the locomotive's navy").toBe(0.59);
+      else expect(least(marks.amber!, [engine.navy]), "amber on the locomotive's navy").toBe(0.48);
       expect(figures[name]!.clear, `clear on ${name}`).toBeGreaterThan(READS);
       // And every mark reads on the iron of frame and wheels.
       for (const [mark, as] of Object.entries(marks)) expect(least(as, painted(model, false)), `${mark} on the iron of ${name}`).toBeGreaterThan(READS);
