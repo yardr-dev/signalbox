@@ -1,0 +1,7 @@
+# What the build makes for itself, and what must not reach an image: a
+# snapshot of one's own yard (npm run snapshot) is never the repository's.
+.git
+node_modules/
+dist/
+release/
+public/snapshot/

@@ -4,5 +4,6 @@ backlog -> new | decide
 new -> review on done | decide on question | backlog
 review -> approved on done | new on changes | decide on question
 approved -> merged on done | new on failed | decide on question
-decide -> backlog | new
-merged terminal
+decide -> backlog | new | merged
+merged -> live on done | decide on failed
+live terminal

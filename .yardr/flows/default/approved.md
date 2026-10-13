@@ -16,7 +16,7 @@ says so.
 Outcomes:
 
 - `done`: the commit is on the base. The note names it (`merged <sha>`), and
-  `merged` closes the bead.
+  the bead goes to `merged`, where the base is deployed.
 - `failed`: the tests are red on what would land, or the branch no longer
   applies on the base (a rebase that conflicts: this flow has no `merge`
   stage). The note carries the end of the tests' output or the conflicting

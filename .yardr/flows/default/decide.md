@@ -9,6 +9,8 @@ the person answering moves it (`yardr review`, or
 - to `new`, when a builder can now finish it;
 - to `backlog`, when the answer changes what the bead is and the yardmaster must
   reshape it.
+- to `merged`, when the bead came from there (a deploy that failed) and the
+  host is fixed: the base is deployed again.
 
 A decision that is not about one piece of work can be a bead created straight
 into `decide`, closed with the answer as its reason
