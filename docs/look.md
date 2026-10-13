@@ -6,9 +6,10 @@ with nothing behind it, the depots as pads a little darker, a track as a warm
 grey ribbon, thin labels on white pills, one sun and one soft shadow. On that
 stand the kit's own models, in the texture the packs paint them from: their
 iron, white, glass and dark as they came. What rolls keeps the kit's colours
-too. Only on a building, where a pack had painted a face in a colour, does
-one of Catppuccin's accents (https://github.com/catppuccin/palette) go
-instead.
+too, but the steam locomotive. On a building, where a pack had painted a face
+in a colour, one of Catppuccin's accents
+(https://github.com/catppuccin/palette) goes instead, and on the steam
+locomotive footplate's navy and brass.
 
 What a colour of the kit's is, is one rule (`COLOUR` in `src/kit.ts`): the
 saturation of the texture where the face lies on it, over 0.45. The packs'
@@ -42,8 +43,14 @@ says nothing: a hut is a hut's in every depot.
 
 A wagon is the kit's, in the colours the pack painted it: a blue, a green or
 a red container, a tank with red ends, a load of logs, by the bead's id, so a
-bead keeps its wagon. A train's locomotive is the pack's green steam engine
-with red beams and wheels, a shunter its yellow diesel, and a peer's line is
+bead keeps its wagon. A train's locomotive is the pack's steam engine in the
+colours of footplate's icon, a navy tank engine with brass fittings, so the
+map and the app's icon are one family: navy (`0x0e2846`) where the pack had
+painted it green, the boiler and the cab, and brass (`0xe8b355`) where red
+and yellow, the beams, the running board and the wheels (`engine` and `steam`
+in `src/palette.ts`), the same by day and by night. Both are read from the
+icon where the light is on it. The model has no headlamp to light. A shunter
+is the pack's yellow diesel as it came, and a peer's line is
 worked by the locomotive too: its goods ride behind one, in the two kinds
 the pack left iron all over, the box van and the coal wagon. The paint says nothing of the bead: its type is read from its label
 and its card, not from its wagon. Red and maroon are no building's: red is a
@@ -61,11 +68,13 @@ told at a glance):
 | the red container | 0.44 | 0.24 | 0.02 | 0.01 | 0.11 |
 | the tank | 0.44 | 0.24 | 0.02 | 0.01 | 0.11 |
 | the logs | 0.31 | 0.11 | 0.09 | 0.08 | 0.05 |
-| the locomotive | 0.18 | 0.21 | 0.03 | 0.01 | 0.12 |
+| the locomotive | 0.23 | 0.04 | 0.13 | 0.09 | 0.07 |
 
 The clear lamp is a brighter green (`0x55f744`) so it reads even on the kit's
-green container and locomotive. The amber of a wait lies on the roof and
-reads on all of them. The kit's red is a fault's red (the blue container has
+green container. The amber of a wait lies on the roof and
+reads on all of them: a locomotive's brass alone is near it, and that lies
+low, on the beams and the wheels, while its roof is navy and iron (0.59 from
+the navy). The kit's red is a fault's red (the blue container has
 it too, at its darkest), and its logs are near the chocks' orange: by colour
 alone a red lamp and a flag are not told from a red container. They stand on
 a post over the roof, and chocks lie on the rail, so what they are seen

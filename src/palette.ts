@@ -7,8 +7,10 @@
 // by day and one by night. The accents are Catppuccin's, Latte's by day and
 // Mocha's by night under the same names: the faces of what stands that the
 // kit had in a colour are painted in them, and so is what the scene builds
-// of boxes. What rolls is the kit's own, colours and all. The colours that mean something of their own (a lamp, a fault, the
-// weather) are the same in both. Nothing else in the page names a colour of
+// of boxes. What rolls is the kit's own, colours and all, but the steam
+// locomotive, which is in footplate's navy and brass (engine). The colours
+// that mean something of their own (a lamp, a fault, the weather) are the
+// same in both. Nothing else in the page names a colour of
 // the picture: the labels' are the tones ink and pill, which the page hands
 // to its stylesheet (main.ts).
 
@@ -120,12 +122,27 @@ export const building = {
 } as const satisfies Record<string, readonly [wall: Accent, roof: Accent]>;
 export type Building = keyof typeof building;
 
-// A wagon and a locomotive are the kit's, in its texture, and no colour of
-// theirs is named here but these two: what the box wears that stands for one
-// whose model did not load. The lightest blue of the kit's blue container
-// and the lightest green of its locomotive, as the texture has them, by day
-// and by night as the texture is.
-export const stand = { wagon: 0x658dd6, locomotive: 0x56c186 } as const;
+// The steam locomotive's livery is footplate's, the app whose icon is a navy
+// tank engine with brass fittings (assets/icon.png there, at ebfae2c), so the
+// map and the icon are one family. Both are read from the icon where the
+// light is on it, since paint here is a face's colour in the sun: navy from
+// the roof (the panels in shadow are 0x06182d), brass from the top of the
+// plate (0xcf9242 lower down). They are the engine's own, the same by day
+// and by night.
+export const engine = { navy: 0x0e2846, brass: 0xe8b355 } as const;
+// What the locomotive wears where the kit had painted it a colour, read as a
+// building's pair is (kit.ts): the first where the kit's lightest colour is
+// and its hue's neighbours, the second where another. The lightest is the
+// yellow of the front beam, and the red of the beams and the wheels is a
+// neighbour of it, so the first is brass; the other is the kit's green, the
+// boiler and the cab, and navy.
+export const steam = [engine.brass, engine.navy] as const;
+
+// A wagon is the kit's, in its texture, and no colour of it is named here
+// but this: what the box wears that stands for one whose model did not load,
+// the lightest blue of the kit's blue container as the texture has it, by
+// day and by night as the texture is. A locomotive's box is its navy.
+export const stand = { wagon: 0x658dd6, locomotive: engine.navy } as const;
 
 // Lamps carry the signal's meaning.
 // wait is the amber of a wagon that waits for another bead, out a lamp that

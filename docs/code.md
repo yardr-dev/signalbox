@@ -78,13 +78,15 @@
   coloured are sorted out of it the same way (`accented`): the texture is
   read where the face lies on it, and a face more saturated than `COLOUR` is
   painted again, in its kind's accents, the lightest hue its walls' and
-  another its roof's. A wagon, a locomotive and a shunter are the pack's own,
-  colours and all. The wagons a bead rides in (`wagon`) are the kinds the
+  another its roof's. The steam locomotive is sorted the same way, into its
+  livery (`steam` in `src/palette.ts`): brass where the pack's lightest hue
+  is, the yellow and the red of its beams and wheels, navy where its green.
+  A wagon and a shunter are the pack's own, colours and all. The wagons a bead rides in (`wagon`) are the kinds the
   pack painted a colour, a peer's goods (`van`) the two it left iron; an
   image with a peer's mail rides the load of logs. A
   wagon's box, when its model does not load, is the blue of the kit's blue
-  container (`0x658dd6`), a locomotive's the green of the kit's locomotive
-  (`0x56c186`): `stand` in `src/palette.ts`. Rail alone is painted
+  container (`0x658dd6`), a locomotive's its livery's navy
+  (`0x0e2846`): `stand` in `src/palette.ts`. Rail alone is painted
   flat (`flat`), in the track's tone, its rails dark by how light the pack
   had them (`toned`). A figure keeps the pack's texture.
   Platforms, signals and the silos' indicators are boxes in the palette's
@@ -93,7 +95,7 @@
   the engine of a peer's line, each way.
 - `src/palette.ts`: every colour of the picture (see [Look](look.md)): the tones by day
   and by night, Catppuccin's accents by day and by night, which building
-  wears which (`building`), the colours
+  wears which (`building`), the steam locomotive's livery (`engine`), the colours
   that mean something of their own, and `paint`, the one flat material of
   each. `dress` changes day to night on the paint that is worn.
 - `src/replay.ts`: the yard at a moment of the window, one pure reducer over
