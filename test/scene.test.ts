@@ -1232,7 +1232,7 @@ describe("the colours of the stock", () => {
   // at their own.
   const beads = [bead("sextant-a", "task", { stage: "new" }), bead("wharf-b", "task", { depot: "wharf" }), bead("sextant-t", "train"), bead("sextant-w", "wagon", { train: "sextant-t" }), bead("gauge-s", "spike", { depot: "gauge" })];
 
-  test("a wagon says nothing of its bead's type by its paint: a box is the kit's blue for every type, a locomotive's the kit's green", () => {
+  test("a wagon says nothing of its bead's type by its paint: a box is the kit's blue for every type, a locomotive's the livery's navy", () => {
     const stock = new Stock(layout({ ...yard, beads }), kit);
     const of = (id: string) => body(stock.root.children.find((o) => (o.userData.bead as Bead | undefined)?.id === id)!);
     for (const id of ["sextant-a", "wharf-b", "sextant-w", "gauge-s"]) expect(of(id), id).toEqual([paint(stand.wagon)]);
@@ -1331,7 +1331,7 @@ describe("the shunters of the stock", () => {
       expect(part(`${p.key}/out`), p.key).toBe("locomotive");
       expect(part(`${p.key}/in`), p.key).toBe("locomotive");
     }
-    // In the kit's own paint, as a train's: the two that meet are alike.
+    // The missing model's stand-in: both locomotives on the peer's line match.
     const [line] = empty.peers;
     expect(wears(shunter(stock, `${line!.key}/out`))).toEqual([paint(stand.locomotive)]);
     expect(wears(shunter(stock, `${line!.key}/in`))).toEqual(wears(shunter(stock, `${line!.key}/out`)));
