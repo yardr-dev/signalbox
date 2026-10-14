@@ -163,13 +163,12 @@ class Rails {
     const tiles = Math.max(1, Math.round(length));
     const step = length / tiles;
     const at = quiet ? this.quietAt : this.at;
-    const width = quiet ? 0.8 : 1;
     for (let t = 0; t < tiles; t++) {
       const d = (t + 0.5) * step;
       const m = new THREE.Matrix4()
         .makeTranslation(from.x + Math.cos(angle) * d, 0, from.z - Math.sin(angle) * d)
         .multiply(turn)
-        .multiply(new THREE.Matrix4().makeScale(step, 1, width));
+        .multiply(new THREE.Matrix4().makeScale(step, 1, 1));
       at.push(m);
     }
   }

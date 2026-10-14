@@ -903,6 +903,29 @@ describe("the rails of a track", () => {
     expect(returns).not.toContain(paint("track"));
     expect(returns).not.toContain(paint("slate"));
   });
+
+  test("the return line is the main line's gauge: its instances share the running line's z scale", () => {
+    const l = layout(yard);
+    const running: number[] = [];
+    const returns: number[] = [];
+    draw(l, kit).root.traverse((part) => {
+      if (!(part instanceof THREE.InstancedMesh)) return;
+      const m = new THREE.Matrix4();
+      const at = new THREE.Vector3();
+      const turn = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      for (let i = 0; i < part.count; i++) {
+        part.getMatrixAt(i, m);
+        m.decompose(at, turn, scale);
+        if (l.tracks.some((t) => Math.abs(at.z - t.at.z) < 1e-4)) running.push(scale.z);
+        else if (l.tracks.some((t) => Math.abs(at.z - (t.at.z + RETURN_Z)) < 1e-4)) returns.push(scale.z);
+      }
+    });
+    expect(running.length).toBeGreaterThan(0);
+    expect(returns.length).toBeGreaterThan(0);
+    for (const z of running) expect(z).toBeCloseTo(1, 6);
+    for (const z of returns) expect(z).toBeCloseTo(1, 6);
+  });
 });
 
 describe("the figures of the stock", () => {

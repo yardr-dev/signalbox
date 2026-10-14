@@ -55,8 +55,8 @@ The model has no headlamp to light. A shunter
 is the pack's yellow diesel as it came, and a peer's line is
 worked by the locomotive too: its goods ride behind one, in the two kinds
 the pack left iron all over, the box van and the coal wagon. Beside every
-track a quieter return line is laid as rail beside the main line, with
-narrower, lower contrast sleepers and rails from the headshunt to the buffer,
+track a quieter return line is laid as rail beside the main line, the same
+gauge in lower contrast sleepers and rails from the headshunt to the buffer,
 so a shunter running round a wagon is on rail; where a siding's points cross
 it the rails only lie over each other. The paint says nothing of the bead:
 its type is read from its label and its card, not from its wagon. Red and
