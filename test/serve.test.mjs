@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
+import { FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, RETRY_MOST, backoff, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
 import { bead, follow, head, quota, snapshot, yardr } from "../scripts/yard.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
@@ -294,9 +294,20 @@ describe("the feed", () => {
     expect(page.messages.map((m) => m.id)).toEqual([2, 3, 4, 5]);
     // Asked again after the last event passed on, each time.
     expect(new Set(y.asked)).toEqual(new Set(["/events?format=json&after=1", "/events?format=json&after=2"]));
-    // Said once on the terminal, not at every try.
-    expect(said).toEqual(["signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791"]);
+    // Every try it did not answer is on the terminal, and one line says the
+    // line is back, and where from.
+    expect(said).toEqual([
+      "signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791",
+      "signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791",
+      "signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791",
+      "signalbox: feed: the yard answered again, after 2",
+    ]);
     page.close();
+  });
+
+  test("the wait before the line is tried again doubles to thirty seconds", () => {
+    expect(RETRY_MOST).toBe(30_000);
+    expect([0, 1, 2, 3, 4, 5, 6, 100].map((tries) => backoff(1000, RETRY_MOST, tries))).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
   });
 
   test("a view that is not there when the page comes leaves the line open", async () => {

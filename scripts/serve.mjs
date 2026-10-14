@@ -45,7 +45,9 @@
 // A page that reconnects says where it was (Last-Event-ID, as server-sent
 // events do by themselves), so nothing is missed, across a restart of this
 // script too: the script remembers nothing the page needs. A view that goes
-// away is asked again, after the last event it sent, until it is back.
+// away is asked again, after the last event it sent, until it is back: a
+// second after the first silence, twice as long after every next, up to
+// thirty seconds.
 //
 // The slots it gives are the yard's, not the built page's: it keeps them in
 // a file in the yard's home (layoutFile, below; --layout names another), which
@@ -69,8 +71,18 @@ import { place } from "../src/layout.ts";
 import { bead, follow, head, quota, snapshot, yardr } from "./yard.mjs";
 
 // The milliseconds before a line that ended is tried again: the page's to
-// this script, and this script's to the view.
+// this script, and this script's first try to the view. A try the view does
+// not answer waits twice as long as the last, up to RETRY_MOST: a view that
+// is restarting is back in a second, and one that is gone for the night is
+// not asked every second until morning.
 export const RETRY = 1000;
+export const RETRY_MOST = 30_000;
+
+// The milliseconds before the line's next try: retry, doubling with every
+// try that went unanswered, up to most.
+export function backoff(retry, most, tries) {
+  return Math.min(retry * 2 ** tries, most);
+}
 
 // The milliseconds between two questions to aiquokka, at least; and how long
 // a snapshot waits for the answer before it goes without: the feed has it
@@ -168,7 +180,9 @@ export function remember(file, slots) {
 //   yard      {snapshot(), bead(id), head(), follow(after, signal)}: the
 //             yard's answers (scripts/yard.mjs)
 //   root      the directory of the built page
-//   retry     milliseconds before a line that ended is tried again
+//   retry     milliseconds before a line that ended is tried again the
+//             first time; every try after waits twice as long, up to
+//             RETRY_MOST
 //   memory    the slots given so far (recall); what a snapshot adds is
 //             remembered while the script runs, so nothing placed moves
 //   remember  keeps the slots when a snapshot added to them, for the next
@@ -186,11 +200,10 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   // What was kept last, as it is written.
   let kept = JSON.stringify(memory);
   let timer;
-  // The line to the view, while someone listens: what ends it, the last
-  // sequence number it passed, and what went wrong last, said once.
+  // The line to the view, while someone listens: what ends it, and the last
+  // sequence number it passed.
   let line;
   let cursor;
-  let cut;
   // The last answer about the quota, null when there was none; when it was
   // asked for; the question on its way; and what went wrong last, said once.
   let fuel = null;
@@ -296,8 +309,14 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   // is new to, for as long as someone listens. The view ends its stream when
   // it is stopped, and refuses one while it is down: either way the line is
   // opened again after the last event it passed, so what happened in between
-  // comes first and nothing is passed twice.
+  // comes first and nothing is passed twice. Every try it does not answer
+  // waits longer than the last, and says so; when an event passes again, one
+  // line says the yard answered, and where from.
   async function relay(signal) {
+    // Tries that went unanswered in a row, and whether the line broke since
+    // an event last passed: a new line starts hopeful.
+    let tries = 0;
+    let broke = false;
     while (!signal.aborted) {
       try {
         // A listener that named no place follows from now: the yard's head.
@@ -307,10 +326,13 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
           for (const listener of listeners) listener.last ??= now;
           cursor ??= now;
         }
+        const from = cursor;
         for await (const event of yard.follow(cursor, signal)) {
           // Another line has taken over, from another place.
           if (signal.aborted) return;
-          cut = undefined;
+          if (broke) console.error(`signalbox: feed: the yard answered again, after ${from}`);
+          broke = false;
+          tries = 0;
           cursor = event.seq;
           const shown = hidden.has("events") ? bare(event) : event;
           for (const listener of listeners) {
@@ -319,18 +341,23 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
             listener.last = event.seq;
           }
         }
+        // The view ended its stream without a word; the next try says so.
+        broke = true;
       } catch (err) {
         if (signal.aborted) return;
-        const said = err instanceof Error ? err.message : String(err);
-        if (said !== cut) failed("feed", err);
-        cut = said;
+        broke = true;
+        failed("feed", err);
         // A comment: the line is alive, the yard did not answer this time.
         for (const listener of listeners) listener.res.write(": the yard did not answer\n\n");
       }
       if (signal.aborted) return;
+      // Longer after every silence, and sooner than never: a view that is
+      // gone for the night is still asked every thirty seconds.
+      const wait = backoff(retry, RETRY_MOST, tries++);
       await new Promise((go) => {
-        const again = setTimeout(go, retry);
-        signal.addEventListener("abort", () => (clearTimeout(again), go()), { once: true });
+        const over = () => (clearTimeout(again), go());
+        const again = setTimeout(() => (signal.removeEventListener("abort", over), go()), wait);
+        signal.addEventListener("abort", over, { once: true });
       });
     }
   }

@@ -215,9 +215,11 @@ is now the script reads as JSON, a route of the view for each list
 `/sessions`, `/deps`); what happens in it comes on the view's stream
 (`/events?format=json`), which the script holds open once, for all pages,
 while one listens. A view that is stopped and started again loses a page
-nothing: the script asks again every second, after the last event it
-passed on, and what happened in between comes first. The same holds for a
-restart of the yardr server, which the view rides out inside the stream.
+nothing: the script asks again, after the last event it
+passed on, and what happened in between comes first: a second after the
+first silence, twice as long after every next, up to thirty seconds. The
+same holds for a restart of the yardr server, which the view rides out
+inside the stream.
 The page's own line stays open all the while, and says `Live · no feed`
 only when the script itself is gone.
 
