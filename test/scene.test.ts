@@ -871,7 +871,18 @@ describe("the rails of a track", () => {
     const l = layout(yard);
     const running = new Set<THREE.Material>();
     const returns = new Set<THREE.Material>();
-    draw(l, kit).root.traverse((part) => {
+    // Give the rail tile both face materials; loadKit's missing-file fallback
+    // is a single-color box and cannot exercise the rail-face remapping.
+    const twoToneRail: Kit = {
+      make: (part, pick) => part === "rail"
+        ? new THREE.Group().add(
+          new THREE.Mesh(new THREE.BoxGeometry(1, 0.12, 0.8), paint("track")),
+          new THREE.Mesh(new THREE.BoxGeometry(1, 0.04, 0.08), paint("slate")),
+        )
+        : kit.make(part, pick),
+      figure: (outfit, pick) => kit.figure(outfit, pick),
+    };
+    draw(l, twoToneRail).root.traverse((part) => {
       if (!(part instanceof THREE.InstancedMesh)) return;
       let onRunning = false;
       let onReturn = false;
