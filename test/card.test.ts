@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, type Detail } from "../src/card";
+import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, PUBLIC, type Detail } from "../src/card";
 import type { Bead } from "../src/yard";
 
 // The yard's times as they are, so the card's text is the same everywhere.
@@ -89,6 +89,14 @@ describe("the card", () => {
     expect(c).toMatchObject({ id: "signalbox-a", title: "Click a wagon", body: "", notes: [], remark: "notes need the live page" });
     expect(c.facts.map(([what]) => what)).toEqual(["depot", "type", "stage", "group", "fault", "hold", "priority", "labels", "created"]);
     expect(brief(bead, when, ASKING).remark).toBe(ASKING);
+  });
+
+  test("on the public page: no body is said, beside the notes' first lines", () => {
+    const c = card({ bead: { ...bead, status: "open" }, notes: [{ author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "built" }] }, when);
+    expect(c.body).toBe("");
+    expect(c.notes).toEqual([{ head: "signalbox-a-new · <2099-01-01T01:00:00Z>", text: "built" }]);
+    expect(c.remark).toBe("the public page shows no bodies");
+    expect(c.remark).toBe(PUBLIC);
   });
 
   test("a bead the yard does not know", () => {

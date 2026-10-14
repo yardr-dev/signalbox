@@ -36,6 +36,9 @@ export interface Card {
 export const ASKING = "asking the yard for the notes";
 export const NEEDS_LIVE = "notes need the live page";
 export const NO_ANSWER = "the yard did not answer: no notes";
+// The remark of a card on the public page: the serve script sends no bodies
+// off this machine, and each note's first line alone.
+export const PUBLIC = "the public page shows no bodies";
 
 // A time as the yard printed it, for the reader.
 export type When = (iso: string) => string;
@@ -75,13 +78,16 @@ export function card(detail: Detail, when: When): Card {
       head: `${note.author ?? "?"}${note.at === undefined ? "" : ` · ${when(note.at)}`}`,
       text: note.text ?? "",
     }));
+  // A public answer has no body: the card says so where it would say why
+  // it has no notes. A bead with neither still says it has no notes.
+  const remark = bead.body === undefined && notes.length > 0 ? PUBLIC : notes.length === 0 ? "no notes" : "";
   return {
     id: bead.id,
     title: bead.title,
     facts: facts(bead, when),
     body: bead.body ?? "",
     notes,
-    remark: notes.length === 0 ? "no notes" : "",
+    remark,
   };
 }
 

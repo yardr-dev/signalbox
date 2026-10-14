@@ -65,8 +65,9 @@ reach, such as the machine's address on a Tailscale net:
 
 There is no login. Whoever reaches the port reads what the page shows: the
 yard's depots, flows, groups, crew and peers by name, each open bead's id,
-title, type, stage and labels, the events, and the body and notes of a bead
-whose card is opened. Never a key or a path the yard prints.
+title, type, stage and labels, the events, and of a bead whose card is
+opened its facts and each note's head and first line: no body, and nothing
+of a bead the page never shows. Never a key or a path the yard prints.
 
 ## The public
 

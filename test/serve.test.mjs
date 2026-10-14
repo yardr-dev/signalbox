@@ -678,6 +678,59 @@ describe("a bead", () => {
     expect(await response.json()).toEqual(detail);
   });
 
+  test("off this machine: the bead's facts and each note's head and first line, no body", async () => {
+    const full = {
+      bead: {
+        id: "signalbox-a", title: "a", type: "task", stage: "new", depot: "signalbox", group: "builders", labels: ["web"], priority: 2,
+        status: "open", created_at: "2099-01-01T00:00:00Z", updated_at: "2099-01-03T00:00:00Z",
+        working: true, hold: true, train: "signalbox-t", moved_at: "2099-01-02T00:00:00Z",
+        fault: { kind: "failed", at: "2099-01-02T00:00:00Z" }, body: "the body",
+      },
+      notes: [
+        { author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "built it\nthen more" },
+        { author: "signalbox-a-review", at: "2099-01-02T01:00:00Z", text: "x".repeat(200) },
+        { author: "flagman", at: "2099-01-02T02:00:00Z" },
+      ],
+    };
+    const of = { ...yard([]), bead: async () => full };
+    const s = await start(of, { local: false });
+    const response = await fetch(`${s.url}/api/bead/signalbox-a`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      bead: {
+        id: "signalbox-a", title: "a", type: "task", stage: "new", depot: "signalbox", group: "builders", labels: ["web"], priority: 2,
+        status: "open", created_at: "2099-01-01T00:00:00Z", updated_at: "2099-01-03T00:00:00Z",
+      },
+      notes: [
+        { author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "built it" },
+        { author: "signalbox-a-review", at: "2099-01-02T01:00:00Z", text: "x".repeat(120) },
+        { author: "flagman", at: "2099-01-02T02:00:00Z" },
+      ],
+    });
+    // On this machine the same bead is answered whole.
+    const home = await start(of);
+    expect(await (await fetch(`${home.url}/api/bead/signalbox-a`)).json()).toEqual(full);
+  });
+
+  test("off this machine: a bead the page never shows is not found, as an unknown id is", async () => {
+    const open = { id: "signalbox-a", title: "a", type: "task", stage: "new", depot: "signalbox", status: "open" };
+    const pages = {
+      "signalbox-a": { bead: open, notes: [] },
+      "mem-x": { bead: { ...open, id: "mem-x", type: "memory" }, notes: [{ author: "m", text: "secret" }] },
+      "yardmaster-journal": { bead: { ...open, id: "yardmaster-journal", type: "journal" }, notes: [] },
+      "signalbox-shut": { bead: { ...open, id: "signalbox-shut", status: "closed" }, notes: [] },
+    };
+    const of = { ...yard([]), bead: async (id) => pages[id] };
+    const s = await start(of, { local: false });
+    for (const id of ["mem-x", "yardmaster-journal", "signalbox-shut", "signalbox-zzzz"]) {
+      const response = await fetch(`${s.url}/api/bead/${id}`);
+      expect(response.status, id).toBe(404);
+      expect(await response.json(), id).toEqual({ error: "not found" });
+    }
+    // What the yard leaves unset is left out, not answered empty.
+    expect(await (await fetch(`${s.url}/api/bead/signalbox-a`)).json()).toEqual({ bead: open, notes: [] });
+  });
+
   test("an id the yard does not know is not found, and no error", async () => {
     const { of, asked } = one();
     const s = await start(of);

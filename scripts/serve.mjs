@@ -23,7 +23,11 @@
 //                               of the event "quota" with no id
 //   GET /api/bead/<id>          one bead for its card (src/card.ts): {bead,
 //                               notes}, with the bead's body and its notes;
-//                               404 when the yard has no bead of that id
+//                               404 when the yard has no bead of that id.
+//                               Off this machine the bead is its facts alone,
+//                               each note its head and first line, and a bead
+//                               the page never shows (a memory, a journal,
+//                               anything not open) is 404 as an unknown id is.
 //   POST /api/fault             what went wrong in the page's browser
 //                               (src/fault.ts): {at, what, detail, agent,
 //                               screen}, answered 204 and written as one
@@ -100,6 +104,16 @@ export function fault(said) {
 // view is asked for, so it has no slash and does not start with a dot.
 const ID = /^[a-z0-9][a-z0-9.-]*$/;
 
+// The bead types the page never shows: off this machine they are 404, as an
+// unknown id is.
+const HIDDEN = new Set(["memory", "journal"]);
+
+// The fields of a bead a public page shows: its facts, and no body.
+const FACTS = ["id", "title", "type", "stage", "depot", "group", "labels", "priority", "status", "created_at", "updated_at"];
+
+// What a public page shows of a note's text: its first line, cut here.
+const FIRST_LINE = 120;
+
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -145,7 +159,10 @@ export function remember(file, slots) {
 //             without it nobody asks, and nobody knows
 //   clock     the time in milliseconds, to count QUOTA_EVERY by
 //   wait      milliseconds a snapshot waits for the quota
-export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT }) {
+//   local     this machine alone reaches it: a bead is answered whole. Off
+//             it a bead is its facts and first lines, and a bead the page
+//             never shows is 404.
+export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT, local = true }) {
   const listeners = new Set();
   let slots = memory;
   // What was kept last, as it is written.
@@ -234,6 +251,21 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     try {
       const found = await yard.bead(id);
       if (found === undefined) return json(res, 404, { error: "not found" });
+      if (!local) {
+        // A bead the page never shows is unknown here: a memory, a journal,
+        // anything not open.
+        if (HIDDEN.has(found.bead.type) || found.bead.status !== "open") return json(res, 404, { error: "not found" });
+        const facts = {};
+        for (const key of FACTS) if (found.bead[key] !== null && found.bead[key] !== undefined) facts[key] = found.bead[key];
+        const notes = (found.notes ?? []).map((said) => {
+          const note = {};
+          if (said.author !== null && said.author !== undefined) note.author = said.author;
+          if (said.at !== null && said.at !== undefined) note.at = said.at;
+          if (typeof said.text === "string") note.text = said.text.split(/\r\n|[\n\r]/, 1)[0].slice(0, FIRST_LINE);
+          return note;
+        });
+        return json(res, 200, { bead: facts, notes });
+      }
       json(res, 200, found);
     } catch (err) {
       failed(`bead ${id}`, err);
@@ -433,15 +465,18 @@ async function main() {
   }
   const run = yardr();
   const yard = { snapshot: () => snapshot(run), bead: (id) => bead(run, id), head: () => head(run), follow: (after, signal) => follow(run, after, signal) };
-  const { handle, close } = routes({ yard, root, memory, remember: (slots) => remember(layout, slots), quota: () => quota() });
+  // Off this machine a bead is answered as the public page shows it: its
+  // facts and first lines, and hidden beads are 404. Whoever passes --host
+  // has chosen that.
+  const local = ["127.0.0.1", "::1", "localhost"].includes(values.host);
+  const { handle, close } = routes({ yard, root, memory, remember: (slots) => remember(layout, slots), quota: () => quota(), local });
 
   const server = createServer(handle);
   server.listen(port, values.host, () => {
     const at = server.address();
     const name = at.family === "IPv6" ? `[${at.address}]` : at.address;
     console.log(`signalbox: the yard, live, at http://${name}:${at.port}/`);
-    const local = ["127.0.0.1", "::1", "localhost"].includes(values.host);
-    if (!local) console.log("signalbox: no login: whoever reaches that address reads the yard's beads, their bodies and notes, its groups and events");
+    if (!local) console.log("signalbox: no login: whoever reaches that address reads the yard's beads, its groups and events: no body, and no note past its first line");
   });
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => {
