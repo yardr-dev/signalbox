@@ -66,8 +66,10 @@ export function via(yard: Yard, bead: Bead): string[] {
   const flow = flows[flowIndex(flows, bead.type)];
   if (flow === undefined) return [];
   const order = travelOrder(flow);
+  const at = order.indexOf(bead.stage);
+  if (at < 0) return [];
   const terminal = new Set(flow.stages.filter((s) => s.terminal === true).map((s) => s.stage));
-  return order.slice(order.indexOf(bead.stage) + 1).filter((s) => !terminal.has(s));
+  return order.slice(at + 1).filter((s) => !terminal.has(s));
 }
 
 // Whether a bead stands where only a person moves it on.
@@ -82,7 +84,8 @@ function waitsOnPerson(yard: Yard, bead: Bead): boolean {
 function waitedFor(yard: Yard, bead: Bead): string {
   const flows = yard.flows.find((f) => f.depot === bead.depot)?.flows ?? [];
   const flow = flows[flowIndex(flows, bead.type)];
-  const group = flow === undefined ? undefined : shedGroups(yard, bead.depot, flow, bead.stage)[0];
+  const group = flow?.stages.find((s) => s.stage === bead.stage)?.group
+    ?? (flow === undefined ? undefined : shedGroups(yard, bead.depot, flow, bead.stage)[0]);
   const members = yard.groups.find((g) => g.name === group)?.members ?? [];
   if (members.length > 0) return members.join(", ");
   return group ?? "a person";
@@ -103,7 +106,7 @@ export function remark(yard: Yard, bead: Bead): Pick<Row, "remark" | "tone" | "m
 
 // The board's rows: what is in progress, a running session first, then what
 // is queued, ordered by expected arrival where the yard serves one, else by
-// how long it has been in progress, oldest first. Not the backlog.
+// how long it has stood at its stage, oldest first. Not the backlog.
 export function rows(yard: Yard, beads: Bead[]): Row[] {
   const running = (b: Bead) => b.working === true;
   const arrival = (b: Bead) => (b.eta === undefined ? undefined : minutes(b.eta.low));
@@ -113,7 +116,8 @@ export function rows(yard: Yard, beads: Bead[]): Row[] {
       if (running(a) !== running(b)) return running(a) ? -1 : 1;
       const [x, y] = [arrival(a), arrival(b)];
       if (x !== y) return x === undefined ? 1 : y === undefined ? -1 : x - y;
-      return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      const [aSince, bSince] = [a.moved_at ?? a.created_at, b.moved_at ?? b.created_at];
+      return aSince < bSince ? -1 : aSince > bSince ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     })
     .slice(0, LIMIT);
   return aged.map((bead) => ({ bead, time: etaText(bead), badge: badge(bead), title: bead.title, via: via(yard, bead), platform: bead.stage, line: bead.depot, ...remark(yard, bead) }));

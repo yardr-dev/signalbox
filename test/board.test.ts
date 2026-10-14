@@ -58,20 +58,23 @@ describe("the board's rows", () => {
     expect(rows(y, [queued, running, waiting]).map((r) => r.bead.id)).toEqual(["wharf-b", "wharf-a"]);
   });
 
-  test("ordered by expected arrival where the yard serves one, else oldest first", () => {
+  test("ordered by expected arrival where served, else by time at the current stage", () => {
     const y = yard();
     const old = bead("wharf-a", { created_at: "2099-01-01T00:00:00Z" });
     const young = bead("wharf-b", { created_at: "2099-01-01T05:00:00Z" });
     expect(rows(y, [young, old]).map((r) => r.bead.id)).toEqual(["wharf-a", "wharf-b"]);
-    const soon = bead("wharf-c", { created_at: "2099-01-01T06:00:00Z", eta: { low: "30m", high: "1h" } });
-    const later = bead("wharf-d", { created_at: "2099-01-01T00:30:00Z", eta: { low: "2h", high: "5h" } });
-    expect(rows(y, [old, later, young, soon]).map((r) => r.bead.id)).toEqual(["wharf-c", "wharf-d", "wharf-a", "wharf-b"]);
+    const recentlyMoved = bead("wharf-c", { created_at: "2099-01-01T00:00:00Z", moved_at: "2099-01-10T00:00:00Z" });
+    const standing = bead("wharf-d", { created_at: "2099-01-09T00:00:00Z", moved_at: "2099-01-09T00:00:00Z" });
+    expect(rows(y, [recentlyMoved, standing]).map((r) => r.bead.id)).toEqual(["wharf-d", "wharf-c"]);
+    const soon = bead("wharf-e", { created_at: "2099-01-01T06:00:00Z", eta: { low: "30m", high: "1h" } });
+    const later = bead("wharf-f", { created_at: "2099-01-01T00:30:00Z", eta: { low: "2h", high: "5h" } });
+    expect(rows(y, [old, later, young, soon]).map((r) => r.bead.id)).toEqual(["wharf-e", "wharf-f", "wharf-a", "wharf-b"]);
     // A time that does not read as a span shows, but orders nothing.
-    const vague = bead("wharf-e", { created_at: "2099-01-01T00:15:00Z", eta: { low: "soon", high: "soon" } });
+    const vague = bead("wharf-g", { created_at: "2099-01-01T00:15:00Z", eta: { low: "soon", high: "soon" } });
     expect(rows(y, [soon, vague, old]).map((r) => [r.bead.id, r.time])).toEqual([
-      ["wharf-c", "30m–1h"],
+      ["wharf-e", "30m–1h"],
       ["wharf-a", NO_TIME],
-      ["wharf-e", "soon"],
+      ["wharf-g", "soon"],
     ]);
   });
 
@@ -124,15 +127,21 @@ describe("the board's remarks", () => {
 
   test("at a people's stage it waits for who is routed there, in yellow", () => {
     expect(said(bead("wharf-a", { stage: "decide" }))).toMatchObject({ remark: "waits for nell, yardmaster", tone: "amber" });
-    // No members listed: the group itself; no route: a person.
+    // The flow's resolved group still names the people when routes are absent.
     const groups = yard();
+    groups.routes = [];
+    expect(remark(groups, bead("wharf-b", { stage: "decide" }))).toMatchObject({ remark: "waits for nell, yardmaster", tone: "amber" });
+    // No members listed: the group itself.
+    groups.routes = yard().routes;
     groups.groups = groups.groups.filter((g) => g.name !== "decisions");
-    expect(remark(groups, bead("wharf-b", { stage: "decide" }))).toMatchObject({ remark: "waits for decisions", tone: "amber" });
+    expect(remark(groups, bead("wharf-c", { stage: "decide" }))).toMatchObject({ remark: "waits for decisions", tone: "amber" });
+    // With no resolved group or route, there is no named person to show.
     const unrouted = yard();
     unrouted.routes = [];
-    expect(remark(unrouted, bead("wharf-c", { stage: "decide" }))).toMatchObject({ remark: "waits for a person", tone: "amber" });
+    delete unrouted.flows[0]!.flows[0]!.stages.find((s) => s.stage === "decide")!.group;
+    expect(remark(unrouted, bead("wharf-d", { stage: "decide" }))).toMatchObject({ remark: "waits for a person", tone: "amber" });
     // A machine stage waits for nobody.
-    expect(said(bead("wharf-d", { stage: "new" }))).toMatchObject({ remark: "", tone: "none" });
+    expect(said(bead("wharf-e", { stage: "new" }))).toMatchObject({ remark: "", tone: "none" });
   });
 
   test("past its usual time it is late, in yellow, saying by how much", () => {
@@ -175,6 +184,8 @@ describe("the board's small print", () => {
     expect(via(y, bead("wharf-a", { stage: "new" }))).toEqual(["review", "decide", "approved"]);
     expect(via(y, bead("wharf-b", { stage: "approved" }))).toEqual([]);
     expect(via(y, bead("wharf-c", { stage: "merged" }))).toEqual([]);
+    // A stage removed from the flow has no later stages to advertise.
+    expect(via(y, bead("wharf-d", { stage: "retired" }))).toEqual([]);
     // No flow of its own, or none of its depot: no via.
     expect(via(y, bead("wharf-d", { stage: "new", depot: "gauge" }))).toEqual([]);
     const strange = yard();
