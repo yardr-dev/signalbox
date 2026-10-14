@@ -153,10 +153,98 @@ function hash(text: string): number {
   return h;
 }
 
-// Lays one model many times as instances: a yard is mostly rail.
-class Rails {
+// A curve's rails and sleepers, as the straight tile has them: track.glb is
+// a unit long, its two rails 0.1 wide and 0.1 high on the sleepers with
+// their middles 0.6 apart, its three sleepers 0.1 thick at -0.45, 0 and
+// 0.45. A curve sweeps the rails' profile along the bezier and lays single
+// sleepers this far apart by arc length, each turned to the tangent.
+const GAUGE = 0.6;
+const RAIL_WIDTH = 0.1;
+const RAIL_HEIGHT = 0.1;
+const RAIL_Y = 0.05;
+const SLEEPER_SPACING = 0.45;
+const SLEEPER_THICK = 0.1;
+const SLEEPER_HEIGHT = 0.05;
+const SLEEPER_WIDTH = 1.0;
+// The step the rails are swept in: fine enough that they read as smooth
+// close up. The waypoints ride the same bezier every 0.25.
+const FINE = 0.05;
+
+// One rail of a curve: the rail's profile swept along the bezier, offset by
+// a half gauge on the side the sign names. Rings of four corners every fine
+// step, each turned to the tangent; the frame stays upright, as a rail does.
+function rail(from: Point, to: Point, side: 1 | -1): THREE.BufferGeometry {
+  const way = curve(from, to, FINE);
+  const at = (j: number): Point => way[Math.min(way.length - 1, Math.max(0, j))]!;
+  const corners: number[] = [];
+  for (let j = 0; j < way.length; j++) {
+    const p = way[j]!;
+    const a = at(j - 1);
+    const b = at(j + 1);
+    const run = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const nx = -(b.z - a.z) / run;
+    const nz = (b.x - a.x) / run;
+    const cx = p.x + (nx * side * GAUGE) / 2;
+    const cz = p.z + (nz * side * GAUGE) / 2;
+    const ox = (nx * RAIL_WIDTH) / 2;
+    const oz = (nz * RAIL_WIDTH) / 2;
+    corners.push(cx - ox, RAIL_Y, cz - oz, cx + ox, RAIL_Y, cz + oz, cx + ox, RAIL_Y + RAIL_HEIGHT, cz + oz, cx - ox, RAIL_Y + RAIL_HEIGHT, cz - oz);
+  }
+  // Four corners a ring: near-bottom, far-bottom, far-top, near-top. Each
+  // wall wound to face out, and a cap at each end.
+  const faces: number[] = [];
+  const quad = (a: number, b: number, c: number, d: number) => faces.push(a, b, c, a, c, d);
+  for (let j = 0; j < way.length - 1; j++) {
+    const [n0, f0, t0, u0] = [4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3];
+    const [n1, f1, t1, u1] = [4 * j + 4, 4 * j + 5, 4 * j + 6, 4 * j + 7];
+    quad(f0, f1, t1, t0);
+    quad(n0, u0, u1, n1);
+    quad(u0, t0, t1, u1);
+    quad(n0, n1, f1, f0);
+  }
+  quad(0, 1, 2, 3);
+  const e = 4 * (way.length - 1);
+  faces.push(e, e + 2, e + 1, e, e + 3, e + 2);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(corners, 3));
+  geometry.setIndex(faces);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+// A curve's sleepers: single boxes at the straight spacing by arc length,
+// each turned to the tangent and not scaled.
+function sleepers(from: Point, to: Point): THREE.Matrix4[] {
+  const length = measure(curve(from, to));
+  const n = Math.max(1, Math.round(length / SLEEPER_SPACING));
+  const way = curve(from, to, FINE);
+  const run: number[] = [0];
+  for (let j = 1; j < way.length; j++) run.push(run[j - 1]! + Math.hypot(way[j]!.x - way[j - 1]!.x, way[j]!.z - way[j - 1]!.z));
+  const matrices: THREE.Matrix4[] = [];
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const d = ((i + 0.5) * length) / n;
+    while (j < way.length - 2 && run[j + 1]! < d) j++;
+    const a = way[j]!;
+    const b = way[j + 1]!;
+    const leg = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const t = Math.min(1, Math.max(0, (d - run[j]!) / leg));
+    matrices.push(
+      new THREE.Matrix4()
+        .makeTranslation(a.x + (b.x - a.x) * t, 0, a.z + (b.z - a.z) * t)
+        .multiply(new THREE.Matrix4().makeRotationY(heading(a, b))),
+    );
+  }
+  return matrices;
+}
+
+// Lays the rails: straights as instances of the tile, curves as what they
+// are, each rail swept along the bezier with single sleepers along it. A
+// yard is mostly rail.
+export class Rails {
   private readonly at: THREE.Matrix4[] = [];
   private readonly quietAt: THREE.Matrix4[] = [];
+  private readonly bends: { from: Point; to: Point; quiet: boolean }[] = [];
 
   // A straight run from a point, at an angle on the ground (0 is along x).
   run(from: Point, length: number, angle = 0, quiet = false) {
@@ -174,22 +262,11 @@ class Rails {
     }
   }
 
-  // A curve from one straight to another: the same S motion.ts runs on, in
-  // short tiles along it, each turned to its tangent. Short enough that the
-  // rails read as smooth close up, long enough that a tile's sleepers still
-  // read as sleepers; the same step the waypoints take, so they ride the
-  // tiles' middles.
+  // A curve from one straight to another: the same S motion.ts runs on. Its
+  // rails are swept along it, one mesh each; its sleepers lie along it by
+  // arc length at the straight tile's spacing, each turned to the tangent.
   curve(from: Point, to: Point, quiet = false) {
-    const at = quiet ? this.quietAt : this.at;
-    const way = curve(from, to);
-    for (let t = 0; t < way.length - 1; t++) {
-      const [a, b] = [way[t]!, way[t + 1]!];
-      const m = new THREE.Matrix4()
-        .makeTranslation((a.x + b.x) / 2, 0, (a.z + b.z) / 2)
-        .multiply(new THREE.Matrix4().makeRotationY(heading(a, b)))
-        .multiply(new THREE.Matrix4().makeScale(Math.hypot(b.x - a.x, b.z - a.z), 1, 1));
-      at.push(m);
-    }
+    this.bends.push({ from, to, quiet });
   }
 
   build(tile: THREE.Object3D): THREE.Group {
@@ -213,6 +290,25 @@ class Rails {
       };
       make(this.quietAt, Array.isArray(part.material) ? part.material.map(subdued) : subdued(part.material));
     });
+    // The curves' sleepers share one box: the tile's sleeper stood alone.
+    const box = new THREE.BoxGeometry(SLEEPER_THICK, SLEEPER_HEIGHT, SLEEPER_WIDTH);
+    box.translate(0, SLEEPER_HEIGHT / 2, 0);
+    for (const bend of this.bends) {
+      // The kit paints the tile's rails slate and its sleepers the track's
+      // tone; a quiet curve wears the return line's, as its tiles did.
+      const railWears = bend.quiet ? paint("quietRail") : paint("slate");
+      const sleeperWears = bend.quiet ? paint("quietTrack") : paint("track");
+      for (const side of [1, -1] as const) {
+        const swept = new THREE.Mesh(rail(bend.from, bend.to, side), railWears);
+        swept.receiveShadow = true;
+        group.add(swept);
+      }
+      const matrices = sleepers(bend.from, bend.to);
+      const laid = new THREE.InstancedMesh(box, sleeperWears, matrices.length);
+      laid.receiveShadow = true;
+      matrices.forEach((m, i) => laid.setMatrixAt(i, m));
+      group.add(laid);
+    }
     return group;
   }
 }

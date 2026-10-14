@@ -59,7 +59,8 @@ track a quieter return line is laid as rail beside the main line, the same
 gauge in lower contrast sleepers and rails from the headshunt's points to
 the buffer, so a shunter running round a wagon is on rail; where a siding's
 points cross it the rails only lie over each other. The points are S-curves
-of the straight tile in short steps, each turned to the curve's tangent: a
+of swept rails, with single sleepers at the straight spacing, each turned
+to the curve's tangent: a
 siding's from the main line into its stub, the headshunt's from the single
 track, where the shunter is parked, out to the return line. The paint says
 nothing of the bead:

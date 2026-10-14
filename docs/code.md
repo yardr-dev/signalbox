@@ -122,8 +122,9 @@
   main line would put it on one. A quieter return line is laid as rail beside
   every track, from the headshunt's points to the buffer: one track past the
   parked shunter, then the points out to it. A siding's points cross it by
-  lying over it. The points are S-curves (`curve` in `motion.ts`), laid in
-  short tiles and run on as waypoints.
+  lying over it. The points are S-curves (`curve` in `motion.ts`), each
+  rail swept along the bezier with single sleepers at the tile's spacing,
+  and run on as waypoints.
 - `src/scene.ts` draws a layout: `draw` what stands still, `refuel` the coal
   in the silos' indicators from a quota, `Stock` the wagons
   and figures, which it moves from one state to the next, each figure with a

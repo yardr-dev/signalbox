@@ -6,10 +6,10 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
 import { banded, CHIMNEY, COLOUR, coloured, accented, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit, type Part } from "../src/kit";
 import { HEADSHUNT, layout, people, PLACE_X, RETURN_Z, SHED_WIDTH, SIDING_Z, type Gate, type Shed } from "../src/layout";
-import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, turnout, TWEEN_MIN, WALK_MAX } from "../src/motion";
+import { curve, GOODS_END, goodsSeconds, measure, PUFF_SECONDS, PUFFS, RUN_OUT, turnout, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { accents, building, dress, engine, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stand, steam, tinted, weathering, type Accent, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
-import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
+import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, Rails, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
 
 // A picture as a page has it once it is read: its size and its pixels, four
@@ -855,6 +855,10 @@ describe("the rails of a track", () => {
     sx: number;
     sz: number;
     mats: THREE.Material[];
+    // A curve's sleeper, told from a straight's tile by its size: the
+    // middle sleeper stands over the return line, where the straight's
+    // rail is, so no place tells them apart.
+    sleeper: boolean;
   }
   const tiles = (l: ReturnType<typeof layout>): Tile[] => {
     const found: Tile[] = [];
@@ -865,11 +869,30 @@ describe("the rails of a track", () => {
       const turn = new THREE.Quaternion();
       const scale = new THREE.Vector3();
       const mats = Array.isArray(part.material) ? part.material : [part.material];
+      part.geometry.computeBoundingBox();
+      const sleeper = part.geometry.boundingBox!.getSize(new THREE.Vector3()).x < 0.5;
       for (let i = 0; i < part.count; i++) {
         part.getMatrixAt(i, m);
         m.decompose(at, turn, scale);
-        found.push({ x: at.x, z: at.z, yaw: new THREE.Euler().setFromQuaternion(turn).y, sx: scale.x, sz: scale.z, mats });
+        found.push({ x: at.x, z: at.z, yaw: new THREE.Euler().setFromQuaternion(turn).y, sx: scale.x, sz: scale.z, mats, sleeper });
       }
+    });
+    return found;
+  };
+
+  // The swept rails: every mesh that is no instance, with its box and what
+  // it wears. A curve's rails are low on the ground and span the curve.
+  interface Span {
+    min: THREE.Vector3;
+    max: THREE.Vector3;
+    wears: THREE.Material;
+  }
+  const spans = (l: ReturnType<typeof layout>): Span[] => {
+    const found: Span[] = [];
+    draw(l, kit).root.traverse((part) => {
+      if (!(part instanceof THREE.Mesh) || part instanceof THREE.InstancedMesh) return;
+      const box = new THREE.Box3().setFromObject(part);
+      found.push({ min: box.min, max: box.max, wears: part.material as THREE.Material });
     });
     return found;
   };
@@ -890,21 +913,32 @@ describe("the rails of a track", () => {
       const step = length / Math.max(1, Math.round(length));
       expect(Math.min(...on), t.key).toBeCloseTo(ends.to.x + step / 2, 5);
       expect(Math.max(...on), t.key).toBeCloseTo(ends.to.x + length - step / 2, 5);
-      // The points' curve before it: short quiet tiles from the single track
-      // out to the return line, joining both tangentially.
+      // The points' curve before it: swept rails from the single track out to
+      // the return line, with single sleepers along it at the straight
+      // spacing, joining both tangentially.
       const bent = laid
-        .filter((p) => p.x > ends.from.x - 0.01 && p.x < ends.to.x + 0.01 && p.z < t.at.z - 1e-4 && p.z > t.at.z + RETURN_Z + 1e-4)
+        .filter((p) => p.sleeper && p.x > ends.from.x - 0.01 && p.x < ends.to.x + 0.01 && p.z < t.at.z - 1e-4 && p.z > t.at.z + RETURN_Z + 1e-4)
         .sort((a, b) => a.x - b.x);
-      expect(bent.length, t.key).toBeGreaterThan(2);
-      const straight = laid.find((p) => Math.abs(p.z - (t.at.z + RETURN_Z)) < 1e-4 && p.x > ends.to.x)!.yaw;
-      expect(Math.abs(bent[0]!.yaw - straight), t.key).toBeLessThan(0.2);
-      expect(Math.abs(bent.at(-1)!.yaw - straight), t.key).toBeLessThan(0.2);
+      expect(bent.length, t.key).toBe(Math.round(measure(curve(ends.from, ends.to)) / 0.45));
+      const straight = laid.find((p) => !p.sleeper && Math.abs(p.z - (t.at.z + RETURN_Z)) < 1e-4 && p.x > ends.to.x)!.yaw;
+      expect(Math.abs(bent[0]!.yaw - straight), t.key).toBeLessThan(0.3);
+      expect(Math.abs(bent.at(-1)!.yaw - straight), t.key).toBeLessThan(0.3);
       expect(Math.max(...bent.map((p) => Math.abs(p.yaw - straight))), t.key).toBeGreaterThan(0.5);
       for (const p of bent) {
         expect(p.mats, t.key).toContain(paint("quietTrack"));
-        expect(p.sx, t.key).toBeLessThan(0.35);
+        expect(p.sx, t.key).toBeCloseTo(1, 6);
         expect(p.sz, t.key).toBeCloseTo(1, 6);
       }
+    }
+    // One mesh per rail, low on the ground and spanning the points. Every
+    // track's points stand at the same x, and nothing else wears the
+    // return line's rail, so the count is over the whole yard.
+    const low = spans(l).filter((r) => r.wears === paint("quietRail") && r.max.y < 1);
+    expect(low.length).toBe(2 * l.tracks.length);
+    const shared = turnout(l.tracks[0]!.at.x - HEADSHUNT, l.tracks[0]!.at.z);
+    for (const r of low) {
+      expect(r.min.x).toBeLessThan(shared.from.x + 0.1);
+      expect(r.max.x).toBeGreaterThan(shared.to.x - 0.1);
     }
   });
 
@@ -912,24 +946,37 @@ describe("the rails of a track", () => {
     const l = layout(yard);
     expect(l.sidings.length).toBeGreaterThan(0);
     const laid = tiles(l);
+    const low = spans(l);
     for (const s of l.sidings) {
       const main = s.at.z - SIDING_Z;
-      // The curve's tiles: between the main line and the stub, but none of
-      // the return line's straight rail where the points cross it.
+      const from = { x: s.at.x + SIDING_Z, z: main };
+      // The curve's sleepers: between the main line and the stub, the
+      // return line's straight rail told from them by size, not place: the
+      // middle sleeper stands over it.
       const bent = laid
-        .filter((p) => p.x > s.at.x + SIDING_Z - 0.01 && p.x < s.at.x + 0.01 && p.z < main - 1e-4 && p.z > s.at.z + 1e-4 && Math.abs(p.z - (main + RETURN_Z)) > 1e-4)
+        .filter((p) => p.sleeper && p.x > from.x - 0.01 && p.x < s.at.x + 0.01 && p.z < main - 1e-4 && p.z > s.at.z + 1e-4)
         .sort((a, b) => a.x - b.x);
-      expect(bent.length, s.key).toBeGreaterThan(2);
-      const straight = laid.find((p) => Math.abs(p.z - main) < 1e-4)!.yaw;
-      expect(Math.abs(bent[0]!.yaw - straight), s.key).toBeLessThan(0.2);
-      expect(Math.abs(bent.at(-1)!.yaw - straight), s.key).toBeLessThan(0.2);
+      expect(bent.length, s.key).toBe(Math.round(measure(curve(from, s.at)) / 0.45));
+      const straight = laid.find((p) => !p.sleeper && Math.abs(p.z - main) < 1e-4)!.yaw;
+      expect(Math.abs(bent[0]!.yaw - straight), s.key).toBeLessThan(0.3);
+      expect(Math.abs(bent.at(-1)!.yaw - straight), s.key).toBeLessThan(0.3);
       expect(Math.max(...bent.map((p) => Math.abs(p.yaw - straight))), s.key).toBeGreaterThan(0.8);
-      // Short tiles of the main line's gauge, in its colours.
+      // Single sleepers in the main line's colours, each turned to the
+      // tangent and not scaled.
       for (const p of bent) {
         expect(p.mats, s.key).toContain(paint("track"));
-        expect(p.sx, s.key).toBeLessThan(0.35);
+        expect(p.sx, s.key).toBeCloseTo(1, 6);
         expect(p.sz, s.key).toBeCloseTo(1, 6);
       }
+      // One mesh per rail, low on the ground, spanning the points and
+      // centred on them; what else is slate is small, high or elsewhere.
+      // Points at the same x serve other tracks, far up the page.
+      const middle = (r: { min: THREE.Vector3; max: THREE.Vector3 }) => (r.min.z + r.max.z) / 2;
+      expect(
+        low.filter((r) => r.wears === paint("slate") && r.max.y < 1 && r.min.x < from.x + 0.1 && r.max.x > s.at.x - 0.1 && middle(r) > s.at.z - 0.4 && middle(r) < main + 0.4)
+          .length,
+        s.key,
+      ).toBe(2);
     }
   });
 
@@ -991,6 +1038,100 @@ describe("the rails of a track", () => {
     expect(returns.length).toBeGreaterThan(0);
     for (const z of running) expect(z).toBeCloseTo(1, 6);
     for (const z of returns) expect(z).toBeCloseTo(1, 6);
+  });
+});
+
+describe("a curve's swept rails and sleepers", () => {
+  // A siding's points and the headshunt's turnout, as motion.ts lays them:
+  // one mesh per rail swept along the bezier, single sleepers along it by
+  // arc length at the straight tile's spacing (0.45: three to the tile, at
+  // -0.45, 0 and 0.45).
+  const siding = { from: { x: 19.3 + SIDING_Z, z: 10 }, to: { x: 19.3, z: 10 + SIDING_Z } };
+  const bends = [siding, turnout(-12, 10)];
+
+  // A curve on its own: its rails and its sleepers' instances.
+  const built = (from: { x: number; z: number }, to: { x: number; z: number }, quiet = false) => {
+    const rails = new Rails();
+    rails.curve(from, to, quiet);
+    const swept: THREE.Mesh[] = [];
+    const sleepers: THREE.Matrix4[] = [];
+    rails.build(kit.make("rail")).traverse((part) => {
+      if (part instanceof THREE.InstancedMesh) {
+        const m = new THREE.Matrix4();
+        for (let i = 0; i < part.count; i++) sleepers.push(part.getMatrixAt(i, m).clone());
+      } else if (part instanceof THREE.Mesh) swept.push(part);
+    });
+    return { swept, sleepers };
+  };
+
+  test("each rail spans from the first to the last sample, a half gauge to either side", () => {
+    for (const { from, to } of bends) {
+      const { swept } = built(from, to);
+      expect(swept.map((rail) => rail.material)).toEqual([paint("slate"), paint("slate")]);
+      // The rails' ends stand where the curve does, a half gauge (0.3) to
+      // either side of it: the tangents run along x at both ends, so the
+      // offset is across it, in z. A rail's end corners stand 0.05 across
+      // from its middle.
+      for (const end of [from, to]) {
+        for (const side of [0.3, -0.3]) {
+          const near = swept.some((rail) => {
+            const at = (rail.geometry as THREE.BufferGeometry).getAttribute("position");
+            for (let i = 0; i < at.count; i++) {
+              if (Math.hypot(at.getX(i) - end.x, at.getZ(i) - (end.z + side)) < 0.06) return true;
+            }
+            return false;
+          });
+          expect(near, `${end.x},${end.z} ${side}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  test("sleepers lie along the curve by arc length, at the straight spacing and unscaled", () => {
+    for (const { from, to } of bends) {
+      const way = curve(from, to);
+      const { sleepers } = built(from, to);
+      expect(sleepers.length).toBe(Math.round(measure(way) / 0.45));
+      const at = sleepers.map((m) => new THREE.Vector3().setFromMatrixPosition(m));
+      // Evenly spaced, about the straight tile's 0.45 apart.
+      const gaps = at.slice(1).map((p, i) => Math.hypot(p.x - at[i]!.x, p.z - at[i]!.z));
+      for (const gap of gaps) expect(gap).toBeCloseTo(measure(way) / sleepers.length, 1);
+      expect(measure(way) / sleepers.length).toBeCloseTo(0.45, 1);
+      // Each turned to the tangent: joining the straights at both ends,
+      // steepest halfway over. And not scaled.
+      const yaw = sleepers.map((m) => {
+        const p = new THREE.Vector3();
+        const turn = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        m.decompose(p, turn, scale);
+        expect(scale.x).toBeCloseTo(1, 6);
+        expect(scale.y).toBeCloseTo(1, 6);
+        expect(scale.z).toBeCloseTo(1, 6);
+        return new THREE.Euler().setFromQuaternion(turn).y;
+      });
+      expect(Math.abs(yaw[0]!)).toBeLessThan(0.3);
+      expect(Math.abs(yaw.at(-1)!)).toBeLessThan(0.3);
+      expect(Math.max(...yaw.map(Math.abs))).toBeGreaterThan(0.5);
+      // On the curve: each within a sleeper's thickness of the waypoints' line.
+      for (const p of at) {
+        const near = way.slice(0, -1).some((a, i) => {
+          const b = way[i + 1]!;
+          const t = Math.min(1, Math.max(0, ((p.x - a.x) * (b.x - a.x) + (p.z - a.z) * (b.z - a.z)) / ((b.x - a.x) ** 2 + (b.z - a.z) ** 2)));
+          return Math.hypot(p.x - (a.x + (b.x - a.x) * t), p.z - (a.z + (b.z - a.z) * t)) < 0.1;
+        });
+        expect(near, `${p.x},${p.z}`).toBe(true);
+      }
+    }
+  });
+
+  test("a quiet curve wears the return line's colours", () => {
+    const rails = new Rails();
+    rails.curve(turnout(-12, 10).from, turnout(-12, 10).to, true);
+    const worn = new Set<THREE.Material>();
+    rails.build(kit.make("rail")).traverse((part) => {
+      if (part instanceof THREE.Mesh) [part.material].flat().forEach((m) => worn.add(m as THREE.Material));
+    });
+    expect(worn).toEqual(new Set([paint("quietRail"), paint("quietTrack")]));
   });
 });
 
