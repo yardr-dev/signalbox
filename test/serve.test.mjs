@@ -764,11 +764,23 @@ describe("a bead", () => {
     expect(await (await fetch(`${body.url}/api/bead/signalbox-a`)).json()).toEqual({
       bead: { id: "signalbox-a", title: "a", depot: "signalbox" },
       notes: detail.notes,
+      hidden: ["body"],
     });
     const notes = await start(of, { hide: ["notes"] });
     expect(await (await fetch(`${notes.url}/api/bead/signalbox-a`)).json()).toEqual({
       bead: detail.bead,
       notes: [{ author: "signalbox-a-new", at: "2099-01-01T00:00:00Z" }],
+      hidden: ["notes"],
+    });
+  });
+
+  test("a hidden body is marked even when there are no notes", async () => {
+    const of = { ...yard([]), bead: async () => ({ bead: { ...detail.bead }, notes: [] }) };
+    const s = await start(of, { hide: ["body"] });
+    expect(await (await fetch(`${s.url}/api/bead/signalbox-a`)).json()).toEqual({
+      bead: { id: "signalbox-a", title: "a", depot: "signalbox" },
+      notes: [],
+      hidden: ["body"],
     });
   });
 

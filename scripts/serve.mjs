@@ -28,8 +28,9 @@
 //                               the quota when it was asked again, a message
 //                               of the event "quota" with no id
 //   GET /api/bead/<id>          one bead for its card (src/card.ts): {bead,
-//                               notes}, with the bead's body and its notes,
-//                               less --hide; 404 when the yard has no bead
+//                               notes, hidden?}, with the bead's body and
+//                               notes, less --hide; hidden names the parts
+//                               kept back; 404 when the yard has no bead
 //                               of that id, or the bead has no depot: the
 //                               yard's own (its journal, memories, asks),
 //                               which the page never shows
@@ -283,7 +284,8 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
             return note;
           })
         : found.notes;
-      json(res, 200, { bead, notes });
+      const hiddenParts = ["body", "notes"].filter((part) => hidden.has(part));
+      json(res, 200, { bead, notes, ...(hiddenParts.length > 0 ? { hidden: hiddenParts } : {}) });
     } catch (err) {
       failed(`bead ${id}`, err);
       json(res, 502, { error: "the yard did not answer" });

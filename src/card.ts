@@ -18,6 +18,8 @@ export interface Detail {
   bead: Bead & { status?: string; updated_at?: string; body?: string };
   // As the yard printed them: oldest first.
   notes: Note[];
+  // Parts scripts/serve.mjs kept back, so the card can say why they are absent.
+  hidden?: ("body" | "notes")[];
 }
 
 export interface Card {
@@ -67,14 +69,10 @@ function facts(bead: Detail["bead"], when: When): [string, string][] {
 // The card of a bead the yard answered for.
 export function card(detail: Detail, when: When): Card {
   const { bead } = detail;
-  // What --hide of scripts/serve.mjs kept back: a missing body, notes
-  // without text. Said where the card says why it has no notes, not in a
-  // new state. A bead with no notes at all still says it has no notes.
-  const hidden: string[] = [];
-  if (detail.notes.length > 0) {
-    if (bead.body === undefined) hidden.push("body");
-    if (detail.notes.every((note) => note.text === undefined)) hidden.push("notes");
-  }
+  // What --hide of scripts/serve.mjs kept back, said where the card says
+  // why it has no notes, not in a new state. The answer names these parts:
+  // without that, an absent body could also mean the bead had no body.
+  const hidden = detail.hidden ?? [];
   // By time, and two of one moment in the order they were written.
   const notes = detail.notes
     .map((note, k) => ({ note, k }))

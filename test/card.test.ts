@@ -94,17 +94,18 @@ describe("the card", () => {
   test("a hidden part is said in the remark slot, not a new state", () => {
     const head = { author: "signalbox-a-new", at: "2099-01-01T01:00:00Z" };
     // --hide body: no body beside whole notes.
-    expect(card({ bead: { ...bead, status: "open" }, notes: [{ ...head, text: "built" }] }, when)).toMatchObject({ body: "", remark: "body hidden on this page" });
+    expect(card({ bead: { ...bead, status: "open" }, notes: [{ ...head, text: "built" }], hidden: ["body"] }, when)).toMatchObject({ body: "", remark: "body hidden on this page" });
     // --hide notes: heads alone beside the body.
-    const c = card({ bead: { ...bead, status: "open", body: "Show a card." }, notes: [head] }, when);
+    const c = card({ bead: { ...bead, status: "open", body: "Show a card." }, notes: [head], hidden: ["notes"] }, when);
     expect(c.notes).toEqual([{ head: "signalbox-a-new · <2099-01-01T01:00:00Z>", text: "" }]);
     expect(c.remark).toBe("notes hidden on this page");
     // Both.
-    expect(card({ bead: { ...bead, status: "open" }, notes: [head] }, when).remark).toBe("body and notes hidden on this page");
-    // A note without text among notes with text is genuine, not hidden.
-    expect(card({ bead: { ...bead, status: "open", body: "b" }, notes: [{ ...head, text: "built" }, { author: "flagman" }] }, when).remark).toBe("");
+    expect(card({ bead: { ...bead, status: "open" }, notes: [head], hidden: ["body", "notes"] }, when).remark).toBe("body and notes hidden on this page");
+    // A hidden body is still named on a bead with no notes.
+    expect(card({ bead: { ...bead, status: "open" }, notes: [], hidden: ["body"] }, when).remark).toBe("body hidden on this page");
     // Nothing hidden and nothing to show keeps its remark.
     expect(card({ bead: { ...bead, status: "open", body: "b" }, notes: [] }, when).remark).toBe("no notes");
+    expect(card({ bead: { ...bead, status: "open" }, notes: [] }, when).remark).toBe("no notes");
   });
 
   test("a bead the yard does not know", () => {

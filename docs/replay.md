@@ -244,10 +244,11 @@ is four routes beside the files of `dist/`:
   port is another one each time, and the open page looks for the old one.
   The quota comes on the same line when it was asked again, and once to a
   page that starts to listen: a message of the event `quota`, with no id.
-- `GET /api/bead/<id>`: one bead for its card, `{bead, notes}`, asked of the
-  yard at the click (the view's `/beads/<id>`), less `--hide`. An id is lower-case letters,
-  figures, dots and dashes, and starts with a letter or a figure; anything
-  else is refused before the view is asked. A bead the yard does not have is a 404,
+- `GET /api/bead/<id>`: one bead for its card, `{bead, notes, hidden?}`,
+  asked of the yard at the click (the view's `/beads/<id>`), less `--hide`.
+  An id is lower-case letters, figures, dots and dashes, and starts with a
+  letter or a figure; anything else is refused before the view is asked. A
+  bead the yard does not have is a 404,
   and the card says "not found", as it does for a bead with no depot: the
   yard's own journal, memories and asks, which the page never shows.
 - `POST /api/fault`: a report of the page's, `{at, what, detail, agent,
@@ -283,4 +284,3 @@ own from `public/snapshot/`, else the demo.
 A machine with no checkout takes a release's archive instead: the built
 page and the script, run by Node alone, with no `npm ci` and no build.
 [INSTALL.md](../INSTALL.md) says how, and is in the archive too.
-
