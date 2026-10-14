@@ -36,9 +36,6 @@ export interface Card {
 export const ASKING = "asking the yard for the notes";
 export const NEEDS_LIVE = "notes need the live page";
 export const NO_ANSWER = "the yard did not answer: no notes";
-// The remark of a card on the public page: the serve script sends no bodies
-// off this machine, and each note's first line alone.
-export const PUBLIC = "the public page shows no bodies";
 
 // A time as the yard printed it, for the reader.
 export type When = (iso: string) => string;
@@ -70,6 +67,14 @@ function facts(bead: Detail["bead"], when: When): [string, string][] {
 // The card of a bead the yard answered for.
 export function card(detail: Detail, when: When): Card {
   const { bead } = detail;
+  // What --hide of scripts/serve.mjs kept back: a missing body, notes
+  // without text. Said where the card says why it has no notes, not in a
+  // new state. A bead with no notes at all still says it has no notes.
+  const hidden: string[] = [];
+  if (detail.notes.length > 0) {
+    if (bead.body === undefined) hidden.push("body");
+    if (detail.notes.every((note) => note.text === undefined)) hidden.push("notes");
+  }
   // By time, and two of one moment in the order they were written.
   const notes = detail.notes
     .map((note, k) => ({ note, k }))
@@ -78,9 +83,7 @@ export function card(detail: Detail, when: When): Card {
       head: `${note.author ?? "?"}${note.at === undefined ? "" : ` · ${when(note.at)}`}`,
       text: note.text ?? "",
     }));
-  // A public answer has no body: the card says so where it would say why
-  // it has no notes. A bead with neither still says it has no notes.
-  const remark = bead.body === undefined && notes.length > 0 ? PUBLIC : notes.length === 0 ? "no notes" : "";
+  const remark = hidden.length > 0 ? `${hidden.join(" and ")} hidden on this page` : notes.length === 0 ? "no notes" : "";
   return {
     id: bead.id,
     title: bead.title,

@@ -49,8 +49,10 @@ and `NOTICE`.
 Flags: `--port <n>` (a free one when left out), `--host <addr>` to serve
 another device, `--dir dist`, `--layout <file>` for where the yard's slots
 are kept (default `$YARDR_HOME/signalbox/layout.json`, else
-`~/.yardr/signalbox/layout.json`). `AIQUOKKA=/path/to/aiquokka` names the
-quota binary.
+`~/.yardr/signalbox/layout.json`), `--hide <part>` to keep back a bead's
+body, its notes' text, or events' words (`body`, `notes`, `events`;
+repeatable, or apart with commas; nothing hidden unless named).
+`AIQUOKKA=/path/to/aiquokka` names the quota binary.
 
 ## A phone or another device
 
@@ -65,18 +67,19 @@ reach, such as the machine's address on a Tailscale net:
 
 There is no login. Whoever reaches the port reads what the page shows: the
 yard's depots, flows, groups, crew and peers by name, each open bead's id,
-title, type, stage and labels, the events, and of a bead whose card is
-opened its facts and each note's head and first line: no body, and nothing
-of a bead the page never shows. Never a key or a path the yard prints.
+title, type, stage and labels, the events, and the body and notes of a
+depot bead whose card is opened (the yard's own beads answer 404). Never
+a key or a path the yard prints.
 
 ## The public
 
 A stranger reads what the page shows. There is no login. That is the yard's
 depots, flows, groups, crew and peers by name, each open bead's id, title,
 type, stage and labels, the events, the quota silos with the providers'
-plan names and percentages, and the body and notes of any bead whose card
-they open. Never a key or a path the yard prints. A path or a key written
-into a note is on the card.
+plan names and percentages, and the body and notes of any depot bead whose
+card they open (the yard's own beads answer 404), less `--hide`. Never a
+key or a path the yard prints. A path or a key written into a note is on
+the card.
 
 The fault report is the one route that writes. It is limited to one line a
 second and kept nowhere.

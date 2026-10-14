@@ -190,6 +190,7 @@ an open bead at an end. The replay keeps them from
     YARDR_WEB=http://127.0.0.1:9000 npm run live   # a view at another address, as for the snapshot
     npm run live -- --port 8800           # a port of your choice (a free one)
     npm run live -- --host 100.64.0.7     # an address other than this machine's own
+    npm run live -- --hide notes          # heads alone on a card; body, events hide too
 
 `npm run live` builds the page and starts `scripts/serve.mjs`, which prints
 the page's address: on 127.0.0.1 and a free port unless told otherwise. The
@@ -244,12 +245,11 @@ is four routes beside the files of `dist/`:
   The quota comes on the same line when it was asked again, and once to a
   page that starts to listen: a message of the event `quota`, with no id.
 - `GET /api/bead/<id>`: one bead for its card, `{bead, notes}`, asked of the
-  yard at the click (the view's `/beads/<id>`). An id is lower-case letters,
+  yard at the click (the view's `/beads/<id>`), less `--hide`. An id is lower-case letters,
   figures, dots and dashes, and starts with a letter or a figure; anything
   else is refused before the view is asked. A bead the yard does not have is a 404,
-  and the card says "not found". Off this machine the bead is its facts alone,
-  each note its head and first line, and a bead the page never shows (a memory,
-  a journal, anything not open) is a 404 too.
+  and the card says "not found", as it does for a bead with no depot: the
+  yard's own journal, memories and asks, which the page never shows.
 - `POST /api/fault`: a report of the page's, `{at, what, detail, agent,
   screen}`, answered 204 and written as one line where the script says what
   it does (`signalbox: fault <what> from <agent> <screen>: <detail> at <at>`).
@@ -265,15 +265,16 @@ of each event its number, time, kind, bead and a few names (group, depot,
 peer, stages of an advance); of each provider `aiquokka` lists with a weekly
 or a five-hour window its name, plan, the percent used of each and when it
 starts again, and nothing of the account. And of the one bead a card asks for, live
-only and in no file: on this machine its body and its notes, each with its
-author and time, as they were written; off it the bead's facts alone, each
-note's head and first line, and nothing of a bead the page never shows.
-Whoever writes a path or a key into a note has put it on the card. Never a
-path or a key the yard itself prints, nor a session's
-own name: `src/project.ts` builds each answer from the fields it names. There is no login, as with `yardr web serve --unsafe`: whoever reaches
+only and in no file, when the bead has a depot: its body and its notes, each
+with its author and time, as they were written, less `--hide` (`body` leaves
+the body out, `notes` the notes' text, `events` an event's data but its
+bead, kind, stages and group). Whoever writes a path or a key into a note
+has put it on the card. Never a path or a key the yard itself prints, nor a
+session's own name: `src/project.ts` builds each answer from the fields it
+names. There is no login, as with `yardr web serve --unsafe`: whoever reaches
 the port reads all of that. So it listens on this machine alone, and
-`--host` answers beads as the public page shows them: no body, and no note
-past its first line.
+`--host` is for an address only your own devices reach, such as this
+machine's on a Tailscale net, for a phone on the same net.
 
 Without the script (`npm run dev`, or `dist/` on any static server) nothing
 of this is there, and the page is the replay of a snapshot's files: your

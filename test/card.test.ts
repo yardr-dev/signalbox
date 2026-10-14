@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, PUBLIC, type Detail } from "../src/card";
+import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, type Detail } from "../src/card";
 import type { Bead } from "../src/yard";
 
 // The yard's times as they are, so the card's text is the same everywhere.
@@ -91,12 +91,20 @@ describe("the card", () => {
     expect(brief(bead, when, ASKING).remark).toBe(ASKING);
   });
 
-  test("on the public page: no body is said, beside the notes' first lines", () => {
-    const c = card({ bead: { ...bead, status: "open" }, notes: [{ author: "signalbox-a-new", at: "2099-01-01T01:00:00Z", text: "built" }] }, when);
-    expect(c.body).toBe("");
-    expect(c.notes).toEqual([{ head: "signalbox-a-new · <2099-01-01T01:00:00Z>", text: "built" }]);
-    expect(c.remark).toBe("the public page shows no bodies");
-    expect(c.remark).toBe(PUBLIC);
+  test("a hidden part is said in the remark slot, not a new state", () => {
+    const head = { author: "signalbox-a-new", at: "2099-01-01T01:00:00Z" };
+    // --hide body: no body beside whole notes.
+    expect(card({ bead: { ...bead, status: "open" }, notes: [{ ...head, text: "built" }] }, when)).toMatchObject({ body: "", remark: "body hidden on this page" });
+    // --hide notes: heads alone beside the body.
+    const c = card({ bead: { ...bead, status: "open", body: "Show a card." }, notes: [head] }, when);
+    expect(c.notes).toEqual([{ head: "signalbox-a-new · <2099-01-01T01:00:00Z>", text: "" }]);
+    expect(c.remark).toBe("notes hidden on this page");
+    // Both.
+    expect(card({ bead: { ...bead, status: "open" }, notes: [head] }, when).remark).toBe("body and notes hidden on this page");
+    // A note without text among notes with text is genuine, not hidden.
+    expect(card({ bead: { ...bead, status: "open", body: "b" }, notes: [{ ...head, text: "built" }, { author: "flagman" }] }, when).remark).toBe("");
+    // Nothing hidden and nothing to show keeps its remark.
+    expect(card({ bead: { ...bead, status: "open", body: "b" }, notes: [] }, when).remark).toBe("no notes");
   });
 
   test("a bead the yard does not know", () => {
