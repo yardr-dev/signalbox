@@ -266,10 +266,11 @@ export function step(state: State, event: YardEvent, w: World): State {
 
 // The works after an event, given the beads after it. A session that starts
 // on a bead at a works' stage opens a run there. The run is over with the
-// first event that leaves the bead with nobody at work on it: an advance
-// past the buffer or a close as merged is a landing, an advance with the
-// outcome failed a gate that failed, and any other end (a hold, a session
-// that died, a bead taken back) leaves what the last run said.
+// first event that leaves the bead with nobody at work on it: the advance
+// into merged or a close as merged is a landing, and so is an advance past
+// the buffer, into the flow's last stage whatever it is called; an advance
+// with the outcome failed is a gate that failed, and any other end (a hold,
+// a session that died, a bead taken back) leaves what the last run said.
 function gated(state: State, event: YardEvent, w: World): State {
   const id = event.bead;
   if (id === undefined) return state;
@@ -286,7 +287,7 @@ function gated(state: State, event: YardEvent, w: World): State {
   const data = event.data ?? {};
   const known = w.cast.get(id);
   const past = event.kind === "advanced" && known !== undefined && data.to !== undefined && w.terminal(known, data.to);
-  const landed = past || (event.kind === "closed" && data.reason === "merged");
+  const landed = past || (event.kind === "advanced" && data.to === "merged") || (event.kind === "closed" && data.reason === "merged");
   const last = landed ? "landed" : event.kind === "advanced" && data.outcome === "failed" ? "failed" : gate.last;
   const runs = gate.runs.filter((r) => r.bead !== id);
   return { ...state, works: { ...state.works, [open]: { runs, ...(last !== undefined ? { last } : {}) } } };

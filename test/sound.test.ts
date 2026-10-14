@@ -12,12 +12,13 @@ function event(kind: string, data?: YardEvent["data"]): YardEvent {
 }
 
 describe("the cue of an event", () => {
-  test("a landing whistles: a close with the reason merged, and no other close", () => {
+  test("a landing whistles: the advance into merged, or a close as merged", () => {
+    expect(cueOf(event("advanced", { from: "approved", to: "merged", outcome: "done" }))).toBe("whistle");
     expect(cueOf(event("closed", { reason: "merged" }))).toBe("whistle");
     expect(cueOf(event("closed"))).toBeUndefined();
     expect(cueOf(event("closed", { group: "backlog" }))).toBeUndefined();
-    // The arrival at the last stage is the shunter's; the close after it whistles.
-    expect(cueOf(event("advanced", { from: "approved", to: "merged", outcome: "done" }))).toBeUndefined();
+    // Past the buffer under another name is the shunter's alone.
+    expect(cueOf(event("advanced", { from: "merged", to: "live", outcome: "done" }))).toBeUndefined();
   });
 
   test("a session that stalled or was given up rings the bell", () => {
@@ -49,8 +50,12 @@ describe("the cue of an event", () => {
     const heard = log.events.map(cueOf);
     expect(heard.filter((c) => c === "whistle").length).toBeGreaterThan(10);
     expect(heard).toContain("bell");
+    // Every whistle is a landing: the advance into merged, or the close as merged.
+    for (const e of log.events.filter((e) => cueOf(e) === "whistle")) {
+      expect(e.kind === "advanced" ? e.data?.to : e.data?.reason).toBe("merged");
+    }
     // Not every close is a landing: a duplicate is closed where it stood.
-    expect(heard.filter((c) => c === "whistle").length).toBeLessThan(log.events.filter((e) => e.kind === "closed").length);
+    expect(log.events.some((e) => e.kind === "closed" && cueOf(e) === undefined)).toBe(true);
   });
 });
 

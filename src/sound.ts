@@ -21,10 +21,12 @@ export function clankCue(playing: boolean, couplings: number): Cue | undefined {
 const STUCK = new Set(["session_stalled", "session_prompt_gave_up"]);
 
 // The cue of an event: a bead that landed, or a session that stalled or was
-// given up. None for any other. The clank is no event's: the picture has
+// given up. None for any other. A landing is the advance into merged, or a
+// close as merged: the two are one moment (the close follows the advance),
+// and at speed they sound as one. The clank is no event's: the picture has
 // its moments (scene.ts).
 export function cueOf(event: YardEvent): Cue | undefined {
-  if (event.kind === "closed" && event.data?.reason === "merged") return "whistle";
+  if ((event.kind === "advanced" && event.data?.to === "merged") || (event.kind === "closed" && event.data?.reason === "merged")) return "whistle";
   if (STUCK.has(event.kind) || (event.kind === "advanced" && event.data?.outcome === "gave_up")) return "bell";
   return undefined;
 }

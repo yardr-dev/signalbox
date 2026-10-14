@@ -18,7 +18,7 @@ yard, which follows the replay as it is scrubbed; a close button and Escape
 close it. Without `events.json` the page is the still picture of `yard.json`.
 
 Sound on the bar turns the yard's sounds on, and the browser remembers it:
-a whistle when a bead lands (closed as merged), a bell when a session
+a whistle when a bead lands (the advance into merged, or a close as merged), a bell when a session
 stalls or is given up, a clank when a shunter takes wagons on and when it
 lets go of them. They are off until then, and a scrub is silent: only what
 happens while the replay plays, or the yard runs, is heard.
@@ -111,7 +111,7 @@ routed to a group of scripts (the assembly, the refinery: `started`) is a
 run of the depot's gate and the merge: a few grey puffs rise from the works'
 chimney and thin out, at their own pace whatever the replay's speed. The
 lamp on the post beside the works says how the last run ended: green for a
-landing (the advance past the buffer, or a close as merged), red for a gate
+landing (the advance into merged, or a close as merged; past the buffer lands it too), red for a gate
 that failed (an advance with the outcome failed), and it stays so until the
 next run starts, which puts it out. Any other end (a hold, a session that
 died, a bead taken back) stops the smoke and leaves the lamp as it was.

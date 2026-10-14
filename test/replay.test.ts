@@ -539,6 +539,27 @@ describe("the works of the replay", () => {
     expect(run([event("closed", "sextant-a", { reason: "merged" })], running).works[key]).toEqual({ runs: [], last: "landed" });
   });
 
+  test("a flow that goes on from merged lands on the advance into merged, as one where merged is last does", () => {
+    // The same yard with a flow that goes on from merged to live, live terminal.
+    const flows = one.flows.map((d) =>
+      d.depot !== "sextant"
+        ? d
+        : { ...d, flows: d.flows.map((f) => ({ ...f, stages: [...f.stages.filter((s) => s.stage !== "merged"), { stage: "merged", next: ["live"] }, { stage: "live", terminal: true }] })) },
+    );
+    const w2 = world({ ...one, flows }, cast);
+    const go = (events: YardEvent[], from: State) => events.reduce((s, e) => step(s, e, w2), from);
+    const running = go([claim(), begin()], approved);
+    // The advance into merged lands the run, though the bead stands on there.
+    const landed = go([event("advanced", "sextant-a", { group: "sextant-assembly", from: "approved", to: "merged" })], running);
+    expect(landed.works).toEqual({ [key]: { runs: [], last: "landed" } });
+    expect(at(landed, "sextant-a")!.stage).toBe("merged");
+    // Past the buffer and closed as live (no reason leaves the yard): the bead
+    // is gone as from any terminal, and the lamp stays what the landing said.
+    const out = go([event("advanced", "sextant-a", { from: "merged", to: "live", outcome: "done" }), event("closed", "sextant-a")], landed);
+    expect(out.beads).toEqual([]);
+    expect(out.works).toEqual({ [key]: { runs: [], last: "landed" } });
+  });
+
   test("an advance with the outcome failed is a gate that failed, until the next run starts", () => {
     const running = run([claim(), begin()], approved);
     const failed = run([event("advanced", "sextant-a", { group: "sextant-assembly", from: "approved", to: "new", outcome: "failed" })], running);
