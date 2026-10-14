@@ -15,6 +15,7 @@
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import { rows } from "./board";
 import { begin, canvas, failed, handheld, keep, lighter, Losses, LOST, Refused } from "./canvas";
 import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { listen, report, served } from "./fault";
@@ -64,6 +65,10 @@ const made = document.getElementById("demo")!;
 const speeds = document.getElementById("speeds")!;
 const mute = document.getElementById("sound")!;
 const dusk = document.getElementById("night")!;
+const departures = document.getElementById("departures")!;
+const board = document.getElementById("board")!;
+const boardRows = document.getElementById("board-rows")!;
+const boardClose = document.getElementById("board-close")!;
 const scrub = document.getElementById("scrub") as HTMLInputElement;
 const clock = document.getElementById("clock")!;
 const current = document.getElementById("event")!;
@@ -247,6 +252,58 @@ async function start() {
   const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
   if (api) first?.follow();
   const stock = new Stock(plan(first ? first.state : yard, first?.clock), kit, picture.sheds);
+
+  // The departure board: the beads in progress now, a replay's state or the
+  // snapshot's own. All of it is text of the yard: none is markup.
+  let beadsNow: () => Bead[] = () => yard.beads;
+  const paintBoard = () => {
+    const cell = (name: string, text: string) => {
+      const td = document.createElement("td");
+      td.className = name;
+      td.textContent = text;
+      return td;
+    };
+    boardRows.replaceChildren(
+      ...rows(yard, beadsNow()).map((r) => {
+        const tr = document.createElement("tr");
+        tr.append(cell("time", r.time));
+        const badge = cell("badge", "");
+        const chip = document.createElement("span");
+        chip.textContent = r.badge;
+        badge.append(chip);
+        tr.append(badge);
+        const dest = cell("dest", r.title);
+        if (r.via.length > 0) {
+          const via = document.createElement("div");
+          via.className = "via";
+          via.textContent = `via ${r.via.join(" · ")}`;
+          dest.append(via);
+        }
+        tr.append(dest, cell("platform", r.platform), cell("line", r.line));
+        const remarks = cell("remarks", "");
+        if (r.remark !== "") {
+          const mark = document.createElement("span");
+          mark.className = r.tone;
+          mark.textContent = r.remark;
+          if (r.more !== "") mark.title = r.more;
+          remarks.append(mark);
+        }
+        tr.append(remarks);
+        return tr;
+      }),
+    );
+  };
+  const showBoard = () => {
+    paintBoard();
+    board.hidden = false;
+    departures.setAttribute("aria-pressed", "true");
+  };
+  const hideBoard = () => {
+    board.hidden = true;
+    departures.setAttribute("aria-pressed", "false");
+  };
+  departures.addEventListener("click", () => (board.hidden ? showBoard() : hideBoard()));
+  boardClose.addEventListener("click", hideBoard);
 
   // A flat ground with nothing behind it: the background is the ground, and
   // all that lies on it is the shadows.
@@ -513,7 +570,9 @@ async function start() {
     if (target instanceof Node && !host.contains(target) && !side.contains(target)) shut();
   });
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") shut();
+    if (e.key !== "Escape") return;
+    shut();
+    hideBoard();
   });
 
   // Drawn again on the next frame, and on every frame while anything moves.
@@ -550,6 +609,8 @@ async function start() {
   const hint = "drag to pan, scroll or pinch to zoom";
   if (first) {
     let player = first;
+    // The board follows the replay: what it lists is the state it stands at.
+    beadsNow = () => player.state.beads;
     // The yard's clock is its machine's, not the reader's: the snapshot says
     // how far the two are apart.
     let skew = api ? Date.parse(yard.taken_at) - Date.now() : 0;
@@ -563,6 +624,7 @@ async function start() {
       stock.show(plan(player.state, player.clock), how);
       aged = player.clock;
       retell();
+      if (!board.hidden) paintBoard();
     };
     document.body.classList.add("replay");
     bar.hidden = false;
@@ -795,6 +857,8 @@ async function start() {
   // Now that the bar and the note are on the page.
   fit();
   render();
+  // Open over the yard from the address, for a screenshot: ?board.
+  if (new URLSearchParams(window.location.search).has("board")) showBoard();
   // For whoever drives the page from outside (a screenshot, a test).
   document.body.dataset.ready = "true";
 }

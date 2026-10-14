@@ -76,8 +76,9 @@ page, [docs/code.md](docs/code.md) each of these files at length.
 - `src/scene.ts`: draws a layout, and moves the wagons and figures from one state to the next.
 - `src/canvas.ts`: the canvas, and the light picture a browser gets that refuses the full one.
 - `src/card.ts`: builds the text of a bead's card, pure.
+- `src/board.ts`: builds the departure board's rows, pure.
 - `src/fault.ts`: reports the live page's faults to the script's log.
-- `src/main.ts`: the page: camera, pan and zoom, labels, the card, the bar.
+- `src/main.ts`: the page: camera, pan and zoom, labels, the card, the bar, the board.
 - `test/`: the tests, one file for each of these it tests.
 
 ## Licence

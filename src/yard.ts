@@ -95,6 +95,12 @@ export interface Bead {
   stage: string;
   depot: string;
   group?: string;
+  // The yard's expected arrival (design yardr-hrah): a range of durations,
+  // never a promised time. Absent below the sample floor, and where the yard
+  // does not serve one yet: the board then shows no time.
+  eta?: Eta;
+  // Past its usual time in a machine stage: present only while it is late.
+  late?: Late;
   // Whether a running session is working the bead now.
   working?: boolean;
   // Held: set aside until someone lets it go on.
@@ -128,6 +134,27 @@ export interface Edge {
 export interface Fault {
   kind: string;
   at: string;
+}
+
+// A bead's expected arrival, as the yard serves it (design yardr-hrah): the
+// range low to high, both spans like "2h" or "30m", with what it is made of.
+// People's stages are named in unclocked and cost no time.
+export interface Eta {
+  low: string;
+  high: string;
+  queue?: string;
+  ahead?: number;
+  stages?: { stage: string; median: string }[];
+  unclocked?: string[];
+  samples?: number;
+}
+
+// A bead past its usual time in a machine stage: how long it has stood
+// there, against the p90 it is past, both spans like "6h" and "2h".
+export interface Late {
+  stage: string;
+  in_stage: string;
+  p90: string;
 }
 
 // The shape of public/quota.json, beside yard.json: what is left of each

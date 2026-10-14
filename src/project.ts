@@ -148,7 +148,39 @@ function beadOf(b: Raw, left: Raw = {}): Raw {
     ...(b.session !== null && b.session !== undefined ? pick(b, ["group"], { working: true }) : { ...left, ...pick(b, ["group"]), working: false }),
     ...pick(b, ["hold"]),
     ...pick(b, ["train", "labels", "priority", "created_at"]),
+    // The yard's expected arrival and its late mark (design yardr-hrah),
+    // where it serves them: the board reads them, and shows no time without.
+    ...pick({}, [], { eta: etaOf(b.eta), late: lateOf(b.late) }),
   });
+}
+
+// An expected arrival as the yard serves it, cut down to the fields the
+// board reads: the range, what it is made of, and the sample it stands on.
+// Nothing where the yard serves none.
+function etaOf(value: unknown): Raw | undefined {
+  const eta = record(value);
+  if (typeof eta.low !== "string" || typeof eta.high !== "string") return undefined;
+  const stages = list(eta.stages)
+    .map((s) => pick({}, [], { stage: typeof s.stage === "string" ? s.stage : undefined, median: typeof s.median === "string" ? s.median : undefined }))
+    .filter((s) => s.stage !== undefined && s.median !== undefined);
+  const unclocked = Array.isArray(eta.unclocked) ? eta.unclocked.filter((s): s is string => typeof s === "string") : [];
+  return pick({}, [], {
+    low: eta.low,
+    high: eta.high,
+    queue: typeof eta.queue === "string" ? eta.queue : undefined,
+    ahead: typeof eta.ahead === "number" ? eta.ahead : undefined,
+    stages: stages.length > 0 ? stages : undefined,
+    unclocked: unclocked.length > 0 ? unclocked : undefined,
+    samples: typeof eta.samples === "number" ? eta.samples : undefined,
+  });
+}
+
+// A late mark as the yard serves it: the stage it stands in, how long it
+// has, and the usual time it is past. Nothing where it is not late.
+function lateOf(value: unknown): Raw | undefined {
+  const late = record(value);
+  if (typeof late.stage !== "string" || typeof late.in_stage !== "string" || typeof late.p90 !== "string") return undefined;
+  return pick(late, ["stage", "in_stage", "p90"]);
 }
 
 // One bead for its card (src/card.ts), from what the view answers for the

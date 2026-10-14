@@ -25,9 +25,29 @@
       <button id="sound" type="button" aria-pressed="false">Sound</button>
       <!-- The night palette, where the reader's system does not say. -->
       <button id="night" type="button" aria-pressed="false">Night</button>
+      <!-- The departure board: the beads in progress, over the yard. -->
+      <button id="departures" type="button" aria-pressed="false">Departures</button>
       <input id="scrub" type="range" min="0" value="0" step="1000" aria-label="Time of the yard" />
       <output id="clock"></output>
       <output id="event"></output>
+    </div>
+    <!-- The departure board: the beads in progress, over the yard. The scene
+         keeps running behind it; a close button and Escape close it. -->
+    <div id="board" role="dialog" aria-label="Departures" hidden>
+      <div class="band"><h2>Departures</h2><button id="board-close" type="button">Close</button></div>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            <th scope="col" aria-label="Group"></th>
+            <th scope="col">Destination</th>
+            <th scope="col">Platform</th>
+            <th scope="col">Line</th>
+            <th scope="col">Remarks</th>
+          </tr>
+        </thead>
+        <tbody id="board-rows"></tbody>
+      </table>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

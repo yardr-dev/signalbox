@@ -100,6 +100,28 @@ describe("the projection", () => {
     expect(logOf("2099-01-05T00:00:00Z", window, closed, alias).beads.map((b) => b.id)).toEqual(["signalbox-a", "signalbox-b", "signalbox-c", "signalbox-d"]);
   });
 
+  test("a bead's expected arrival and late mark pass through, cut to the board's fields", () => {
+    const bead = (id: string, more: Raw): Raw => ({ id, title: id, type: "task", stage: "new", status: "open", depot: "signalbox", priority: 2, created_at: "2099-01-01T00:00:00Z", ...more });
+    const beads = [
+      bead("signalbox-a", {
+        eta: { low: "2h", high: "5h", queue: "1h", ahead: 3, stages: [{ stage: "new", median: "30m", beads: [SECRET] }, { stage: "review" }], unclocked: ["approved", 7], samples: 42, path: SECRET },
+        late: { stage: "new", in_stage: "6h", p90: "2h", since: SECRET },
+      }),
+      // Served half, or not at all: nothing passes.
+      bead("signalbox-b", { eta: { low: "2h" }, late: { stage: "new" } }),
+      bead("signalbox-c", {}),
+    ];
+    const yard = yardOf({ ...lists, beads }, "2099-01-01T00:00:00Z");
+    expect(yard.beads[0]).toMatchObject({
+      eta: { low: "2h", high: "5h", queue: "1h", ahead: 3, stages: [{ stage: "new", median: "30m" }], unclocked: ["approved"], samples: 42 },
+      late: { stage: "new", in_stage: "6h", p90: "2h" },
+    });
+    expect(yard.beads[1]).not.toHaveProperty("eta");
+    expect(yard.beads[1]).not.toHaveProperty("late");
+    expect(yard.beads[2]).not.toHaveProperty("eta");
+    expect(JSON.stringify(yard)).not.toMatch(/secret/);
+  });
+
   test("the edges are the blocks ones with an open bead at an end, each once, as its two ends", () => {
     const edge = (from: unknown, to: unknown, kind: string): Raw => ({ from, to, kind, created_at: "2099-01-01T00:00:00Z", actor: SECRET });
     const edges = [

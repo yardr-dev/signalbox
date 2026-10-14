@@ -207,6 +207,20 @@ body.replay #note {
   text-overflow: ellipsis;
 }
 
+/* At phone width the bar's controls would run past the edge: they scroll
+   within the bar instead, so every button stays in reach. */
+@media (max-width: 640px) {
+  #bar {
+    overflow-x: auto;
+  }
+
+  #bar button,
+  #demo,
+  #clock {
+    flex: none;
+  }
+}
+
 /* One bead, at the right: above the yard, clear of the player's bar. */
 #card {
   position: fixed;
@@ -277,4 +291,224 @@ body.replay #card {
   margin-top: 10px;
   font-style: italic;
   color: #4f5a66;
+}
+
+/* The departure board, over the yard: a deep blue board in white condensed
+   type, its header a red band. Its own colours, by day and by night, like
+   the boards it is styled after. The scene keeps running behind it. */
+#board {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(880px, calc(100vw - 20px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  border-radius: 4px;
+  font-family: "Arial Narrow", ui-sans-serif, system-ui, sans-serif;
+  font-stretch: condensed;
+  color: #fff;
+  background: #16266b;
+  box-shadow: 0 2px 14px rgb(0 0 0 / 0.45);
+}
+
+#board[hidden] {
+  display: none;
+}
+
+body.replay #board {
+  max-height: calc(100% - 74px);
+}
+
+#board .band {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #eb0000;
+}
+
+#board h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+#board .band button {
+  padding: 2px 12px;
+  border: 1px solid #fff;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  background: none;
+  cursor: pointer;
+}
+
+#board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+#board th,
+#board td {
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+#board thead th {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 0.72);
+}
+
+#board tbody tr {
+  border-top: 1px solid rgb(255 255 255 / 0.22);
+  /* A breath of the split-flap boards: a darker hairline across each row. */
+  background: linear-gradient(to bottom, transparent 49%, rgb(0 0 0 / 0.22) 50%, transparent 51%);
+}
+
+#board td.time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#board td.badge {
+  max-width: 130px;
+}
+
+#board td.badge span {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #eb0000;
+}
+
+#board td.dest .via {
+  font-size: 12px;
+  color: rgb(255 255 255 / 0.72);
+}
+
+#board td.platform,
+#board td.line {
+  white-space: nowrap;
+}
+
+#board td.remarks .amber {
+  color: #ffb340;
+}
+
+#board td.remarks .red {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-weight: 700;
+  color: #fff;
+  background: #eb0000;
+}
+
+/* At phone width the rows stand in three lines, and nothing scrolls
+   sideways: time, badge and platform first, then the destination, then
+   the line and the remarks, each named where its header is gone. */
+@media (max-width: 640px) {
+  #board {
+    font-size: 13px;
+  }
+
+  #board thead {
+    display: none;
+  }
+
+  #board table,
+  #board tbody,
+  #board tr,
+  #board td {
+    display: block;
+  }
+
+  #board tbody tr {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "time badge platform"
+      "dest dest dest"
+      "line remarks remarks";
+    gap: 1px 8px;
+    padding: 6px 8px;
+  }
+
+  #board td {
+    padding: 0;
+    min-width: 0;
+  }
+
+  #board td.time {
+    grid-area: time;
+    font-weight: 700;
+  }
+
+  #board td.badge {
+    grid-area: badge;
+    max-width: none;
+  }
+
+  #board td.dest {
+    grid-area: dest;
+  }
+
+  #board td.platform {
+    grid-area: platform;
+    white-space: normal;
+    text-align: right;
+  }
+
+  #board td.line {
+    grid-area: line;
+    white-space: normal;
+    font-size: 12px;
+    color: rgb(255 255 255 / 0.72);
+  }
+
+  #board td.remarks {
+    grid-area: remarks;
+    text-align: right;
+  }
+
+  #board td.remarks:empty {
+    display: none;
+  }
+
+  #board td.platform::before,
+  #board td.line::before {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(255 255 255 / 0.55);
+  }
+
+  #board td.platform::before {
+    content: "Platform ";
+  }
+
+  #board td.line::before {
+    content: "Line ";
+  }
 }
