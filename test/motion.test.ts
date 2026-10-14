@@ -171,17 +171,20 @@ describe("over the headshunt's points", () => {
 
   test("off the single track onto the return line, and back, over the points", () => {
     const out = route(park, aside(15));
-    expect(out.slice(0, points.length)).toEqual([park.at, ...points.slice(1)]);
+    expect(out.slice(0, points.length + 1)).toEqual([park.at, ends.from, ...points.slice(1)]);
     expect(out.at(-1)).toEqual(aside(15).at);
     const home = route(aside(15), park);
     expect(home[0]).toEqual(aside(15).at);
-    expect(home.slice(-points.length)).toEqual([...[...points].reverse().slice(1), park.at]);
+    expect(home.slice(-points.length - 1)).toEqual([ends.to, ...points.slice(0, -1).reverse(), park.at]);
+    const fromMain = route(single(39), park);
+    expect(fromMain.at(-1)).toEqual(park.at);
+    expect(fromMain.slice(-points.length - 1)).toEqual([ends.to, ...points.slice(0, -1).reverse(), park.at]);
   });
 
   test("round a wagon from the single track: over the points, off past the wagon", () => {
     const way = route(park, single(39), [{ x: 15, z: 10 }]);
-    expect(way.slice(0, points.length)).toEqual([park.at, ...points.slice(1)]);
-    const rest = way.slice(points.length);
+    expect(way.slice(0, points.length + 1)).toEqual([park.at, ends.from, ...points.slice(1)]);
+    const rest = way.slice(points.length + 1);
     expect(rest[0]!.z).toBe(10 + RETURN_Z);
     expect(rest[0]!.x).toBeGreaterThan(ends.to.x);
     expect(rest.at(-1)).toEqual({ x: 39, z: 10 });

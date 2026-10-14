@@ -157,10 +157,10 @@ export function route(from: Stop, to: Stop, standing: readonly Point[] = [], alo
     const bend = curve(ends.from, ends.to);
     if (single(from)) {
       const mid: Stop = { ...from, at: ends.to };
-      return [from.at, ...bend.slice(1), ...route(mid, to, standing, alone).slice(1)];
+      return [from.at, ends.from, ...bend.slice(1), ...route(mid, to, standing, alone).slice(1)];
     }
     const mid: Stop = { ...to, at: ends.to };
-    return [...route(from, mid, standing, alone).slice(0, -1), ...bend.slice(0, -1).reverse(), to.at];
+    return [...route(from, mid, standing, alone).slice(0, -1), ends.to, ...bend.slice(0, -1).reverse(), to.at];
   }
   const z = from.line + RETURN_Z;
   const over: Point[] = [];
