@@ -2,7 +2,7 @@
 // rails, or a figure's over the ground, as a line of points, and where on it
 // a thing is. Pure, like layout.ts; scene.ts moves the models along it.
 
-import { PEER_RAIL_Z, PLATFORM_LENGTH, RETURN_Z, SIDING_Z, SLOT_PITCH, type Person, type Point } from "./layout";
+import { HEADSHUNT, PARK_X, PEER_RAIL_Z, PLATFORM_LENGTH, RETURN_Z, SIDING_Z, SLOT_PITCH, type Person, type Point } from "./layout";
 
 // Units of ground a second: a stage's pitch takes most of one.
 export const TRAIN_SPEED = 14;
@@ -45,10 +45,57 @@ export interface Stop {
   mouth?: Point;
 }
 
-// From a stub out to the main line, over the points: the diagonal scene.ts
+// An S-curve from one straight to another: a cubic bezier with its tangents
+// along x at both ends, sampled every step or so, ends included. The middle
+// sample is the curve's middle exactly.
+export function curve(from: Point, to: Point, step = 0.25): Point[] {
+  const mid = (from.x + to.x) / 2;
+  const n = Math.max(2, 2 * Math.ceil(Math.hypot(to.x - from.x, to.z - from.z) / (2 * step)));
+  const at = (t: number): Point => {
+    const u = 1 - t;
+    return {
+      x: u * u * u * from.x + 3 * u * u * t * mid + 3 * u * t * t * mid + t * t * t * to.x,
+      z: u * u * u * from.z + 3 * u * u * t * from.z + 3 * u * t * t * to.z + t * t * t * to.z,
+    };
+  };
+  return Array.from({ length: n + 1 }, (_, k) => at(k / n));
+}
+
+// The turnout past a track's parked shunter: the points start clear of it,
+// a shunter's half length on, and run this far out to the return line.
+export const TURNOUT_GAP = 1.2;
+export const TURNOUT_RUN = 2.6;
+
+// The points' curve, from the single track out to the return line: what
+// scene.ts lays, and what a way between the two follows.
+export function turnout(head: number, line: number): { from: Point; to: Point } {
+  const from = { x: head + HEADSHUNT + PARK_X + TURNOUT_GAP, z: line };
+  return { from, to: { x: from.x + TURNOUT_RUN, z: line + RETURN_Z } };
+}
+
+// On the single track: west of the turnout's points, where the return line
+// does not run. A stop that names no head is nowhere near one.
+function single(s: Stop): boolean {
+  return s.head !== undefined && !s.mouth && s.at.z === s.line && s.at.x < turnout(s.head, s.line).from.x;
+}
+
+// The foot of a siding's points: on the main line, the stub's depth to the
+// left of its mouth. The curve's middle is over the return line exactly.
+function foot(s: Stop): Point {
+  return { x: s.mouth!.x + SIDING_Z, z: s.line };
+}
+
+// From a stub out to the main line, over the points: the curve scene.ts
 // lays, from the stub's left end down to the left.
 function points(s: Stop): Point[] {
-  return s.mouth ? [s.mouth, { x: s.mouth.x + SIDING_Z, z: s.line }] : [];
+  return s.mouth ? curve(foot(s), s.mouth).reverse() : [];
+}
+
+// The points' curve from the stub's mouth down to where it crosses the
+// return line: the half an engine alone runs.
+function limb(s: Stop): Point[] {
+  const all = curve(foot(s), s.mouth!);
+  return all.slice(all.length >> 1).reverse();
 }
 
 // Beside its line, on the return line: where a shunter stands clear of what
@@ -69,15 +116,24 @@ function blocked(line: number, a: number, b: number, standing: readonly Point[])
 // the line as far as that is free, off it a wagon's place before; the way
 // from it comes on at the far end. An engine alone leaves a siding's points
 // where they cross the return line, and comes onto them there: the foot of
-// the points is under the wagon that stands before them. Two stops on
-// different tracks have no rail between them and are joined straight.
+// the points is under the wagon that stands before them. Off the single
+// track and onto the return line, and back, is over the headshunt's points.
+// Two stops on different tracks have no rail between them and are joined
+// straight.
 export function route(from: Stop, to: Stop, standing: readonly Point[] = [], alone = false): Point[] {
   if (from.line !== to.line) return [from.at, to.at];
   if (from.mouth && to.mouth && from.mouth.x === to.mouth.x) return [from.at, to.at];
   if (alone && (from.mouth || to.mouth)) {
-    const crossing = ({ mouth, ...line }: Stop): Stop => (mouth ? { ...line, at: { x: mouth.x + RETURN_Z, z: line.line + RETURN_Z } } : line);
+    // Onto the main line where the points cross the return line: the curve's
+    // middle sample, so the joint is on the curve exactly.
+    const crossing = (s: Stop): Stop => {
+      const { mouth, ...line } = s;
+      return mouth ? { ...line, at: limb(s).at(-1)! } : s;
+    };
     const between = route(crossing(from), crossing(to), standing);
-    return [...(from.mouth ? [from.at, from.mouth] : []), ...between, ...(to.mouth ? [to.mouth, to.at] : [])];
+    const out = from.mouth ? [from.at, ...limb(from)] : [];
+    const into = to.mouth ? [...limb(to)].reverse() : [];
+    return [...out, ...between.slice(out.length > 0 ? 1 : 0), ...into.slice(into.length > 0 ? 1 : 0), ...(to.mouth ? [to.at] : [])];
   }
   const out = points(from);
   const into = points(to).reverse();
@@ -92,6 +148,20 @@ export function route(from: Stop, to: Stop, standing: readonly Point[] = [], alo
   // at the points before it runs back too.
   const back = !to.mouth && join.x < leave.x - PLATFORM_LENGTH;
   const round = !off && !on && far > -2 * RETURN_Z && (back || blocked(from.line, leave.x, join.x, standing));
+  // Off the single track onto the return line, and back: over the headshunt's
+  // points, where the rail is, not across where none is. One end is on the
+  // single track; two places there are one straight, as below.
+  const head = from.head ?? to.head;
+  if (head !== undefined && single(from) !== single(to) && (round || (off !== on && far > -RETURN_Z))) {
+    const ends = turnout(head, from.line);
+    const bend = curve(ends.from, ends.to);
+    if (single(from)) {
+      const mid: Stop = { ...from, at: ends.to };
+      return [from.at, ...bend.slice(1), ...route(mid, to, standing, alone).slice(1)];
+    }
+    const mid: Stop = { ...to, at: ends.to };
+    return [...route(from, mid, standing, alone).slice(0, -1), ...bend.slice(0, -1).reverse(), to.at];
+  }
   const z = from.line + RETURN_Z;
   const over: Point[] = [];
   if (round) {

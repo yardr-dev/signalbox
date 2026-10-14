@@ -17,7 +17,6 @@ import {
   PEER_RAIL_Z,
   people,
   PLATFORM_LENGTH,
-  RETURN_Z,
   SHED_WIDTH,
   SIDING_Z,
   type Layout,
@@ -34,6 +33,7 @@ import {
 import {
   along,
   continueWalk,
+  curve,
   doing,
   ease,
   exit,
@@ -49,6 +49,7 @@ import {
   smokes,
   stride,
   turn,
+  turnout,
   TWEEN_MIN,
   walk,
   walkSeconds,
@@ -169,6 +170,24 @@ class Rails {
         .makeTranslation(from.x + Math.cos(angle) * d, 0, from.z - Math.sin(angle) * d)
         .multiply(turn)
         .multiply(new THREE.Matrix4().makeScale(step, 1, 1));
+      at.push(m);
+    }
+  }
+
+  // A curve from one straight to another: the same S motion.ts runs on, in
+  // short tiles along it, each turned to its tangent. Short enough that the
+  // rails read as smooth close up, long enough that a tile's sleepers still
+  // read as sleepers; the same step the waypoints take, so they ride the
+  // tiles' middles.
+  curve(from: Point, to: Point, quiet = false) {
+    const at = quiet ? this.quietAt : this.at;
+    const way = curve(from, to);
+    for (let t = 0; t < way.length - 1; t++) {
+      const [a, b] = [way[t]!, way[t + 1]!];
+      const m = new THREE.Matrix4()
+        .makeTranslation((a.x + b.x) / 2, 0, (a.z + b.z) / 2)
+        .multiply(new THREE.Matrix4().makeRotationY(heading(a, b)))
+        .multiply(new THREE.Matrix4().makeScale(Math.hypot(b.x - a.x, b.z - a.z), 1, 1));
       at.push(m);
     }
   }
@@ -467,12 +486,16 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   for (const t of l.tracks) {
-    // From the headshunt, where its shunter is parked, to the buffer.
+    // From the headshunt, where its shunter is parked, to the buffer: one
+    // track past the shunter, then the main line on.
     rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z }, t.length + HEADSHUNT);
-    // Its quieter return line, laid as rail from the headshunt to the buffer:
-    // what runs round a wagon, and what is sent back, runs on rail. No points
-    // or crossovers: a siding's points cross it by lying over it.
-    rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z + RETURN_Z }, t.length + HEADSHUNT, 0, true);
+    // Its quieter return line, over the headshunt's points and then as rail
+    // beside the main line to the buffer: what runs round a wagon, and what
+    // is sent back, runs on rail. No other points or crossovers: a siding's
+    // points cross it by lying over it.
+    const ends = turnout(t.at.x - HEADSHUNT, t.at.z);
+    rails.curve(ends.from, ends.to, true);
+    rails.run(ends.to, t.at.x + t.length - ends.to.x, 0, true);
     root.add(bufferStop(t.at.x - HEADSHUNT - 0.15, t.at.z));
     root.add(bufferStop(t.at.x + t.length + 0.15, t.at.z));
     // Above the track's left end, clear of what stands at its first platform.
@@ -480,8 +503,8 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
   for (const s of l.sidings) {
     rails.run(s.at, s.length);
-    // The points: a diagonal from the main line to the stub's left end.
-    rails.run({ x: s.at.x + SIDING_Z, z: s.at.z - SIDING_Z }, -SIDING_Z * Math.SQRT2, Math.PI / 4);
+    // The points: a curve from the main line to the stub's left end.
+    rails.curve({ x: s.at.x + SIDING_Z, z: s.at.z - SIDING_Z }, s.at);
     root.add(bufferStop(s.at.x + s.length + 0.15, s.at.z));
   }
 

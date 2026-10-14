@@ -5,8 +5,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
 import { banded, CHIMNEY, COLOUR, coloured, accented, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit, type Part } from "../src/kit";
-import { HEADSHUNT, layout, people, PLACE_X, RETURN_Z, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
-import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
+import { HEADSHUNT, layout, people, PLACE_X, RETURN_Z, SHED_WIDTH, SIDING_Z, type Gate, type Shed } from "../src/layout";
+import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, turnout, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { accents, building, dress, engine, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stand, steam, tinted, weathering, type Accent, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
 import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
@@ -846,24 +846,90 @@ describe("the box the first view holds", () => {
 });
 
 describe("the rails of a track", () => {
-  test("the return line is laid as rail beside every track, from the headshunt to the buffer", () => {
-    const l = layout(yard);
-    expect(l.tracks.length).toBeGreaterThan(0);
-    // Where the laid tiles stand: where each of the rails' instances stands.
-    const tiles: THREE.Vector3[] = [];
+  // Where the laid tiles stand, how they are turned and scaled, and of what
+  // material: every instance of the rails' meshes.
+  interface Tile {
+    x: number;
+    z: number;
+    yaw: number;
+    sx: number;
+    sz: number;
+    mats: THREE.Material[];
+  }
+  const tiles = (l: ReturnType<typeof layout>): Tile[] => {
+    const found: Tile[] = [];
     draw(l, kit).root.traverse((part) => {
       if (!(part instanceof THREE.InstancedMesh)) return;
       const m = new THREE.Matrix4();
-      for (let i = 0; i < part.count; i++) tiles.push(new THREE.Vector3().setFromMatrixPosition(part.getMatrixAt(i, m)));
+      const at = new THREE.Vector3();
+      const turn = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      const mats = Array.isArray(part.material) ? part.material : [part.material];
+      for (let i = 0; i < part.count; i++) {
+        part.getMatrixAt(i, m);
+        m.decompose(at, turn, scale);
+        found.push({ x: at.x, z: at.z, yaw: new THREE.Euler().setFromQuaternion(turn).y, sx: scale.x, sz: scale.z, mats });
+      }
     });
+    return found;
+  };
+
+  test("the return line runs over the headshunt's points, then as rail beside every track to the buffer", () => {
+    const l = layout(yard);
+    expect(l.tracks.length).toBeGreaterThan(0);
+    const laid = tiles(l);
     for (const t of l.tracks) {
+      const ends = turnout(t.at.x - HEADSHUNT, t.at.z);
       // An instance matrix is stored in float32: its z is the tile's within
       // rounding, well under a tile from any other rail.
-      const on = tiles.filter((p) => Math.abs(p.z - (t.at.z + RETURN_Z)) < 1e-4).map((p) => p.x);
-      // A tile a unit long: the first and last centres stand half a tile in
-      // from each end.
-      expect(Math.min(...on), t.key).toBeCloseTo(t.at.x - HEADSHUNT + 0.5, 6);
-      expect(Math.max(...on), t.key).toBeCloseTo(t.at.x + t.length - 0.5, 6);
+      const on = laid.filter((p) => Math.abs(p.z - (t.at.z + RETURN_Z)) < 1e-4 && p.x > ends.to.x).map((p) => p.x);
+      // The straight's tiles, each about a unit long: the first and last
+      // centres stand half a tile in from each end. To five places: at the
+      // far end a unit is millions of float32 steps from the origin.
+      const length = t.at.x + t.length - ends.to.x;
+      const step = length / Math.max(1, Math.round(length));
+      expect(Math.min(...on), t.key).toBeCloseTo(ends.to.x + step / 2, 5);
+      expect(Math.max(...on), t.key).toBeCloseTo(ends.to.x + length - step / 2, 5);
+      // The points' curve before it: short quiet tiles from the single track
+      // out to the return line, joining both tangentially.
+      const bent = laid
+        .filter((p) => p.x > ends.from.x - 0.01 && p.x < ends.to.x + 0.01 && p.z < t.at.z - 1e-4 && p.z > t.at.z + RETURN_Z + 1e-4)
+        .sort((a, b) => a.x - b.x);
+      expect(bent.length, t.key).toBeGreaterThan(2);
+      const straight = laid.find((p) => Math.abs(p.z - (t.at.z + RETURN_Z)) < 1e-4 && p.x > ends.to.x)!.yaw;
+      expect(Math.abs(bent[0]!.yaw - straight), t.key).toBeLessThan(0.2);
+      expect(Math.abs(bent.at(-1)!.yaw - straight), t.key).toBeLessThan(0.2);
+      expect(Math.max(...bent.map((p) => Math.abs(p.yaw - straight))), t.key).toBeGreaterThan(0.5);
+      for (const p of bent) {
+        expect(p.mats, t.key).toContain(paint("quietTrack"));
+        expect(p.sx, t.key).toBeLessThan(0.35);
+        expect(p.sz, t.key).toBeCloseTo(1, 6);
+      }
+    }
+  });
+
+  test("a siding's points are a curve that joins the main line and the stub tangentially", () => {
+    const l = layout(yard);
+    expect(l.sidings.length).toBeGreaterThan(0);
+    const laid = tiles(l);
+    for (const s of l.sidings) {
+      const main = s.at.z - SIDING_Z;
+      // The curve's tiles: between the main line and the stub, but none of
+      // the return line's straight rail where the points cross it.
+      const bent = laid
+        .filter((p) => p.x > s.at.x + SIDING_Z - 0.01 && p.x < s.at.x + 0.01 && p.z < main - 1e-4 && p.z > s.at.z + 1e-4 && Math.abs(p.z - (main + RETURN_Z)) > 1e-4)
+        .sort((a, b) => a.x - b.x);
+      expect(bent.length, s.key).toBeGreaterThan(2);
+      const straight = laid.find((p) => Math.abs(p.z - main) < 1e-4)!.yaw;
+      expect(Math.abs(bent[0]!.yaw - straight), s.key).toBeLessThan(0.2);
+      expect(Math.abs(bent.at(-1)!.yaw - straight), s.key).toBeLessThan(0.2);
+      expect(Math.max(...bent.map((p) => Math.abs(p.yaw - straight))), s.key).toBeGreaterThan(0.8);
+      // Short tiles of the main line's gauge, in its colours.
+      for (const p of bent) {
+        expect(p.mats, s.key).toContain(paint("track"));
+        expect(p.sx, s.key).toBeLessThan(0.35);
+        expect(p.sz, s.key).toBeCloseTo(1, 6);
+      }
     }
   });
 

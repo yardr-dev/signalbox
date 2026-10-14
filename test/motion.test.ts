@@ -3,6 +3,7 @@ import { PEER_LENGTH, RETURN_Z, SIDING_Z, SLOT_PITCH, type Person } from "../src
 import {
   along,
   brake,
+  curve,
   doing,
   exit,
   goods,
@@ -25,6 +26,7 @@ import {
   stride,
   STRIDE_MAX,
   turn,
+  turnout,
   TWEEN_MAX,
   TWEEN_MIN,
   walk,
@@ -38,6 +40,26 @@ import {
 // A track along z = 10 that ends at x = 66, and a siding's stub above it.
 const main = (x: number): Stop => ({ at: { x, z: 10 }, line: 10, end: 66 });
 const stub: Stop = { at: { x: 27, z: 10 + SIDING_Z }, line: 10, end: 66, mouth: { x: 19.3, z: 10 + SIDING_Z } };
+// The siding's points: the curve from its foot on the main line to its mouth.
+const foot = { x: 19.3 + SIDING_Z, z: 10 };
+const bend = curve(foot, stub.mouth!);
+
+describe("a curve between two straights", () => {
+  test("it leaves and joins tangentially, bending between", () => {
+    expect(bend[0]).toEqual(foot);
+    expect(bend.at(-1)).toEqual(stub.mouth);
+    // Through the middle exactly: over the return line, halfway along.
+    const middle = bend[bend.length >> 1]!;
+    expect(middle.x).toBeCloseTo((foot.x + stub.mouth!.x) / 2, 12);
+    expect(middle.z).toBeCloseTo(10 + SIDING_Z / 2, 12);
+    // Along the straights at both ends, steepest halfway over: a straight
+    // diagonal would be a quarter turn all the way.
+    const legs = bend.slice(0, -1).map((p, i) => heading(p, bend[i + 1]!));
+    expect(legs[0]).toBeLessThan(0.15);
+    expect(legs.at(-1)).toBeLessThan(0.15);
+    expect(Math.max(...legs)).toBeGreaterThan(1);
+  });
+});
 
 describe("the way a wagon takes", () => {
   test("forward, straight along the main line", () => {
@@ -45,9 +67,8 @@ describe("the way a wagon takes", () => {
   });
 
   test("into a siding over its points, and out the same way", () => {
-    const points = { x: 19.3 + SIDING_Z, z: 10 };
-    expect(route(main(15), stub)).toEqual([{ x: 15, z: 10 }, points, stub.mouth, stub.at]);
-    expect(route(stub, main(39))).toEqual([stub.at, stub.mouth, points, { x: 39, z: 10 }]);
+    expect(route(main(15), stub)).toEqual([{ x: 15, z: 10 }, ...bend, stub.at]);
+    expect(route(stub, main(39))).toEqual([stub.at, ...[...bend].reverse(), { x: 39, z: 10 }]);
   });
 
   test("back along the return line, off the main line and on again", () => {
@@ -86,21 +107,20 @@ describe("the way a wagon takes", () => {
   });
 
   test("an engine alone meets a siding's points where they cross the return line", () => {
-    const crossing = { x: stub.mouth!.x + RETURN_Z, z: 10 + RETURN_Z };
-    expect(route(stub, main(3), [], true)).toEqual([stub.at, stub.mouth, crossing, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, { x: 3, z: 10 }]);
-    expect(route(main(3), stub, [{ x: 15, z: 10 }], true)).toEqual([{ x: 3, z: 10 }, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, crossing, stub.mouth, stub.at]);
+    // The half of the curve an engine alone runs, each way.
+    const half = bend.slice(bend.length >> 1);
+    const down = [...half].reverse();
+    expect(route(stub, main(3), [], true)).toEqual([stub.at, ...down, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, { x: 3, z: 10 }]);
+    expect(route(main(3), stub, [{ x: 15, z: 10 }], true)).toEqual([{ x: 3, z: 10 }, { x: 3 - RETURN_Z, z: 10 + RETURN_Z }, ...half, stub.at]);
     // From further up the line it turns there, clear of the line.
-    expect(route(main(39), stub, [{ x: 30, z: 10 }], true).slice(1)).toEqual([{ x: 39 + RETURN_Z, z: 10 + RETURN_Z }, crossing, stub.mouth, stub.at]);
+    expect(route(main(39), stub, [{ x: 30, z: 10 }], true).slice(1)).toEqual([{ x: 39 + RETURN_Z, z: 10 + RETURN_Z }, ...half, stub.at]);
   });
 
   test("a wagon leaving a siding for an earlier platform uses the return line", () => {
     const way = route(stub, main(3));
-    expect(way.slice(0, 3)).toEqual([
-      stub.at,
-      stub.mouth,
-      { x: stub.mouth!.x + SIDING_Z, z: 10 },
-    ]);
-    expect(way.slice(3, 5).map((p) => p.z)).toEqual([10 + RETURN_Z, 10 + RETURN_Z]);
+    const over = [...bend].reverse();
+    expect(way.slice(0, over.length + 1)).toEqual([stub.at, ...over]);
+    expect(way.slice(over.length + 1, over.length + 3).map((p) => p.z)).toEqual([10 + RETURN_Z, 10 + RETURN_Z]);
     expect(way.at(-1)).toEqual({ x: 3, z: 10 });
   });
 
@@ -119,14 +139,66 @@ describe("the way a wagon takes", () => {
   test("along the way by length, turned with the rail and never round", () => {
     const way = route(main(15), stub);
     expect(along(way, 0)).toMatchObject({ x: 15, z: 10 });
-    expect(along(way, 1)).toMatchObject(stub.at);
-    const total = measure(way);
-    const onPoints = along(way, (1.7 + 1) / total);
-    expect(onPoints.angle).toBeCloseTo(Math.PI / 4);
-    expect(onPoints.z).toBeLessThan(10);
+    const end = along(way, 1);
+    expect(end.x).toBeCloseTo(stub.at.x, 12);
+    expect(end.z).toBeCloseTo(stub.at.z, 12);
+    // Over the points it is turned with the rail: steepest halfway over.
+    const middle = (bend.length - 1) / 2;
+    const over = (measure(way.slice(0, middle + 2)) + 0.1) / measure(way);
+    expect(along(way, over).angle).toBeGreaterThan(1);
     // Running back it keeps its nose forward.
     const back = along(route(main(39), main(15)), 0.5);
     expect(Math.abs(back.angle)).toBe(0);
+  });
+});
+
+describe("over the headshunt's points", () => {
+  // The headshunt at x = -12, the shunter parked at -10, the points past it.
+  const track = { line: 10, end: 66, head: -12 };
+  const single = (x: number): Stop => ({ at: { x, z: 10 }, ...track });
+  const aside = (x: number): Stop => ({ at: { x, z: 10 + RETURN_Z }, ...track });
+  const park = single(-10);
+  const ends = turnout(-12, 10);
+  const points = curve(ends.from, ends.to);
+
+  test("the points start clear of the parked shunter and run out to the return line", () => {
+    expect(ends.from.z).toBe(10);
+    expect(ends.to.z).toBe(10 + RETURN_Z);
+    expect(ends.from.x).toBeCloseTo(-8.8, 12);
+    expect(ends.to.x).toBeCloseTo(-6.2, 12);
+    expect(ends.from.x - park.at.x).toBeCloseTo(1.2, 12);
+  });
+
+  test("off the single track onto the return line, and back, over the points", () => {
+    const out = route(park, aside(15));
+    expect(out.slice(0, points.length)).toEqual([park.at, ...points.slice(1)]);
+    expect(out.at(-1)).toEqual(aside(15).at);
+    const home = route(aside(15), park);
+    expect(home[0]).toEqual(aside(15).at);
+    expect(home.slice(-points.length)).toEqual([...[...points].reverse().slice(1), park.at]);
+  });
+
+  test("round a wagon from the single track: over the points, off past the wagon", () => {
+    const way = route(park, single(39), [{ x: 15, z: 10 }]);
+    expect(way.slice(0, points.length)).toEqual([park.at, ...points.slice(1)]);
+    const rest = way.slice(points.length);
+    expect(rest[0]!.z).toBe(10 + RETURN_Z);
+    expect(rest[0]!.x).toBeGreaterThan(ends.to.x);
+    expect(rest.at(-1)).toEqual({ x: 39, z: 10 });
+  });
+
+  test("on the single track alone it stays on the main line", () => {
+    expect(route(park, single(-2))).toEqual([park.at, single(-2).at]);
+    expect(route(single(-2), park)).toEqual([single(-2).at, park.at]);
+  });
+
+  test("a stop that names no head goes across as before", () => {
+    expect(route(main(-10), { at: { x: 15, z: 10 + RETURN_Z }, line: 10, end: 66 })).toEqual([
+      { x: -10, z: 10 },
+      { x: 15 - (SLOT_PITCH - RETURN_Z), z: 10 },
+      { x: 15 - SLOT_PITCH, z: 10 + RETURN_Z },
+      { x: 15, z: 10 + RETURN_Z },
+    ]);
   });
 });
 
