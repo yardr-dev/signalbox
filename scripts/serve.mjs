@@ -341,7 +341,10 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
             listener.last = event.seq;
           }
         }
-        // The view ended its stream without a word; the next try says so.
+        // The view ended its stream without a word. Say so before trying
+        // again; an intentional close from the last listener is not a break.
+        if (signal.aborted) return;
+        failed("feed", new Error("stream ended"));
         broke = true;
       } catch (err) {
         if (signal.aborted) return;

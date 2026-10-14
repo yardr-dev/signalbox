@@ -297,6 +297,7 @@ describe("the feed", () => {
     // Every try it did not answer is on the terminal, and one line says the
     // line is back, and where from.
     expect(said).toEqual([
+      "signalbox: feed: stream ended",
       "signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791",
       "signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791",
       "signalbox: feed: http://yard/events?format=json&after=2: connect ECONNREFUSED 127.0.0.1:8791",
