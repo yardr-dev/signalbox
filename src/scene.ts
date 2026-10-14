@@ -155,19 +155,22 @@ function hash(text: string): number {
 // Lays one model many times as instances: a yard is mostly rail.
 class Rails {
   private readonly at: THREE.Matrix4[] = [];
+  private readonly quietAt: THREE.Matrix4[] = [];
 
   // A straight run from a point, at an angle on the ground (0 is along x).
-  run(from: Point, length: number, angle = 0) {
+  run(from: Point, length: number, angle = 0, quiet = false) {
     const turn = new THREE.Matrix4().makeRotationY(angle);
     const tiles = Math.max(1, Math.round(length));
     const step = length / tiles;
+    const at = quiet ? this.quietAt : this.at;
+    const width = quiet ? 0.8 : 1;
     for (let t = 0; t < tiles; t++) {
       const d = (t + 0.5) * step;
       const m = new THREE.Matrix4()
         .makeTranslation(from.x + Math.cos(angle) * d, 0, from.z - Math.sin(angle) * d)
         .multiply(turn)
-        .multiply(new THREE.Matrix4().makeScale(step, 1, 1));
-      this.at.push(m);
+        .multiply(new THREE.Matrix4().makeScale(step, 1, width));
+      at.push(m);
     }
   }
 
@@ -176,11 +179,21 @@ class Rails {
     tile.updateMatrixWorld(true);
     tile.traverse((part) => {
       if (!(part instanceof THREE.Mesh)) return;
-      const instances = new THREE.InstancedMesh(part.geometry, part.material, this.at.length);
-      // Rail lies on the ground: a shadow falls on it, and it throws none.
-      instances.receiveShadow = true;
-      this.at.forEach((m, i) => instances.setMatrixAt(i, m.clone().multiply(part.matrixWorld)));
-      group.add(instances);
+      const make = (at: THREE.Matrix4[], material: THREE.Material | THREE.Material[]) => {
+        if (at.length === 0) return;
+        const instances = new THREE.InstancedMesh(part.geometry, material, at.length);
+        // Rail lies on the ground: a shadow falls on it, and it throws none.
+        instances.receiveShadow = true;
+        at.forEach((m, i) => instances.setMatrixAt(i, m.clone().multiply(part.matrixWorld)));
+        group.add(instances);
+      };
+      make(this.at, part.material);
+      const subdued = (material: THREE.Material) => {
+        if (material === paint("track")) return paint("quietTrack");
+        if (material === paint("slate")) return paint("quietRail");
+        return material;
+      };
+      make(this.quietAt, Array.isArray(part.material) ? part.material.map(subdued) : subdued(part.material));
     });
     return group;
   }
@@ -457,11 +470,10 @@ export function draw(l: Layout, kit: Kit): Picture {
   for (const t of l.tracks) {
     // From the headshunt, where its shunter is parked, to the buffer.
     rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z }, t.length + HEADSHUNT);
-    // Its return line, laid as rail beside the main line, from the headshunt
-    // to the buffer: what runs round a wagon, and what is sent back, runs on
-    // rail. No points or crossovers: a siding's points cross it by lying
-    // over it.
-    rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z + RETURN_Z }, t.length + HEADSHUNT);
+    // Its quieter return line, laid as rail from the headshunt to the buffer:
+    // what runs round a wagon, and what is sent back, runs on rail. No points
+    // or crossovers: a siding's points cross it by lying over it.
+    rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z + RETURN_Z }, t.length + HEADSHUNT, 0, true);
     root.add(bufferStop(t.at.x - HEADSHUNT - 0.15, t.at.z));
     root.add(bufferStop(t.at.x + t.length + 0.15, t.at.z));
     // Above the track's left end, clear of what stands at its first platform.

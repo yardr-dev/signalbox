@@ -25,6 +25,9 @@ const day = {
   bed: 0xe8e1d2,
   // A sleeper: laid end to end they are the ribbon a track reads as.
   track: 0x968f85,
+  // A return line: the same rail, quieter, so it stays behind the running line.
+  quietTrack: 0xb8b4ac,
+  quietRail: 0xa8a59f,
   platform: 0xd2cfc9,
   // A flow's last platform.
   terminal: 0xf7f4ee,
@@ -45,6 +48,8 @@ const night: Record<Tone, number> = {
   ground: 0x141923,
   bed: 0x1c2330,
   track: 0x626b7e,
+  quietTrack: 0x515a6b,
+  quietRail: 0x495264,
   platform: 0x353e4f,
   terminal: 0x465064,
   wall: 0x8f98ab,

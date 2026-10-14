@@ -119,7 +119,7 @@
   together, a job the shunter's ways for it (fetch, pull, release, return),
   `Shunter` the queue of one engine. The planner checks each way of the
   shunter against the wagons that stand, and takes the return line where the
-  main line would put it on one. The return line is laid as rail beside
+  main line would put it on one. A quieter return line is laid as rail beside
   every track, from the headshunt to the buffer, with no points: where a
   siding's points cross it they only lie over it.
 - `src/scene.ts` draws a layout: `draw` what stands still, `refuel` the coal

@@ -866,6 +866,32 @@ describe("the rails of a track", () => {
       expect(Math.max(...on), t.key).toBeCloseTo(t.at.x + t.length - 0.5, 6);
     }
   });
+
+  test("the return line uses quieter sleepers and rails than the running line", () => {
+    const l = layout(yard);
+    const running = new Set<THREE.Material>();
+    const returns = new Set<THREE.Material>();
+    draw(l, kit).root.traverse((part) => {
+      if (!(part instanceof THREE.InstancedMesh)) return;
+      let onRunning = false;
+      let onReturn = false;
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < part.count; i++) {
+        const z = new THREE.Vector3().setFromMatrixPosition(part.getMatrixAt(i, m)).z;
+        if (l.tracks.some((t) => Math.abs(z - t.at.z) < 1e-4)) onRunning = true;
+        if (l.tracks.some((t) => Math.abs(z - (t.at.z + RETURN_Z)) < 1e-4)) onReturn = true;
+      }
+      const materials = Array.isArray(part.material) ? part.material : [part.material];
+      if (onRunning) materials.forEach((material) => running.add(material));
+      if (onReturn) materials.forEach((material) => returns.add(material));
+    });
+    expect(running).toContain(paint("track"));
+    expect(running).toContain(paint("slate"));
+    expect(returns).toContain(paint("quietTrack"));
+    expect(returns).toContain(paint("quietRail"));
+    expect(returns).not.toContain(paint("track"));
+    expect(returns).not.toContain(paint("slate"));
+  });
 });
 
 describe("the figures of the stock", () => {
