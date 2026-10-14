@@ -28,9 +28,9 @@ wagon, couples, and pulls it to the next platform, into a siding over the
 points, back along the return line, or out past the buffer when the bead
 reached the flow's last stage. Then it runs home, or straight to the next
 wagon if one waits. The shunter is always before the wagon the way they go.
-It is on the rail where that is free and beside it on the return line where
-a wagon stands or the rail ends, and where the way turns back (out of a
-siding and on up the line) it runs round the wagon. It is never turned
+It is on the main line where that is free and on the return line beside
+it where a wagon stands or the rail ends, and where the way turns back
+(out of a siding and on up the line) it runs round the wagon. It is never turned
 round, and it is never drawn on a wagon. A job is about three seconds at
 1x, a second at 10x and more. A shunter takes three jobs in order. With
 more than three before it, and on a scrub, the wagons stand at once where

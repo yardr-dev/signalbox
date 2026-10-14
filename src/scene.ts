@@ -17,6 +17,7 @@ import {
   PEER_RAIL_Z,
   people,
   PLATFORM_LENGTH,
+  RETURN_Z,
   SHED_WIDTH,
   SIDING_Z,
   type Layout,
@@ -456,6 +457,11 @@ export function draw(l: Layout, kit: Kit): Picture {
   for (const t of l.tracks) {
     // From the headshunt, where its shunter is parked, to the buffer.
     rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z }, t.length + HEADSHUNT);
+    // Its return line, laid as rail beside the main line, from the headshunt
+    // to the buffer: what runs round a wagon, and what is sent back, runs on
+    // rail. No points or crossovers: a siding's points cross it by lying
+    // over it.
+    rails.run({ x: t.at.x - HEADSHUNT, z: t.at.z + RETURN_Z }, t.length + HEADSHUNT);
     root.add(bufferStop(t.at.x - HEADSHUNT - 0.15, t.at.z));
     root.add(bufferStop(t.at.x + t.length + 0.15, t.at.z));
     // Above the track's left end, clear of what stands at its first platform.

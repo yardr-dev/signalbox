@@ -5,7 +5,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import snapshot from "../public/yard.json";
 import { banded, CHIMNEY, COLOUR, coloured, accented, flat, HAT, loadKit, SILO_HEIGHT, TINT, toned, type Kit, type Part } from "../src/kit";
-import { HEADSHUNT, layout, people, PLACE_X, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
+import { HEADSHUNT, layout, people, PLACE_X, RETURN_Z, SHED_WIDTH, type Gate, type Shed } from "../src/layout";
 import { GOODS_END, goodsSeconds, PUFF_SECONDS, PUFFS, RUN_OUT, TWEEN_MIN, WALK_MAX } from "../src/motion";
 import { accents, building, dress, engine, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stand, steam, tinted, weathering, type Accent, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
@@ -842,6 +842,29 @@ describe("the box the first view holds", () => {
     const { min, max } = draw(layout(bare), kit).bounds;
     expect(min.y).toBe(0);
     expect(max.y).toBeGreaterThanOrEqual(new THREE.Box3().setFromObject(draw(layout(bare), kit).root).max.y);
+  });
+});
+
+describe("the rails of a track", () => {
+  test("the return line is laid as rail beside every track, from the headshunt to the buffer", () => {
+    const l = layout(yard);
+    expect(l.tracks.length).toBeGreaterThan(0);
+    // Where the laid tiles stand: where each of the rails' instances stands.
+    const tiles: THREE.Vector3[] = [];
+    draw(l, kit).root.traverse((part) => {
+      if (!(part instanceof THREE.InstancedMesh)) return;
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < part.count; i++) tiles.push(new THREE.Vector3().setFromMatrixPosition(part.getMatrixAt(i, m)));
+    });
+    for (const t of l.tracks) {
+      // An instance matrix is stored in float32: its z is the tile's within
+      // rounding, well under a tile from any other rail.
+      const on = tiles.filter((p) => Math.abs(p.z - (t.at.z + RETURN_Z)) < 1e-4).map((p) => p.x);
+      // A tile a unit long: the first and last centres stand half a tile in
+      // from each end.
+      expect(Math.min(...on), t.key).toBeCloseTo(t.at.x - HEADSHUNT + 0.5, 6);
+      expect(Math.max(...on), t.key).toBeCloseTo(t.at.x + t.length - 0.5, 6);
+    }
   });
 });
 

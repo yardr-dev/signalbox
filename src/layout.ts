@@ -44,8 +44,9 @@ export const SHED_Z = 3.4;
 export const SIDING_Z = -2.6;
 export const SIDING_PLATFORM_Z = -4.1;
 export const SIDING_SHED_Z = -6;
-// The return line: where a wagon sent back runs, between the main line and
-// the sidings' stubs. It is a way and no rail: nothing is laid there.
+// The return line: a running line beside the main line, between it and the
+// sidings' stubs, laid as rail from the headshunt to the buffer. Where a
+// wagon sent back runs, and where a shunter runs round what stands.
 export const RETURN_Z = -1.3;
 
 // A group's building stands on a plot this wide from its platform's left
