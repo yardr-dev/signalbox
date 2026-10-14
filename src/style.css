@@ -302,7 +302,7 @@ body.replay #card {
   left: 50%;
   transform: translateX(-50%);
   box-sizing: border-box;
-  width: min(880px, calc(100vw - 20px));
+  width: min(1400px, 92vw);
   max-height: calc(100% - 24px);
   overflow: auto;
   border-radius: 4px;
@@ -369,6 +369,7 @@ body.replay #board {
   font-weight: 400;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: rgb(255 255 255 / 0.72);
 }
 
@@ -379,12 +380,13 @@ body.replay #board {
 }
 
 #board td.time {
+  min-width: 64px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 #board td.badge {
-  max-width: 130px;
+  max-width: 168px;
 }
 
 #board td.badge span {
@@ -402,14 +404,28 @@ body.replay #board {
   background: #eb0000;
 }
 
+#board td.dest {
+  /* The one column that gives: every other holds its heading on one line. */
+  width: 100%;
+}
+
 #board td.dest .via {
   font-size: 12px;
   color: rgb(255 255 255 / 0.72);
 }
 
-#board td.platform,
-#board td.line {
+#board td.platform {
+  min-width: 88px;
   white-space: nowrap;
+}
+
+#board td.line {
+  min-width: 72px;
+  white-space: nowrap;
+}
+
+#board td.remarks {
+  min-width: 80px;
 }
 
 #board td.remarks .amber {
