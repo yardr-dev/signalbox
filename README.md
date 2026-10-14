@@ -82,9 +82,12 @@ page, [docs/code.md](docs/code.md) each of these files at length.
 
 ## Licence
 
-Apache 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)). The kits are Kenney's,
-CC0, each with its licence in `public/kit/`.
+Source-available under the Functional Source License, FSL-1.1-ALv2
+([LICENSE](LICENSE), [NOTICE](NOTICE)): use, change and run it for anything
+except a competing product or service; each release becomes Apache 2.0 two
+years after it was made available. The kits are Kenney's, CC0, each with
+its licence in `public/kit/`.
 
 The licence covers the code. It does not cover the names yardr and signalbox
-or the ram, which are the project's marks (Apache 2.0, section 6): a fork
-takes a name and a mark of its own.
+or the ram, which are the project's marks (the FSL's Trademarks clause): a
+fork takes a name and a mark of its own.
