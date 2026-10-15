@@ -386,6 +386,17 @@ describe("the feed", () => {
     expect(said[0]).toBe("signalbox: feed: the stream did not open");
   });
 
+  test("the first-byte bound spans a slow response header", async () => {
+    const fetch = async () => {
+      await new Promise((go) => setTimeout(go, 400));
+      return new Response(new ReadableStream({ start() {} }), { headers: { "content-type": "text/event-stream" } });
+    };
+    const run = yardr("http://yard", fetch);
+    const began = performance.now();
+    await expect(follow(run, 0, undefined, { open: 600, idle: 1000 }).next()).rejects.toThrow("the stream did not open");
+    expect(performance.now() - began).toBeLessThan(800);
+  });
+
   test("a quiet yard that is still here keeps its line: no retry, no log line", async () => {
     const asked = [];
     const beats = [];

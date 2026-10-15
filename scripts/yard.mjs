@@ -91,6 +91,8 @@ async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_I
   const giveUp = () => attempt.abort(signal?.reason);
   signal?.addEventListener("abort", giveUp, { once: true });
   if (signal?.aborted) giveUp();
+  const openUntil = performance.now() + open;
+  const openingWait = () => Math.max(0, openUntil - performance.now());
   const asked = (waited, what) => {
     let late;
     const ended = new Promise((_, fail) => {
@@ -99,7 +101,7 @@ async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_I
     return [ended, () => clearTimeout(late)];
   };
   try {
-    const [opening, opened] = asked(open, "the stream did not open");
+    const [opening, opened] = asked(openingWait(), "the stream did not open");
     const body = await Promise.race([run.open(`/events?format=json&after=${after}`, attempt.signal), opening]).finally(opened);
     const reader = body.pipeThrough(new TextDecoderStream()).getReader();
     let text = "";
@@ -108,7 +110,7 @@ async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_I
     let first = true;
     try {
       for (;;) {
-        const [silent, heard] = asked(first ? open : idle, first ? "the stream did not open" : "the stream went silent");
+        const [silent, heard] = asked(first ? openingWait() : idle, first ? "the stream did not open" : "the stream went silent");
         let read;
         try {
           read = await Promise.race([reader.read(), silent]);
