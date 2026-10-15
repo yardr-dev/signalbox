@@ -65,7 +65,7 @@ const made = document.getElementById("demo")!;
 const speeds = document.getElementById("speeds")!;
 const mute = document.getElementById("sound")!;
 const dusk = document.getElementById("night")!;
-const departures = document.getElementById("departures")!;
+const arrivals = document.getElementById("arrivals")!;
 const board = document.getElementById("board")!;
 const boardRows = document.getElementById("board-rows")!;
 const boardClose = document.getElementById("board-close")!;
@@ -253,8 +253,9 @@ async function start() {
   if (api) first?.follow();
   const stock = new Stock(plan(first ? first.state : yard, first?.clock), kit, picture.sheds);
 
-  // The departure board: the beads in progress now, a replay's state or the
-  // snapshot's own. All of it is text of the yard: none is markup.
+  // The arrivals board: the beads in progress and when they are expected,
+  // a replay's state or the snapshot's own. All of it is text of the yard:
+  // none is markup.
   let beadsNow: () => Bead[] = () => yard.beads;
   const paintBoard = () => {
     const cell = (name: string, text: string) => {
@@ -296,13 +297,13 @@ async function start() {
   const showBoard = () => {
     paintBoard();
     board.hidden = false;
-    departures.setAttribute("aria-pressed", "true");
+    arrivals.setAttribute("aria-pressed", "true");
   };
   const hideBoard = () => {
     board.hidden = true;
-    departures.setAttribute("aria-pressed", "false");
+    arrivals.setAttribute("aria-pressed", "false");
   };
-  departures.addEventListener("click", () => (board.hidden ? showBoard() : hideBoard()));
+  arrivals.addEventListener("click", () => (board.hidden ? showBoard() : hideBoard()));
   boardClose.addEventListener("click", hideBoard);
 
   // A flat ground with nothing behind it: the background is the ground, and

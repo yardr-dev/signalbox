@@ -1,5 +1,6 @@
-// The departure board: the beads in progress as rows of a station board,
-// pure. main.ts opens it over the 3D view from the bar's button and draws
+// The arrivals board: the beads in progress and when they are expected as
+// rows of a station board, pure. main.ts opens it over the 3D view from the
+// bar's button and draws
 // what these functions return; the demo's replay reads the same rows from
 // its states as the live page does from the yard.
 

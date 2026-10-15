@@ -293,9 +293,10 @@ body.replay #card {
   color: #4f5a66;
 }
 
-/* The departure board, over the yard: a deep blue board in white condensed
-   type, its header a red band. Its own colours, by day and by night, like
-   the boards it is styled after. The scene keeps running behind it. */
+/* The arrivals board: the beads in progress and when they are expected, over
+   the yard. A deep blue board in white condensed type, its header a red
+   band. Its own colours, by day and by night, like the boards it is styled
+   after. The scene keeps running behind it. */
 #board {
   position: fixed;
   top: 12px;

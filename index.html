@@ -25,16 +25,16 @@
       <button id="sound" type="button" aria-pressed="false">Sound</button>
       <!-- The night palette, where the reader's system does not say. -->
       <button id="night" type="button" aria-pressed="false">Night</button>
-      <!-- The departure board: the beads in progress, over the yard. -->
-      <button id="departures" type="button" aria-pressed="false">Departures</button>
+      <!-- The arrivals board: the beads in progress and when they are expected, over the yard. -->
+      <button id="arrivals" type="button" aria-pressed="false">Arrivals</button>
       <input id="scrub" type="range" min="0" value="0" step="1000" aria-label="Time of the yard" />
       <output id="clock"></output>
       <output id="event"></output>
     </div>
-    <!-- The departure board: the beads in progress, over the yard. The scene
+    <!-- The arrivals board: the beads in progress and when they are expected, over the yard. The scene
          keeps running behind it; a close button and Escape close it. -->
-    <div id="board" role="dialog" aria-label="Departures" hidden>
-      <div class="band"><h2>Departures</h2><button id="board-close" type="button">Close</button></div>
+    <div id="board" role="dialog" aria-label="Arrivals" hidden>
+      <div class="band"><h2>Arrivals</h2><button id="board-close" type="button">Close</button></div>
       <table>
         <thead>
           <tr>

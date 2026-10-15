@@ -130,7 +130,8 @@
   and figures, which it moves from one state to the next, each figure with a
   mixer of its own: one clip at a time, faded into the next. `src/main.ts` is the
   page: camera, pan and zoom, labels, the bead under the pointer, the card
-  of the bead that was clicked, the bar, the departure board over the yard.
+  of the bead that was clicked, the bar, the arrivals board: the beads in
+  progress and when they are expected, over the yard.
   `src/card.ts` builds the card's text, pure: from the yard's answer, or
   from the snapshot's bead alone. `src/board.ts` builds the board's rows,
   pure: what is in progress, ordered by expected arrival where the yard

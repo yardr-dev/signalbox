@@ -13,9 +13,9 @@ made-up yard and one day of it (`public/yard.json`, written by
 opens at the window's start, paused. The bar at the bottom plays and pauses,
 sets the speed (60x makes an hour a minute), and scrubs over the window; it
 shows the yard's clock in your own time and the last event in one line.
-Departures on the bar opens the board of the beads in progress over the
-yard, which follows the replay as it is scrubbed; a close button and Escape
-close it. Without `events.json` the page is the still picture of `yard.json`.
+Arrivals on the bar opens the arrivals board over the yard: the beads in
+progress and when they are expected, following the replay as it is
+scrubbed; a close button and Escape close it. Without `events.json` the page is the still picture of `yard.json`.
 
 Sound on the bar turns the yard's sounds on, and the browser remembers it:
 a whistle when a bead lands (the advance into merged, or a close as merged), a bell when a session
