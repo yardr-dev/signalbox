@@ -107,8 +107,36 @@ After a landing, the yard's stage `merged` runs yardr's
 builds this repository's Dockerfile: it runs `npm ci` and `npm run build`
 on Node 24 and copies `dist/` into an nginx image, which serves the built
 page as plain files on port 80 (the demo yard, as from any static server).
-The bead's note then carries the address, and `live` closes the bead. The
-host and the key are the yard's, not this repository's: neither is here.
+
+Then the deploy runs `scripts/serve-public.sh` in the operator's checkout
+on the yard's Mac: it pulls the base, `npm ci`, `npm run build`, restarts
+the server below and checks the served page is the built one and its feed
+is the yard's. `live` means that page serves the landed build: the bead's
+note carries the commit and the address, and the stage fails with the
+script's words when the page does not come back. The host and the key are
+the yard's, not this repository's: neither is here.
+
+## The yard's public page
+
+The public page is the server in the operator's checkout, reached through
+the Cloudflare tunnel of "The public" above:
+
+    YARDR_WEB=http://127.0.0.1:8791 YARDR_HOME=~/.yardr \
+      node scripts/serve.mjs --host 0.0.0.0 --port 8792 \
+      >> ~/.yardr/logs/signalbox-serve.log 2>&1
+
+Its pid is in `~/.yardr/signalbox/serve.pid`, beside the yard's slots.
+Nobody starts it by hand: `scripts/serve-public.sh` restarts it after
+every landing (above), and a login service after a reboot:
+`contrib/dev.yardr.signalbox-serve.plist`, copied to
+`~/Library/LaunchAgents` and loaded once:
+
+    cp contrib/dev.yardr.signalbox-serve.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.yardr.signalbox-serve.plist
+
+It runs the script's `--start-only` at login (no pull, no build: the last
+deployed build is served again), and again while its checks fail. When the
+checkout moves, the plist's paths move with it.
 
 ## What the page shows
 

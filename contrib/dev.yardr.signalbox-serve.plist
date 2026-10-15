@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The yard's public signalbox page after a reboot: scripts/serve-public.sh
+     --start-only in the operator's checkout, which restarts the server and
+     checks the page it serves. No pull and no build: the last deployed
+     build is served again. The yardmaster installs this file (it is not run
+     from here): copy it to ~/Library/LaunchAgents and load it once; when
+     the checkout moves, the paths below move with it. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.yardr.signalbox-serve</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>/Users/mckean/projects/repos/signalbox/scripts/serve-public.sh</string>
+		<string>--start-only</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/mckean</string>
+		<key>PATH</key>
+		<string>/Users/mckean/go/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>YARDR_HOME</key>
+		<string>/Users/mckean/.yardr</string>
+		<key>YARDR_WEB</key>
+		<string>http://127.0.0.1:8791</string>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/mckean/projects/repos/signalbox</string>
+	<key>StandardOutPath</key>
+	<string>/Users/mckean/.yardr/logs/signalbox-serve.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/mckean/.yardr/logs/signalbox-serve.log</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- Until the checks pass: the yard's view may be down when this runs
+	     at login. A passing run exits 0 and is left alone; nothing watches
+	     the server after that, and the deploy restarts it by its pid file. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<!-- The job ends when the server is up; the server is not its to kill.
+	     Without this, launchd kills what it started with it. -->
+	<key>AbandonProcessGroup</key>
+	<true/>
+</dict>
+</plist>
