@@ -332,6 +332,100 @@ describe("the feed", () => {
     });
   });
 
+  test("a view that accepts and never answers is asked again, within the bound", async () => {
+    const asked = [];
+    const fetch = async (url) => {
+      const { pathname, search } = new URL(url);
+      asked.push(pathname + search);
+      // The lists answer; the stream accepts and never writes a byte.
+      if (pathname !== "/events") return Response.json({ peers: [], head: 0 });
+      return new Promise(() => {});
+    };
+    const run = yardr("http://yard", fetch);
+    const of = { head: () => head(run), follow: (after, signal) => follow(run, after, signal, { open: 20, idle: 50 }) };
+    const s = await start(of);
+    const said = await terminal(async (said) => {
+      const page = await listen(`${s.url}/api/feed?after=0`);
+      await until(() => asked.filter((a) => a.startsWith("/events")).length >= 2 && said.length >= 1);
+      page.close();
+    });
+    expect(said[0]).toBe("signalbox: feed: the stream did not open");
+  });
+
+  test("a view that answers headers then goes silent is asked again, within the bound", async () => {
+    const asked = [];
+    const streams = new Set();
+    const fetch = async (url, { signal } = {}) => {
+      const { pathname, search } = new URL(url);
+      asked.push(pathname + search);
+      if (pathname !== "/events") return Response.json({ peers: [], head: 0 });
+      let stream;
+      const body = new ReadableStream({
+        start(controller) {
+          stream = controller;
+          streams.add(stream);
+          // Headers, then never a byte.
+          signal?.addEventListener("abort", () => {
+            if (streams.delete(stream)) controller.error(signal.reason);
+          });
+        },
+        cancel: () => void streams.delete(stream),
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    };
+    const run = yardr("http://yard", fetch);
+    const of = { head: () => head(run), follow: (after, signal) => follow(run, after, signal, { open: 20, idle: 50 }) };
+    const s = await start(of);
+    const said = await terminal(async (said) => {
+      const page = await listen(`${s.url}/api/feed?after=0`);
+      await until(() => asked.filter((a) => a.startsWith("/events")).length >= 2 && said.length >= 1);
+      // The tries that timed out hold no stream: each was taken back.
+      expect(streams.size).toBeLessThanOrEqual(1);
+      page.close();
+    });
+    expect(said[0]).toBe("signalbox: feed: the stream did not open");
+  });
+
+  test("a quiet yard that is still here keeps its line: no retry, no log line", async () => {
+    const asked = [];
+    const beats = [];
+    const text = new TextEncoder();
+    const fetch = async (url, { signal } = {}) => {
+      const { pathname, search } = new URL(url);
+      asked.push(pathname + search);
+      if (pathname !== "/events") return Response.json({ peers: [], head: 0 });
+      const body = new ReadableStream({
+        start(controller) {
+          // As the view opens a stream: when to come back, then a heartbeat
+          // every few milliseconds, and never an event.
+          controller.enqueue(text.encode("retry: 500\n\n"));
+          const beat = setInterval(() => {
+            try {
+              controller.enqueue(text.encode(": still here\n\n"));
+            } catch {
+              clearInterval(beat);
+            }
+          }, 15);
+          beats.push(beat);
+          signal?.addEventListener("abort", () => clearInterval(beat), { once: true });
+        },
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    };
+    const run = yardr("http://yard", fetch);
+    const of = { head: () => head(run), follow: (after, signal) => follow(run, after, signal, { open: 50, idle: 100 }) };
+    const s = await start(of);
+    const said = await terminal(async () => {
+      const page = await listen(`${s.url}/api/feed?after=0`);
+      // Past several idle windows: heartbeats are activity, not silence.
+      await new Promise((go) => setTimeout(go, 350));
+      expect(asked.filter((a) => a.startsWith("/events"))).toHaveLength(1);
+      page.close();
+    });
+    expect(said).toEqual([]);
+    for (const beat of beats) clearInterval(beat);
+  });
+
   test("what answers on the view's port and is no stream is no feed", async () => {
     const y = yard(span(1, 2));
     const run = yardr("http://yard", async () => new Response("<!doctype html>", { headers: { "content-type": "text/html" } }));

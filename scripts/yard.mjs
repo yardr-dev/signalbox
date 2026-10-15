@@ -23,6 +23,15 @@ export const WEB = "http://127.0.0.1:8791";
 // How long the view has for a list, and for the window of its log.
 const PATIENCE = 30_000;
 
+// How long the view has for a stream's first bytes, and then between two
+// writes. A view that accepts and never answers (wedged at startup), or
+// answers headers and goes silent without closing, is an error the caller
+// asks again, with backoff, not a wait without end. Quiet yards stay: the
+// view writes ': still here' every 20s, so every write counts, heartbeat
+// or event, and only a silence longer than idle is a wedged view.
+export const STREAM_OPEN = 10_000;
+export const STREAM_IDLE = 45_000;
+
 // A session's name on the page: the same for the same session in every
 // answer, so a start in the snapshot pairs with its end in the feed, and
 // across a restart of the serve script. Not the yard's own name for it.
@@ -71,41 +80,72 @@ export function yardr(web = process.env.YARDR_WEB || WEB, ask = fetch) {
 // retained event once and in order, then each one as it happens, for as long
 // as the caller reads. Each as the yard has it, not cut down yet. It ends
 // when the view does (it was stopped), and whoever reads on asks again after
-// the last one it got.
-async function* stream(run, after, signal) {
-  const body = await run.open(`/events?format=json&after=${after}`, signal);
-  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
-  let text = "";
-  let data = [];
+// the last one it got. wait names how long the view has, first for its
+// first bytes (open) and then between two writes (idle); past either the
+// stream is an error, and the caller asks again.
+async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_IDLE } = {}) {
+  // This try alone is timed out: the caller's signal ends the stream, and a
+  // timeout ends the try, takes the question back, and fails it, so a wedged
+  // view holds neither the caller nor a connection.
+  const attempt = new AbortController();
+  const giveUp = () => attempt.abort(signal?.reason);
+  signal?.addEventListener("abort", giveUp, { once: true });
+  if (signal?.aborted) giveUp();
+  const asked = (waited, what) => {
+    let late;
+    const ended = new Promise((_, fail) => {
+      late = setTimeout(() => (attempt.abort(new Error(what)), fail(new Error(what))), waited);
+    });
+    return [ended, () => clearTimeout(late)];
+  };
   try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      text += value;
-      const lines = text.split(/\r\n|\n|\r/);
-      // The last one may go on in the next piece.
-      text = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-        // An empty line ends a message. One with no data is a comment, or
-        // the stream's word on when to come back.
-        if (line !== "" || data.length === 0) continue;
-        const said = data.join("\n");
-        data = [];
-        yield JSON.parse(said);
+    const [opening, opened] = asked(open, "the stream did not open");
+    const body = await Promise.race([run.open(`/events?format=json&after=${after}`, attempt.signal), opening]).finally(opened);
+    const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+    let text = "";
+    let data = [];
+    // Until the first write the stream is still opening.
+    let first = true;
+    try {
+      for (;;) {
+        const [silent, heard] = asked(first ? open : idle, first ? "the stream did not open" : "the stream went silent");
+        let read;
+        try {
+          read = await Promise.race([reader.read(), silent]);
+        } finally {
+          heard();
+        }
+        first = false;
+        const { value, done } = read;
+        if (done) return;
+        text += value;
+        const lines = text.split(/\r\n|\n|\r/);
+        // The last one may go on in the next piece.
+        text = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+          // An empty line ends a message. One with no data is a comment, or
+          // the stream's word on when to come back.
+          if (line !== "" || data.length === 0) continue;
+          const said = data.join("\n");
+          data = [];
+          yield JSON.parse(said);
+        }
       }
+    } finally {
+      // A caller that has enough hangs up.
+      await reader.cancel().catch(() => {});
     }
   } finally {
-    // A caller that has enough hangs up.
-    await reader.cancel().catch(() => {});
+    signal?.removeEventListener("abort", giveUp);
   }
 }
 
 // The yard's events after a sequence number, each cut down as the replay
 // reads it, for as long as the view streams them: what the serve script's
-// feed passes on.
-export async function* follow(run, after, signal) {
-  for await (const raw of stream(run, after, signal)) yield eventOf(raw, alias);
+// feed passes on. wait bounds the stream as stream's does.
+export async function* follow(run, after, signal, wait) {
+  for await (const raw of stream(run, after, signal, wait)) yield eventOf(raw, alias);
 }
 
 // The yard's newest sequence number: where "from now" is.
