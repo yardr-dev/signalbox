@@ -23,6 +23,18 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    runs the copy on the depot's base, not yours: an edit to that script is
    tested by your run alone.
    Every bug you find or fix gets a regression test.
+   Before you write a new test function, find the test that already
+   drives that path and add your case to it (a row in its table, a step in
+   its sequence); write a new function only where none does, and say in
+   your note which you extended.
+   A new test earns its seconds and its stability: drive the behaviour
+   through the cheapest setup that pins it (a function call, then a
+   throwaway store, then a stand-in; a process, a sleep, or a build only
+   where nothing cheaper reaches the behaviour), and wait on the effect,
+   not on wall time. A test that fails only under load is suspect: file
+   it from the flaky line, say in the finding whether it is the product
+   or the test, with evidence, and fix it there, not on the bead it
+   blocked.
 4. Test anything that starts agents or servers in an isolated environment,
    never mckean's own session:
    - Run it under `env -i` with only what it needs: its own home, config and
@@ -53,6 +65,19 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    The reviewer goes by that line instead of running the tests again, so it
    must be true of the commit you hand on: commit after it, and you run them
    again.
+   After the test line, one last line: `Friction: <what>`, the one thing
+   that cost you most on this bead and where (a gap in the bead, a slow or
+   flaky test, a tool that misbehaved), or `Friction: none`. One thing,
+   concrete enough to fix; the shaper reads these lines each week to
+   change specs, roles and tools.
+
+Never leave evidence or anything a later stage must read in /tmp, where the
+next cleanup takes it: put a picture on the note with --file, and anything
+else in the worktree.
+
+While you work, a line may arrive naming a note added to your bead: read it
+with `yardr bead show <id>` and ack it with `yardr bead note <id> --ack <seq>`;
+a note by yardmaster or mckean changes the bead.
 
 Each command you run starts a new shell, so a variable set in an earlier
 command is empty in a later one, and `rm -rf "$S"/x` there deletes `/x`. Set
@@ -62,6 +87,34 @@ fails when it is empty: `S=<dir>; rm -rf "${S:?}"/x`.
 If you are stuck and the stage offers no outcome for it:
 `yardr bead note <id> "..."`, then `yardr bead hold <id>`; a hold reaches the
 yardmaster's inbox.
+
+## A screenshot, where the bead asks for one
+
+Where the bead asks for a shot of a web page, take one inside your session,
+after your last commit and your test run, and attach it to the note:
+
+- Serve the page from the worktree, the depot's own way (signalbox's is
+  `npm run build` and a static server over `dist/`, or `npm run live`),
+  on a free loopback port bound to 127.0.0.1, and stop the server by pid
+  after the shot.
+- Shoot it at 1280x800 with headless Chrome: `contrib/shot/shot <url>
+  <file>` from a yardr checkout (`yardr depot show yardr` names its path)
+  keeps the flags (`--headless --screenshot=<file> --window-size=1280,800`)
+  and refuses a missing page or an unwritable file with its reason. Where
+  the page needs driving first (a click, a scroll), drive it with
+  `agent-browser` and shoot with `agent-browser screenshot`. A depot may
+  carry its own shot script instead: the depot's README or `.yardr/depot.md`
+  names it.
+- Never shoot a deployed preview, wherever it is hosted: the preview stage
+  deploys after review, so at build time it shows the previous push, or
+  nothing yet.
+- Confirm the shot mechanically: the file exists, is non-empty, and 1280x800
+  (`file` names a PNG's dimensions).
+- Note what the shot shows, in words first (what was opened, at what size,
+  what to look at), with the short SHA of the commit it was shot at
+  (`git rev-parse --short HEAD`), and attach it:
+  `yardr bead note <id> "<words>" --file /tmp/shot-<bead>.png`. The note's
+  file is the record, not the local path.
 
 ## Something outside your bead
 
@@ -85,8 +138,22 @@ yardmaster's inbox.
 If you work in a directory depot (the brief says which kind of depot it is): no
 branches, no commits. You work in the depot's directory itself, where other
 beads may be at work too, so touch only the files and folders your bead names.
-Run the depot's test command with `YARDR_LANDING=1` (the brief prints it as
-`test:`). A depot with none has no command for you: run the project's tests
-as its developers do, and say in your note what you ran. Nothing lands from a
-directory depot, so no later stage runs it for you. The test line has no
-commit. Steps 3 and 5 apply only as far as that.
+Run the depot's test command there if it has one (the brief prints it as
+`test:`): nothing lands from a directory depot, so no later stage runs it for
+you. The test line has no commit. Steps 3 and 5 apply only as far as that.
+
+## The Go build cache is shared
+
+Never run `go clean -cache`, and never delete under `~/Library/Caches/go-build`
+(or `$GOCACHE`): every builder, reviewer and the landing on this machine
+reads that cache, and a file taken from under a running build fails it with
+"could not import ... go-build/...: no such file". A measurement that needs a
+cold cache takes a private one: `GOCACHE=$(mktemp -d) go test ...`, and says
+so in its note.
+
+## Waiting on something
+
+Waiting on something that will wake you (a background command)? Run
+`yardr session snooze 10m "<what>"` before you end your turn, so the yard
+does not take you for stuck and prod you. A snooze lasts 15m at most, three
+in a row.
