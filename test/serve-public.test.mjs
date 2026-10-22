@@ -1,9 +1,10 @@
 // The public page's script (scripts/serve-public.sh): what its checks say of
 // the served page and the feed, that a restart stops the server by its pid
-// file, and that a build starts from a clean checkout alone. It runs over a
-// checkout of the tree's shape with a page of two files, against servers in
-// this file and a yardr that is a stand-in: nothing of this session's (no
-// yard, no view, no real yardr) is asked.
+// file or through launchd when the job is loaded, and that a build starts
+// from a clean checkout alone. It runs over a checkout of the tree's shape
+// with a page of two files, against servers in this file, a yardr that is a
+// stand-in and a launchctl that is one: nothing of this session's (no yard,
+// no view, no real yardr, no real launchctl) is asked.
 import { execFileSync, spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -61,6 +62,10 @@ function checkout(name, real = false) {
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "bin"), { recursive: true });
   mkdirSync(join(root, "home"), { recursive: true });
+  // No job is loaded: launchctl answers nothing, so the run starts the
+  // server beside itself. This stand-in also keeps a run on the yard's Mac
+  // from reaching the real launchctl and its loaded job.
+  writeFileSync(join(root, "bin", "launchctl"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
   writeFileSync(join(root, "dist/index.html"), '<!doctype html><title>signalbox</title><script src="/assets/app.js"></script>');
   writeFileSync(join(root, "dist/assets/app.js"), "the page's own");
   if (real) {
@@ -78,6 +83,69 @@ function checkout(name, real = false) {
 // The stand-in's answers to `yardr events -n 1 --json`.
 function yardr(root, yard) {
   writeFileSync(join(root, "bin", "yardr"), `#!/bin/sh\necho '${JSON.stringify(yard)}'\n`, { mode: 0o755 });
+}
+
+// launchd as the script runs it: print names the job's pid while its server
+// lives, kickstart -k stops that server and starts another on the script's
+// port. Overwrites checkout's failing stand-in, which keeps every other run
+// on the pid-file start.
+function launchd(root) {
+  writeFileSync(
+    join(root, "bin", "launchctl"),
+    `#!/bin/sh
+state=$YARDR_HOME/launchd.pid
+if [ "$1" = "print" ]; then
+  [ -f "$state" ] || exit 1
+  pid=$(cat "$state")
+  kill -0 "$pid" 2>/dev/null || exit 1
+  printf '%s = {\\n\\tactive count = 5\\n\\tpid = %s\\n};\\n' "$2" "$pid"
+elif [ "$1" = "kickstart" ] && [ "$2" = "-k" ]; then
+  echo "kickstart $2 $3" >>$YARDR_HOME/kickstarted
+  if [ -f "$state" ]; then
+    kill "$(cat "$state")" 2>/dev/null
+    waited=0
+    while kill -0 "$(cat "$state")" 2>/dev/null && [ "$waited" -lt 10 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+  fi
+  root=$(dirname "$YARDR_HOME")
+  mkdir -p "$YARDR_HOME/logs"
+  node "$root/bin/page.mjs" "$SIGNALBOX_PORT" "$root" >>"$YARDR_HOME/logs/signalbox-serve.log" 2>&1 </dev/null &
+  echo $! >"$state"
+else
+  exit 1
+fi
+`,
+    { mode: 0o755 }
+  );
+  // The job's server, as the stand-in starts it: the built page as bytes,
+  // each asset from dist, and a snapshot whose feed is at 41.
+  writeFileSync(
+    join(root, "bin", "page.mjs"),
+    `import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { join } from "node:path";
+const port = Number(process.argv[2]);
+const root = process.argv[3];
+createServer((req, res) => {
+  const pathname = new URL(req.url, "http://page").pathname;
+  if (pathname === "/api/snapshot") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ log: { events: [{ seq: 41 }] } }));
+  } else if (pathname === "/") {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end(readFileSync(join(root, "dist", "index.html")));
+  } else if (pathname.startsWith("/assets/") && existsSync(join(root, "dist", pathname))) {
+    res.writeHead(200, { "content-type": "text/javascript" });
+    res.end(readFileSync(join(root, "dist", pathname)));
+  } else {
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+  }
+}).listen(port, "127.0.0.1");
+`
+  );
 }
 
 // A server in the shape of serve.mjs: the page as bytes (serve, or the
@@ -256,6 +324,50 @@ describe("the public page's restart", () => {
     expect(() => process.kill(two, 0)).toThrow();
 
     expect(readFileSync(join(root, "home", "logs", "signalbox-serve.log"), "utf8")).toContain("live, at");
+  }, 60000);
+
+  test("restarts the server through launchd when the job is loaded, and the pid file follows the job's pid", async () => {
+    const root = checkout("launchd");
+    yardr(root, [{ seq: 41 }]);
+    launchd(root);
+    const port = await free();
+    const pidfile = join(root, "home", "signalbox", "serve.pid");
+    const state = join(root, "home", "launchd.pid");
+    watch(pidfile);
+    stoppers.push(() => stop(state));
+
+    // The loaded job's server, started as the stand-in starts it.
+    const env = {
+      PATH: `${join(root, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin`,
+      HOME: join(root, "home"),
+      YARDR_HOME: join(root, "home"),
+      SIGNALBOX_PORT: String(port),
+    };
+    execFileSync(join(root, "bin", "launchctl"), ["kickstart", "-k", "gui/0/dev.yardr.signalbox-serve"], { env });
+    const old = Number(readFileSync(state, "utf8"));
+    expect(old).toBeGreaterThan(0);
+    const until = Date.now() + 10000;
+    for (;;) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${port}/`)).status === 200) break;
+      } catch {
+        // Not yet.
+      }
+      if (Date.now() > until) throw new Error("the stand-in's server did not answer");
+      await new Promise((go) => setTimeout(go, 100));
+    }
+    expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe(readFileSync(join(root, "dist/index.html"), "utf8"));
+
+    const ran = await run(["--start-only", root], { root, port });
+    expect(ran.status, ran.stderr).toBe(0);
+    expect(ran.stdout).toContain("restarted");
+    expect(ran.stdout).toContain("dev.yardr.signalbox-serve");
+    expect(readFileSync(join(root, "home", "kickstarted"), "utf8")).toContain("kickstart -k gui/");
+    const pid = Number(readFileSync(pidfile, "utf8"));
+    expect(pid).not.toBe(old);
+    expect(pid).toBe(Number(readFileSync(state, "utf8")));
+    expect(() => process.kill(old, 0)).toThrow();
+    expect(ran.stdout).toContain("1 assets, feed at 41, yard at 41");
   }, 60000);
 
   test("refuses a node older than package.json asks for, and starts nothing", async () => {

@@ -598,7 +598,7 @@ describe("the snapshot", () => {
       });
       void ended.then(() => done(undefined));
     });
-    return { url, code: ended, said: () => err, told: () => out };
+    return { url, code: ended, said: () => err, told: () => out, kill: (signal) => child.kill(signal) };
   }
 
   test("the script keeps a yard's slots in its home, and reads none from beside the page", async () => {
@@ -654,6 +654,17 @@ describe("the snapshot", () => {
     expect(s.url).toBeUndefined();
     expect(await s.code).toBe(2);
     expect(s.said()).toContain("usage: serve.mjs");
+  });
+
+  test("a signal stops the script, with a line saying which", async () => {
+    const home = join(dir, "home-signal");
+    mkdirSync(home);
+    const s = await served(home);
+    expect(s.url).toBeDefined();
+    expect((await fetch(`${s.url}/api/snapshot`)).status).toBe(200);
+    s.kill("SIGTERM");
+    await s.code;
+    expect(s.said()).toContain("signalbox: stopping on SIGTERM");
   });
 
   test("a yard that does not answer is an error, without what it said", async () => {
