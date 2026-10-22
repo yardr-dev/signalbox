@@ -26,6 +26,9 @@
 # The server's pid is kept beside the yard's slots,
 # $YARDR_HOME/signalbox/serve.pid. A server from before the pid file (this
 # script's first run over it) is found by the port instead, when lsof answers.
+# Where the login service is loaded (the yard's Mac), the restart goes through
+# it instead: launchctl kickstart -k, and the pid file is written from the
+# job's pid.
 #
 # SIGNALBOX_HOST, SIGNALBOX_PORT, YARDR_WEB and YARDR_HOME name another
 # address, port, view and home; the defaults are the public page's.
@@ -70,6 +73,9 @@ fi
 pidfile=$yard_home/signalbox/serve.pid
 log=$yard_home/logs/signalbox-serve.log
 at=http://127.0.0.1:$port
+# The login service that keeps the server alive, where it is loaded (the
+# yard's Mac): restarts go through it, and the pid file follows its pid.
+job=gui/$(id -u)/dev.yardr.signalbox-serve
 
 # What the run needs on its PATH: the check asks the page and the yard, a
 # start runs node, a full run pulls and builds first.
@@ -148,44 +154,66 @@ stop() {
 }
 
 if [ "$mode" != check ]; then
-  if [ -f "$pidfile" ]; then
-    pid=$(cat "$pidfile")
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && serving "$pid"; then
-      stop "$pid"
-      echo "signalbox: public: stopped $pid"
-    else
-      echo "signalbox: public: no server on pid ${pid:-none}: starting"
-    fi
-    rm -f "$pidfile"
-  elif command -v lsof >/dev/null 2>&1; then
-    # Before the pid file: whoever listens on the port for serve.mjs.
-    found=""
-    for pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true); do
-      if serving "$pid"; then
-        stop "$pid"
-        found="${found:+$found, }$pid"
-      fi
+  # The job loaded means launchd owns the server, so the restart goes
+  # through it; the pid file follows the job's pid, and the checks below
+  # read the supervised server. Where the job is not loaded (another
+  # machine, a test), the server is stopped by its pid file and started
+  # beside this script, as before.
+  if launchctl print "$job" >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$pidfile")" "$(dirname "$log")"
+    launchctl kickstart -k "$job" || fail "launchctl kickstart -k $job failed"
+    # The new server's pid, from the job: between the old one's death and
+    # the new one's start, the job names no pid.
+    pid=""
+    waited=0
+    while [ -z "$pid" ]; do
+      pid=$(launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p')
+      waited=$((waited + 1))
+      [ "$waited" -lt 30 ] || fail "the server is not up after 30 s: $(tail -n 5 "$log" | tr '\n' '; ')"
+      [ -n "$pid" ] || sleep 1
     done
-    if [ -n "$found" ]; then
-      echo "signalbox: public: stopped $found (no pid file; found on port $port)"
-    else
-      echo "signalbox: public: no server on port $port: starting"
-    fi
+    echo "$pid" >"$pidfile"
+    echo "signalbox: public: restarted $pid by $job, logging to $log"
   else
-    echo "signalbox: public: no pid file and no lsof: starting"
-  fi
+    if [ -f "$pidfile" ]; then
+      pid=$(cat "$pidfile")
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && serving "$pid"; then
+        stop "$pid"
+        echo "signalbox: public: stopped $pid"
+      else
+        echo "signalbox: public: no server on pid ${pid:-none}: starting"
+      fi
+      rm -f "$pidfile"
+    elif command -v lsof >/dev/null 2>&1; then
+      # Before the pid file: whoever listens on the port for serve.mjs.
+      found=""
+      for pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true); do
+        if serving "$pid"; then
+          stop "$pid"
+          found="${found:+$found, }$pid"
+        fi
+      done
+      if [ -n "$found" ]; then
+        echo "signalbox: public: stopped $found (no pid file; found on port $port)"
+      else
+        echo "signalbox: public: no server on port $port: starting"
+      fi
+    else
+      echo "signalbox: public: no pid file and no lsof: starting"
+    fi
 
-  mkdir -p "$(dirname "$pidfile")" "$(dirname "$log")"
-  # The server outlives this script: the login service ends when the server
-  # is up, and the deploy step ends with the check below. Started in this
-  # shell, not a subshell: a subshell waits for what it backgrounds, and
-  # names its own pid for $!, so whoever runs this script would hang with
-  # the server and stop a dead pid on the next run. serve.mjs finds the
-  # page beside itself, so no cd is needed for the absolute path.
-  YARDR_WEB=$web YARDR_HOME=$yard_home nohup node "$dir/scripts/serve.mjs" --host "$host" --port "$port" >>"$log" 2>&1 </dev/null &
-  pid=$!
-  echo "$pid" >"$pidfile"
-  echo "signalbox: public: started $pid, logging to $log"
+    mkdir -p "$(dirname "$pidfile")" "$(dirname "$log")"
+    # The server outlives this script: the deploy step ends with the check
+    # below. Started in this shell, not a subshell: a subshell waits for
+    # what it backgrounds, and names its own pid for $!, so whoever runs
+    # this script would hang with the server and stop a dead pid on the
+    # next run. serve.mjs finds the page beside itself, so no cd is needed
+    # for the absolute path.
+    YARDR_WEB=$web YARDR_HOME=$yard_home nohup node "$dir/scripts/serve.mjs" --host "$host" --port "$port" >>"$log" 2>&1 </dev/null &
+    pid=$!
+    echo "$pid" >"$pidfile"
+    echo "signalbox: public: started $pid, logging to $log"
+  fi
 
   # Up is the page, not the snapshot: the yard's view may be down, and that
   # is the feed check's to say.
