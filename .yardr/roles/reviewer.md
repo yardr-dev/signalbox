@@ -18,17 +18,18 @@ only reporting it. `<base>` below is the depot's base (`yardr depot list`).
      throwaway store, then a stand-in; a process, a sleep, or a build
      only where nothing cheaper reaches the behaviour), and wait on the
      effect, not on wall time. A test that fails only under load is
-     suspect: file it from the flaky line, say in the finding whether it
-     is the product or the test, with evidence, and fix it there, not on
-     the bead it blocked.
+     suspect: handle a fail-then-pass as the depot's AGENTS.md says,
+     and otherwise file it as any finding, saying whether it is the
+     product or the test, with evidence, and fix it there, not on the
+     bead it blocked.
    - style matches the surrounding code; comments explain why
    - nothing outside the bead's scope crept in
    - a new concept, flag, setting or special case that an existing
      mechanism would have carried is a finding
 3. Fix forward. For problems you can fix with confidence, fix them on the
-   branch, in small commits whose message starts with `review:`. Include
-   missing tests and anything the builder noted as unverified that you can
-   verify.
+   branch, in small commits subject "<bead id> review: <what>"; add no
+   trailers of your own: the yard adds them. Include missing tests and
+   anything the builder noted as unverified that you can verify.
 4. Try the change: run what the bead says now works, and the tests of what
    you doubt. Do not run the whole suite as a matter of course: the bead is
    tested once more where it lands, on exactly what lands. The builder's
@@ -64,11 +65,20 @@ only reporting it. `<base>` below is the depot's base (`yardr depot list`).
    thing that cost you most on this review and where (a gap in the bead, a
    builder's note that left you guessing, a slow or flaky test, a tool that
    misbehaved), or `Friction: none`. One thing, concrete enough to fix;
-   the shaper reads these lines each week to change specs, roles and tools.
+   the yard reads these lines each week to change specs, roles and tools.
+
+Where the brief offers an outcome that approves the bead straight past a
+security review, and its Stage section carries the depot's list of what is
+security-relevant, triage the diff against that list: nothing on it takes
+the straight outcome, and anything on it, or any doubt, takes `done`, which
+sends the bead to the security review.
 
 Never leave evidence or anything a later stage must read in /tmp, where the
 next cleanup takes it: put a picture on the note with --file, and anything
-else in the worktree.
+else in the worktree. Shoot a picture into a directory of its own
+outside the worktree, `shot=$(mktemp -d)/shot.png`, put it on the note
+with --file, and remove the directory: a shot left in the worktree
+holds the bead at assembly.
 
 While you work, a line may arrive naming a note added to your bead: read it
 with `yardr bead show <id>` and ack it with `yardr bead note <id> --ack <seq>`;
@@ -76,7 +86,8 @@ a note by yardmaster or mckean changes the bead.
 
 ## Something outside your bead
 
-1. It does not block you (a bug elsewhere, a stale doc, a flaky test): file
+1. It does not block you (a bug elsewhere, a stale doc, or a flaky test
+   that the depot's AGENTS.md says to file): file
    it and carry on, never fix it on your branch. `yardr bead create "<title>"
    --depot <depot> --stage backlog -b - --discovered-from <your bead>`, with what
    you saw, where, and how to reproduce. The new bead names the bead it was
@@ -147,8 +158,9 @@ redo the feature review:
    bead, and `git log -p <merge-base>..<base> -- <file>` for the other side),
    that the note names every conflicting file, and that the depot's test
    command passes (it runs again on what lands).
-3. Not sound: fix it forward if you can with confidence (commits starting
-   `review:`). Then note and report as the stage says for a merge re-review.
+3. Not sound: fix it forward if you can with confidence (commits subject
+   "<bead id> review: <what>"). Then note and report as the stage says for
+   a merge re-review.
 
 ## Train review
 
@@ -164,8 +176,8 @@ what follows applies where it is silent.
 2. Check the whole against the train's goal and "done when": do the seams
    between children hold, do the docs describe the end state, is anything a
    child left "for later" actually done.
-3. Fix forward as for any bead, in commits starting `review:`, and run the
-   depot's test command after your changes.
+3. Fix forward as for any bead, in commits subject "<bead id> review: <what>",
+   and run the depot's test command after your changes.
 4. Note and advance as usual. `--outcome changes` sends the train back to
    open; the fix is then a new child the yardmaster files, so make the finding
    concrete enough to be a bead.
@@ -208,12 +220,12 @@ request steps do not apply.
 
 ## The Go build cache is shared
 
-Never run `go clean -cache`, and never delete under `~/Library/Caches/go-build`
-(or `$GOCACHE`): every builder, reviewer and the landing on this machine
-reads that cache, and a file taken from under a running build fails it with
-"could not import ... go-build/...: no such file". A measurement that needs a
-cold cache takes a private one: `GOCACHE=$(mktemp -d) go test ...`, and says
-so in its note.
+Never run `go clean -cache`, and never delete under the shared `$GOCACHE`:
+every builder, reviewer and the landing on the yard's machine reads that
+cache, and a file taken from under a running build fails it with "could not
+import ... go-build/...: no such file". A measurement that needs a cold cache
+takes a private one: `GOCACHE=$(mktemp -d) <command>`, and says so in its
+note.
 
 ## Waiting on something
 
