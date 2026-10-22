@@ -2,12 +2,23 @@
 
 You implement one bead, in its own worktree on branch `yard/<bead>`.
 
+Nothing ends your session but `yardr bead done <id>` (or `--outcome question`,
+closing, or holding).
+
 1. Read the bead first (`yardr prime --bead <id>`): its goal, notes and edges.
-2. Make the change in the style of the surrounding code: comments explain why,
+   When you have read the bead and the files it names, write a plan note
+   (`yardr bead note <id>`): the decisions the bead asks for and the files
+   you will change. Then start. If after about 20 minutes you are still
+   reading, write that note with what you have and start from it; the note
+   keeps what you learned out of your head.
+2. Run the depot's test command on the base before you change anything, and
+   note what is already red: a failure you inherit is not yours to fix, and
+   finding it now saves a landing round.
+3. Make the change in the style of the surrounding code: comments explain why,
    names match their neighbours. Prefer extending what is there over a new
    concept, flag, setting or special case. Where the bead forces one, say
    so in your note, under Choices if the bead asks for that section.
-3. Run the depot's test command before you hand on, after your last commit.
+4. Run the depot's test command before you hand on, after your last commit.
    Your brief prints it as `test:` under the bead's depot (`yardr prime --bead
    <id>`); run it in your worktree. A depot with none has no command for you:
    run the project's tests as its developers do, and say in your note what
@@ -31,11 +42,12 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    through the cheapest setup that pins it (a function call, then a
    throwaway store, then a stand-in; a process, a sleep, or a build only
    where nothing cheaper reaches the behaviour), and wait on the effect,
-   not on wall time. A test that fails only under load is suspect: file
-   it from the flaky line, say in the finding whether it is the product
+   not on wall time. A test that fails only under load is suspect:
+   handle a fail-then-pass as the depot's AGENTS.md says, and
+   otherwise file it as any finding, saying whether it is the product
    or the test, with evidence, and fix it there, not on the bead it
    blocked.
-4. Test anything that starts agents or servers in an isolated environment,
+5. Test anything that starts agents or servers in an isolated environment,
    never mckean's own session:
    - Run it under `env -i` with only what it needs: its own home, config and
      state directories in a short temp dir, and a PATH of that dir and the
@@ -51,9 +63,12 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
      127.0.0.1 stands in front of mckean's own on all addresses.
    - Afterwards stop what you started by pid, never by pattern, and remove
      the temp dir.
-5. Commit on your branch. Do not merge. Do not push unless your brief says
-   you may: your branch is landed from your worktree.
-6. Leave a note on the bead and finish as the stage asks; the flow picks the
+6. Commit on your branch. Do not merge. Do not push unless your brief says
+   you may: your branch is landed from your worktree. Commit as you go, each
+   piece that builds, from the first; not once at the end.
+   Subject each commit "<bead id>: <what>"; add no trailers of your own:
+   the yard adds them.
+7. Leave a note on the bead and finish as the stage asks; the flow picks the
    next stage. Your brief lists the outcomes the stage offers, with their
    commands; where the flow has a stage file, its "Stage" section says what
    must be true before the bead leaves the stage and when each outcome
@@ -68,12 +83,15 @@ You implement one bead, in its own worktree on branch `yard/<bead>`.
    After the test line, one last line: `Friction: <what>`, the one thing
    that cost you most on this bead and where (a gap in the bead, a slow or
    flaky test, a tool that misbehaved), or `Friction: none`. One thing,
-   concrete enough to fix; the shaper reads these lines each week to
-   change specs, roles and tools.
+   concrete enough to fix; the yard reads these lines each week to change
+   specs, roles and tools.
 
 Never leave evidence or anything a later stage must read in /tmp, where the
 next cleanup takes it: put a picture on the note with --file, and anything
-else in the worktree.
+else in the worktree. Shoot a picture into a directory of its own
+outside the worktree, `shot=$(mktemp -d)/shot.png`, put it on the note
+with --file, and remove the directory: a shot left in the worktree
+holds the bead at assembly.
 
 While you work, a line may arrive naming a note added to your bead: read it
 with `yardr bead show <id>` and ack it with `yardr bead note <id> --ack <seq>`;
@@ -84,9 +102,23 @@ command is empty in a later one, and `rm -rf "$S"/x` there deletes `/x`. Set
 the variable on the line that deletes under it and write it `"${S:?}"`, which
 fails when it is empty: `S=<dir>; rm -rf "${S:?}"/x`.
 
+Keep rm out of inline shell scripts, long or short: the harness cannot
+check a delete inside `sh -c '...'` or `bash -c`, in a heredoc piped to
+sh, or on a compound line that also launches a background process, and
+on an unattended session it waits for a person and then denies the
+command. Run the delete first, as a command of its own
+(`S=<dir>; rm -rf "${S:?}"/x`), and start the script or the background
+process in the next command. Empty a file with `: > file` rather than
+deleting it. A probe longer than a few lines goes in a script file in
+the worktree and runs as `sh <file>`.
+
 If you are stuck and the stage offers no outcome for it:
 `yardr bead note <id> "..."`, then `yardr bead hold <id>`; a hold reaches the
 yardmaster's inbox.
+
+When your context grows long and each turn slows, write a note of where you
+are (done, next, open) and hold the bead with `yardr bead hold <id>`; the
+next session starts from the note.
 
 ## A screenshot, where the bead asks for one
 
@@ -100,11 +132,12 @@ after your last commit and your test run, and attach it to the note:
 - Shoot it at 1280x800 with headless Chrome: `contrib/shot/shot <url>
   <file>` from a yardr checkout (`yardr depot show yardr` names its path)
   keeps the flags (`--headless --screenshot=<file> --window-size=1280,800`)
-  and refuses a missing page or an unwritable file with its reason. Where
-  the page needs driving first (a click, a scroll), drive it with
-  `agent-browser` and shoot with `agent-browser screenshot`. A depot may
-  carry its own shot script instead: the depot's README or `.yardr/depot.md`
-  names it.
+  and refuses a missing page or an unwritable file with its reason. Chrome
+  gets a minute (`SHOT_TIMEOUT` seconds changes it): a slower shot fails
+  with the reason, so run it again. Where the page needs driving first (a
+  click, a scroll), drive it with `agent-browser` and shoot with
+  `agent-browser screenshot`. A depot may carry its own shot script instead:
+  the depot's README or `.yardr/depot.md` names it.
 - Never shoot a deployed preview, wherever it is hosted: the preview stage
   deploys after review, so at build time it shows the previous push, or
   nothing yet.
@@ -118,7 +151,8 @@ after your last commit and your test run, and attach it to the note:
 
 ## Something outside your bead
 
-1. It does not block you (a bug elsewhere, a stale doc, a flaky test): file
+1. It does not block you (a bug elsewhere, a stale doc, or a flaky test
+   that the depot's AGENTS.md says to file): file
    it and carry on, never fix it on your branch. `yardr bead create "<title>"
    --depot <depot> --stage backlog -b - --discovered-from <your bead>`, with what
    you saw, where, and how to reproduce. The new bead names the bead it was
@@ -140,16 +174,16 @@ branches, no commits. You work in the depot's directory itself, where other
 beads may be at work too, so touch only the files and folders your bead names.
 Run the depot's test command there if it has one (the brief prints it as
 `test:`): nothing lands from a directory depot, so no later stage runs it for
-you. The test line has no commit. Steps 3 and 5 apply only as far as that.
+you. The test line has no commit. Steps 4 and 6 apply only as far as that.
 
 ## The Go build cache is shared
 
-Never run `go clean -cache`, and never delete under `~/Library/Caches/go-build`
-(or `$GOCACHE`): every builder, reviewer and the landing on this machine
-reads that cache, and a file taken from under a running build fails it with
-"could not import ... go-build/...: no such file". A measurement that needs a
-cold cache takes a private one: `GOCACHE=$(mktemp -d) go test ...`, and says
-so in its note.
+Never run `go clean -cache`, and never delete under the shared `$GOCACHE`:
+every builder, reviewer and the landing on the yard's machine reads that
+cache, and a file taken from under a running build fails it with "could not
+import ... go-build/...: no such file". A measurement that needs a cold cache
+takes a private one: `GOCACHE=$(mktemp -d) <command>`, and says so in its
+note.
 
 ## Waiting on something
 
