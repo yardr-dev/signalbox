@@ -529,8 +529,12 @@ async function main() {
     if (!local) console.log("signalbox: no login: whoever reaches that address reads the depots' beads, their bodies and notes, its groups and events");
     if (hide.length > 0) console.log(`signalbox: hiding ${hide.join(", ")}`);
   });
-  for (const signal of ["SIGINT", "SIGTERM"]) {
+  // What stopped the script goes to the log with it: the death of 22 Oct
+  // left nothing behind. A death no handler catches (SIGKILL, OOM) leaves
+  // only launchd's restart as its trace.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => {
+      console.error(`signalbox: stopping on ${signal}`);
       close();
       server.close();
       // A page that keeps its line open does not hold the script.

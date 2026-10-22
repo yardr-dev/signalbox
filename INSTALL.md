@@ -126,16 +126,16 @@ the Cloudflare tunnel of "The public" above:
       >> ~/.yardr/logs/signalbox-serve.log 2>&1
 
 Its pid is in `~/.yardr/signalbox/serve.pid`, beside the yard's slots.
-Nobody starts it by hand: `scripts/serve-public.sh` restarts it after
-every landing (above), and a login service after a reboot:
+Nobody starts it by hand: a login service runs the server itself and starts
+it again whenever it exits, and `scripts/serve-public.sh` restarts it after
+every landing (above), through that service:
 `contrib/dev.yardr.signalbox-serve.plist`, copied to
 `~/Library/LaunchAgents` and loaded once:
 
     cp contrib/dev.yardr.signalbox-serve.plist ~/Library/LaunchAgents/
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.yardr.signalbox-serve.plist
 
-It runs the script's `--start-only` at login (no pull, no build: the last
-deployed build is served again), and again while its checks fail. When the
+No pull and no build: the last deployed build is served again. When the
 checkout moves, the plist's paths move with it.
 
 ## What the page shows
