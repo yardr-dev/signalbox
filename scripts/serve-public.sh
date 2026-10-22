@@ -161,16 +161,21 @@ if [ "$mode" != check ]; then
   # beside this script, as before.
   if launchctl print "$job" >/dev/null 2>&1; then
     mkdir -p "$(dirname "$pidfile")" "$(dirname "$log")"
+    previous_pid=$(launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p')
     launchctl kickstart -k "$job" || fail "launchctl kickstart -k $job failed"
-    # The new server's pid, from the job: between the old one's death and
-    # the new one's start, the job names no pid.
+    # Do not mistake the process being killed for the replacement: launchctl
+    # can still print its pid while the restart is in flight.
     pid=""
     waited=0
-    while [ -z "$pid" ]; do
-      pid=$(launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p')
+    while [ -z "$pid" ] || [ "$pid" = "$previous_pid" ]; do
+      current_pid=$(launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p')
+      if [ -n "$current_pid" ] && [ "$current_pid" != "$previous_pid" ]; then
+        pid=$current_pid
+        break
+      fi
       waited=$((waited + 1))
       [ "$waited" -lt 30 ] || fail "the server is not up after 30 s: $(tail -n 5 "$log" | tr '\n' '; ')"
-      [ -n "$pid" ] || sleep 1
+      sleep 1
     done
     echo "$pid" >"$pidfile"
     echo "signalbox: public: restarted $pid by $job, logging to $log"

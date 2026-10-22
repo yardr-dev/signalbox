@@ -102,17 +102,24 @@ if [ "$1" = "print" ]; then
 elif [ "$1" = "kickstart" ] && [ "$2" = "-k" ]; then
   echo "kickstart $2 $3" >>$YARDR_HOME/kickstarted
   if [ -f "$state" ]; then
-    kill "$(cat "$state")" 2>/dev/null
-    waited=0
-    while kill -0 "$(cat "$state")" 2>/dev/null && [ "$waited" -lt 10 ]; do
-      sleep 1
-      waited=$((waited + 1))
-    done
+    old=$(cat "$state")
+    # kickstart returns before launchd has finished replacing the old pid.
+    # Leave print reporting it briefly to cover that restart window.
+    (
+      sleep 0.2
+      kill "$old" 2>/dev/null
+      while curl -sf --max-time 1 "http://127.0.0.1:$SIGNALBOX_PORT/" >/dev/null; do sleep 0.05; done
+      root=$(dirname "$YARDR_HOME")
+      mkdir -p "$YARDR_HOME/logs"
+      node "$root/bin/page.mjs" "$SIGNALBOX_PORT" "$root" >>"$YARDR_HOME/logs/signalbox-serve.log" 2>&1 </dev/null &
+      echo $! >"$state"
+    ) >/dev/null 2>&1 </dev/null &
+  else
+    root=$(dirname "$YARDR_HOME")
+    mkdir -p "$YARDR_HOME/logs"
+    node "$root/bin/page.mjs" "$SIGNALBOX_PORT" "$root" >>"$YARDR_HOME/logs/signalbox-serve.log" 2>&1 </dev/null &
+    echo $! >"$state"
   fi
-  root=$(dirname "$YARDR_HOME")
-  mkdir -p "$YARDR_HOME/logs"
-  node "$root/bin/page.mjs" "$SIGNALBOX_PORT" "$root" >>"$YARDR_HOME/logs/signalbox-serve.log" 2>&1 </dev/null &
-  echo $! >"$state"
 else
   exit 1
 fi
