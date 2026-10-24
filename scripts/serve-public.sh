@@ -272,6 +272,9 @@ done
 
 # The feed's newest against the yard's. The yard is asked first: events only
 # arrive, so a snapshot taken after it holds its newest too, or is behind.
+# The page's newest is the snapshot's log.seq, the yard's newest event shown
+# or not: with --depot the page keeps hidden depots' events back, so the
+# newest shown would read behind on a server that is up to date.
 need yardr
 yardr events -n 1 --json >"$tmp/yard.json" 2>"$tmp/yard.err" || fail "yardr events -n 1: $(head -c 300 "$tmp/yard.err" | tr '\n' ' ')"
 curl -sf --max-time 25 "$at/api/snapshot" -o "$tmp/snapshot.json" || fail "the snapshot did not answer at $at/api/snapshot"
@@ -280,9 +283,13 @@ seq_of() {
 const fs = require("fs");
 try {
   const said = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-  const events = Array.isArray(said) ? said : said.log && said.log.events;
-  const seqs = (Array.isArray(events) ? events : []).map((e) => e && e.seq).filter(Number.isInteger);
-  if (seqs.length > 0) console.log(Math.max(...seqs));
+  if (said && said.log && Number.isInteger(said.log.seq)) {
+    console.log(said.log.seq);
+  } else {
+    const events = Array.isArray(said) ? said : said.log && said.log.events;
+    const seqs = (Array.isArray(events) ? events : []).map((e) => e && e.seq).filter(Number.isInteger);
+    if (seqs.length > 0) console.log(Math.max(...seqs));
+  }
 } catch {
   process.exit(1);
 }' "$1"

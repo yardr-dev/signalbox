@@ -619,6 +619,9 @@ describe("the snapshot", () => {
       { seq: 7, at, kind: "peers", data: { peer: "quay" } },
       { seq: 8, at, kind: "advanced", bead: "yardr-0", data: { from: "new", to: "review" } },
     ]);
+    // The yard's newest event is 10, kept back above: log.seq says how far
+    // the server has read, apart from what it shows.
+    expect(body.log.seq).toBe(10);
     expect(body.layout.depots).toEqual({ yardr: 0 });
     // Without it, everything shows, as before.
     const plain = await start(twoDepots().y);
@@ -628,6 +631,8 @@ describe("the snapshot", () => {
     expect(all.yard.edges).toHaveLength(2);
     expect(all.log.beads.map((b) => b.id)).toEqual(["yardr-0", "yardr-hosted-0"]);
     expect(all.log.events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    // Unfiltered, log.seq is the newest shown.
+    expect(all.log.seq).toBe(9);
   });
 
   test("the slots are kept in the yard's home", () => {
@@ -643,7 +648,10 @@ describe("the snapshot", () => {
     const y = yard([]);
     const s = await start(y, { memory: recall(file), remember: kept });
     expect(existsSync(file)).toBe(false);
-    const first = (await (await fetch(`${s.url}/api/snapshot`)).json()).layout;
+    const snapshot = await (await fetch(`${s.url}/api/snapshot`)).json();
+    const first = snapshot.layout;
+    // A yard nothing has happened in: no newest event to name.
+    expect(snapshot.log.seq).toBeUndefined();
     expect(first.depots).toEqual({ signalbox: 0 });
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(first);
     // As the snapshot script writes its own (scripts/slots.mjs).

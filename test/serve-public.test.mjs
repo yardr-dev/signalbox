@@ -173,13 +173,15 @@ createServer((req, res) => {
 
 // A server in the shape of serve.mjs: the page as bytes (serve, or the
 // built one), each asset from dist or a 404, and the snapshot with a feed
-// of the given sequence numbers.
-function page(root, seqs, serve = undefined) {
+// of the given sequence numbers. seq names how far the server has read,
+// apart from what it shows (log.seq); left out, the snapshot carries no
+// such field, as before.
+function page(root, seqs, serve = undefined, seq = undefined) {
   const server = createServer((req, res) => {
     const { pathname } = new URL(req.url, "http://page");
     if (pathname === "/api/snapshot") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ log: { events: seqs.map((seq) => ({ seq })) } }));
+      res.end(JSON.stringify({ log: { ...(seq === undefined ? {} : { seq }), events: seqs.map((seq) => ({ seq })) } }));
     } else if (pathname === "/") {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(serve ?? readFileSync(join(root, "dist/index.html")));
@@ -272,6 +274,14 @@ describe("the public page's checks", () => {
     expect(ran.stderr).toContain("the feed is behind");
     expect(ran.stderr).toContain("40");
     expect(ran.stderr).toContain("41");
+  });
+
+  test("pass when the server has read the yard's newest, though its events are older: --depot keeps hidden depots back", async () => {
+    const root = checkout("read");
+    yardr(root, [{ seq: 41 }]);
+    const ran = await run(["--check-only", root], { root, port: await listen(page(root, [40], undefined, 41)) });
+    expect(ran.status, ran.stderr).toBe(0);
+    expect(ran.stdout).toContain("feed at 41, yard at 41");
   });
 
   test("pass when the feed is past the yard: an event landed between the two reads", async () => {

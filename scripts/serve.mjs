@@ -28,7 +28,9 @@
 //   GET /api/snapshot           the yard now, its slots, the window of its
 //                               log and the providers' quota: {yard, layout,
 //                               log, quota}, the four files of public/ in one
-//                               answer; quota is null when nobody knows it
+//                               answer; quota is null when nobody knows it,
+//                               and log.seq is the yard's newest event,
+//                               shown or not
 //   GET /api/feed?after=<seq>   server-sent events: every event of the yard
 //                               after seq, each one message with its seq as
 //                               the id, for as long as the page listens; and
@@ -339,6 +341,12 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       // A provider that hangs does not hold the page: it has the last answer.
       const soon = Promise.race([refuel(), new Promise((go) => (late = setTimeout(() => go(fuel), wait)))]);
       let [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
+      // How far the server has read, apart from what it shows: the newest
+      // seq of the yard's log events before the cut below, filtered or not,
+      // so the reader has one field. Nothing names it when the log holds no
+      // event.
+      const seqs = log.events.map((e) => e && e.seq).filter(Number.isInteger);
+      log = { ...log, seq: seqs.length > 0 ? Math.max(...seqs) : undefined };
       if (served.size > 0) {
         // From the whole yard, hidden depots too: the feed reads it until
         // the next snapshot.
