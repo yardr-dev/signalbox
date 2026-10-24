@@ -31,12 +31,12 @@ const SECRET = "/Users/someone/.yardr/secret";
 // view that is not there.
 function yard(events) {
   const structure = { depots: [{ name: "signalbox", kind: "git" }], flows: [{ name: "signalbox", kind: "git", flows: [{ name: "default", stages: [{ stage: "new" }, { stage: "review" }] }] }] };
-  const y = { events, structure, asked: [], streams: new Set(), down: false, open: [], closed: [], deps: [], pages: {} };
+  const y = { events, structure, asked: [], streams: new Set(), down: false, open: [], closed: [], deps: [], pages: {}, routes: [] };
   const lists = {
     "/depots": () => ({ depots: structure.depots }),
     "/flows": () => ({ depots: structure.flows }),
     "/groups": () => ({ groups: [] }),
-    "/routes": () => ({ routes: [] }),
+    "/routes": () => ({ routes: y.routes }),
     "/crew": () => ({ crew: [] }),
     "/peers": () => ({ peers: [] }),
     "/beads": () => ({ beads: y.open }),
@@ -90,6 +90,47 @@ function yard(events) {
   // The questions the routes ask of it (scripts/yard.mjs), over that fetch.
   const run = yardr("http://yard", y.fetch);
   return Object.assign(y, { run, snapshot: () => snapshot(run), bead: (id) => bead(run, id), head: () => head(run), follow: (after, signal) => follow(run, after, signal) });
+}
+
+// A yard of two depots, yardr and yardr-hosted: the --depot tests serve
+// yardr alone. The window names the closed beads, so they are in its log;
+// mem-x is the yard's own, with no depot.
+function twoDepots() {
+  const at = "2099-01-01T00:00:00Z";
+  const y = yard([
+    { seq: 1, at, kind: "started", bead: "yardr-1", data: { group: "builders" } },
+    { seq: 2, at, kind: "advanced", bead: "yardr-hosted-2", data: { from: "new", to: "review" } },
+    { seq: 3, at, kind: "created", bead: "yardr-1", data: { depot: "yardr-hosted", stage: "new" } },
+    { seq: 4, at, kind: "created", bead: "yardr-hosted-2", data: { depot: "yardr", stage: "new" } },
+    { seq: 5, at, kind: "noted", bead: "yardr-hosted-34y0" },
+    { seq: 6, at, kind: "noted", bead: "yardr-34y0" },
+    { seq: 7, at, kind: "peers", data: { peer: "quay" } },
+    { seq: 8, at, kind: "advanced", bead: "yardr-0", data: { from: "new", to: "review" } },
+    { seq: 9, at, kind: "advanced", bead: "yardr-hosted-0", data: { from: "new", to: "review" } },
+  ]);
+  // In place: the view's lists close over this object.
+  y.structure.depots = [
+    { name: "yardr", kind: "git" },
+    { name: "yardr-hosted", kind: "git" },
+  ];
+  y.structure.flows = [
+    { name: "yardr", kind: "git", flows: [{ name: "default", stages: [{ stage: "new" }, { stage: "review" }] }] },
+    { name: "yardr-hosted", kind: "git", flows: [{ name: "default", stages: [{ stage: "new" }] }] },
+  ];
+  y.routes = [
+    { stage: "new", depot: "yardr", group: "builders" },
+    { stage: "new", depot: "yardr-hosted", group: "builders" },
+    { stage: "decide", group: "humans" },
+  ];
+  const open = (id, depot, priority) => ({ id, title: id, type: "task", stage: "new", status: "open", depot, priority });
+  y.open = [open("yardr-1", "yardr", 2), open("yardr-hosted-2", "yardr-hosted", 3), open("mem-x", undefined, 4)];
+  y.closed = [
+    { ...open("yardr-0", "yardr", 2), status: "closed" },
+    { ...open("yardr-hosted-0", "yardr-hosted", 3), status: "closed" },
+  ];
+  const edge = (from, to) => ({ from, to, kind: "blocks", created_at: at });
+  y.deps = [edge("yardr-1", "yardr-hosted-2"), edge("yardr-1", "yardr-9")];
+  return { y, at };
 }
 
 // Wait until something is so: the script's line to the view is its own.
@@ -203,6 +244,46 @@ describe("the feed", () => {
       { id: 3, event: "message", data: { seq: 3, at, kind: "closed", bead: "signalbox-a" } },
       { id: 4, event: "message", data: { seq: 4, at, kind: "noted", bead: "signalbox-a" } },
     ]);
+    page.close();
+  });
+
+  test("--depot: no event of a depot not named, by its data, its bead, or its id's longest prefix", async () => {
+    const { y, at } = twoDepots();
+    const s = await start(y, { depot: ["yardr"] });
+    // The page snapshots before it listens: that teaches the feed the beads.
+    expect((await (await fetch(`${s.url}/api/snapshot`)).json()).log.events.map((e) => e.seq)).toEqual([1, 4, 6, 7, 8]);
+    const page = await listen(`${s.url}/api/feed?after=0`);
+    expect((await page.take(5)).map((m) => m.id)).toEqual([1, 4, 6, 7, 8]);
+    // What the yard does next: the hidden half never arrives.
+    y.push(
+      { seq: 11, at, kind: "advanced", bead: "yardr-hosted-2", data: { from: "new", to: "review" } },
+      { seq: 12, at, kind: "advanced", bead: "yardr-1", data: { from: "new", to: "review" } },
+    );
+    expect((await page.next()).id).toBe(12);
+    expect(page.messages.map((m) => m.id)).toEqual([1, 4, 6, 7, 8, 12]);
+    // One far behind has the line opened again: nothing comes twice.
+    const far = await listen(`${s.url}/api/feed?after=0`);
+    expect((await far.take(6)).map((m) => m.id)).toEqual([1, 4, 6, 7, 8, 12]);
+    expect(page.messages.map((m) => m.id)).toEqual([1, 4, 6, 7, 8, 12]);
+    page.close();
+    far.close();
+  });
+
+  test("--depot learns the feed filter before its first stream", async () => {
+    const at = "2099-01-01T00:00:00Z";
+    const y = yard([
+      { seq: 1, at, kind: "created", bead: "yardr-1", data: { depot: "yardr-hosted", stage: "new" } },
+      { seq: 2, at, kind: "created", bead: "yardr-1", data: { depot: "yardr", stage: "new" } },
+      { seq: 3, at, kind: "advanced", bead: "yardr-hosted-2", data: { from: "new", to: "review" } },
+      { seq: 4, at, kind: "peers", data: { peer: "quay" } },
+      { seq: 5, at, kind: "noted", bead: "yardmaster-journal" },
+    ]);
+    const s = await start(y, { depot: ["yardr"] });
+    const page = await listen(`${s.url}/api/feed?after=0`);
+    // The feed takes the full snapshot before opening the stream, so it can
+    // cut by depot data, a bead id prefix, and unknown bead events while
+    // still passing depotless events.
+    expect((await page.take(2)).map((m) => m.id)).toEqual([2, 4]);
     page.close();
   });
 
@@ -509,6 +590,46 @@ describe("the snapshot", () => {
     expect(whole.log.beads[0].title).toBe("done");
   });
 
+  test("--depot serves those depots alone: nothing of the others leaves", async () => {
+    const { y, at } = twoDepots();
+    y.events.push({ seq: 10, at, kind: "noted", bead: "yardmaster-journal" });
+    const s = await start(y, { depot: ["yardr"] });
+    const body = await (await fetch(`${s.url}/api/snapshot`)).json();
+    expect(body.yard.depots).toEqual([{ name: "yardr", kind: "git" }]);
+    expect(body.yard.flows).toEqual([{ depot: "yardr", flows: [{ name: "default", stages: [{ stage: "new" }, { stage: "review" }] }] }]);
+    // A route with no depot stays: it is no depot's.
+    expect(body.yard.routes).toEqual([
+      { stage: "new", depot: "yardr", group: "builders" },
+      { stage: "decide", group: "humans" },
+    ]);
+    // mem-x has no depot and goes with the hidden beads.
+    expect(body.yard.beads).toEqual([{ id: "yardr-1", title: "yardr-1", type: "task", stage: "new", depot: "yardr", working: false, priority: 2 }]);
+    // The edge into the hidden bead goes; yardr-9 is known nowhere, and its
+    // id's longest prefix is yardr.
+    expect(body.yard.edges).toEqual([{ from: "yardr-1", to: "yardr-9" }]);
+    expect(body.log.beads).toEqual([{ id: "yardr-0", title: "yardr-0", type: "task", stage: "new", depot: "yardr", priority: 2 }]);
+    // 2 by its listed bead, 3 by its data over its bead, 5 by its id's
+    // longest prefix (yardr-hosted, not yardr), 9 by its closed bead; 4's
+    // data names yardr over its hidden bead, 6 passes by its prefix, 7
+    // names neither a bead nor a depot, and 10 has no depot to serve.
+    expect(body.log.events).toEqual([
+      { seq: 1, at, kind: "started", bead: "yardr-1", data: { group: "builders" } },
+      { seq: 4, at, kind: "created", bead: "yardr-hosted-2", data: { depot: "yardr", stage: "new" } },
+      { seq: 6, at, kind: "noted", bead: "yardr-34y0" },
+      { seq: 7, at, kind: "peers", data: { peer: "quay" } },
+      { seq: 8, at, kind: "advanced", bead: "yardr-0", data: { from: "new", to: "review" } },
+    ]);
+    expect(body.layout.depots).toEqual({ yardr: 0 });
+    // Without it, everything shows, as before.
+    const plain = await start(twoDepots().y);
+    const all = await (await fetch(`${plain.url}/api/snapshot`)).json();
+    expect(all.yard.depots.map((d) => d.name)).toEqual(["yardr", "yardr-hosted"]);
+    expect(all.yard.beads.map((b) => b.id)).toEqual(["yardr-1", "yardr-hosted-2", "mem-x"]);
+    expect(all.yard.edges).toHaveLength(2);
+    expect(all.log.beads.map((b) => b.id)).toEqual(["yardr-0", "yardr-hosted-0"]);
+    expect(all.log.events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
   test("the slots are kept in the yard's home", () => {
     expect(layoutFile({ YARDR_HOME: "/a/yard" })).toBe("/a/yard/signalbox/layout.json");
     for (const env of [{}, { YARDR_HOME: "" }]) expect(layoutFile(env)).toBe(join(homedir(), ".yardr", "signalbox", "layout.json"));
@@ -681,6 +802,24 @@ describe("the snapshot", () => {
     expect(s.url).toBeDefined();
     await until(() => s.told().includes("hiding"));
     expect(s.told()).toContain("signalbox: hiding title, body, notes");
+  });
+
+  test("--depot names the depots served on the startup line, repeated or apart with commas; a name of no depot is accepted", async () => {
+    const home = join(dir, "home-depot");
+    mkdirSync(home);
+    const s = await served(home, ["--depot", "papers", "--depot", "elsewhere,papers "]);
+    expect(s.url).toBeDefined();
+    await until(() => s.told().includes("serving depots"));
+    expect(s.told()).toContain("signalbox: serving depots papers, elsewhere");
+    // The yard has no depot elsewhere: served anyway, the yard may add it
+    // later, and what it has is cut to papers.
+    expect((await (await fetch(`${s.url}/api/snapshot`)).json()).yard.depots).toEqual([{ name: "papers", kind: "dir" }]);
+    // Nothing named, nothing said.
+    mkdirSync(join(dir, "home-plain-depot"));
+    const plain = await served(join(dir, "home-plain-depot"), []);
+    expect(plain.url).toBeDefined();
+    expect((await fetch(`${plain.url}/api/snapshot`)).status).toBe(200);
+    expect(plain.told()).not.toContain("serving depots");
   });
 
   test("a signal stops the script, with a line saying which", async () => {
@@ -917,6 +1056,19 @@ describe("a bead", () => {
     const of = { ...yard([]), bead: async () => detail };
     const s = await start(of, { hide: ["title"] });
     const response = await fetch(`${s.url}/api/bead/signalbox-a`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not found" });
+  });
+
+  test("a bead of a depot not named is not found", async () => {
+    const pages = {
+      "yardr-1": { bead: { id: "yardr-1", title: "one", depot: "yardr", body: "the body" }, notes: [] },
+      "yardr-hosted-2": { bead: { id: "yardr-hosted-2", title: "two", depot: "yardr-hosted", body: "the body" }, notes: [] },
+    };
+    const of = { ...yard([]), bead: async (id) => pages[id] };
+    const s = await start(of, { depot: ["yardr"] });
+    expect((await fetch(`${s.url}/api/bead/yardr-1`)).status).toBe(200);
+    const response = await fetch(`${s.url}/api/bead/yardr-hosted-2`);
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not found" });
   });

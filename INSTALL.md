@@ -53,7 +53,11 @@ are kept (default `$YARDR_HOME/signalbox/layout.json`, else
 body, its notes' text, events' words, or its title (`body`, `notes`,
 `events`, `title`; repeatable, or apart with commas; nothing hidden
 unless named). `title` shows wagons alone and implies `body` and `notes`:
-a nameless wagon has no card.
+a nameless wagon has no card. `--depot <name>` serves those depots alone:
+a depot not named is not in the snapshot, not in the feed and answers no
+card (repeatable, or apart with commas; a name that is no depot of the
+yard is no error, the yard may add it later; with none named, every depot
+shows).
 `AIQUOKKA=/path/to/aiquokka` names the quota binary.
 
 ## A phone or another device
@@ -138,7 +142,12 @@ every landing (above), through that service:
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.yardr.signalbox-serve.plist
 
 No pull and no build: the last deployed build is served again. When the
-checkout moves, the plist's paths move with it.
+checkout moves, the plist's paths move with it. The flags the public page
+is served with are the plist's `ProgramArguments`, set by the operator:
+`--depot <name>` there chooses which depots the page shows. After changing
+them, reload the job:
+
+    launchctl kickstart -k gui/$(id -u)/dev.yardr.signalbox-serve
 
 ## What the page shows
 

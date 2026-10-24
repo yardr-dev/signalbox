@@ -2,7 +2,7 @@
 // Serve the page and let it follow a yard as it runs.
 //
 //   node scripts/serve.mjs [--host 127.0.0.1] [--port 0] [--dir dist]
-//     [--layout file] [--hide part]
+//     [--layout file] [--hide part] [--depot name]
 //   YARDR_WEB=http://127.0.0.1:8791 names the yard's web view (yardr web
 //   serve), as for the snapshot (scripts/snapshot.sh);
 //   AIQUOKKA=/path/to/aiquokka the binary that says what is left of the
@@ -14,6 +14,11 @@
 // title: wagons alone, and implies body and notes, since a nameless wagon
 // has no card). Repeat it, or name parts apart with commas. Nothing is
 // hidden unless named.
+//
+// `--depot <name>` serves those depots alone: a depot not named is not in
+// the snapshot, not in the feed and answers no card. Repeat it, or name
+// depots apart with commas. A name that is no depot of the yard is no
+// error: the yard may add it later. With no --depot, every depot shows.
 //
 // Beside the built page (dist/) it answers three routes from the yard's web
 // view (scripts/yard.mjs), cut down by src/project.ts, and takes one report
@@ -36,7 +41,9 @@
 //                               of that id, when --hide title keeps every
 //                               card back, or when the bead has no depot:
 //                               the yard's own (its journal, memories,
-//                               asks), which the page never shows
+//                               asks), which the page never shows; with
+//                               --depot, a bead of a depot not named is
+//                               404 too
 //   POST /api/fault             what went wrong in the page's browser
 //                               (src/fault.ts): {at, what, detail, agent,
 //                               screen}, answered 204 and written as one
@@ -154,6 +161,37 @@ function untitled(bead) {
   return rest;
 }
 
+// The depot of every bead a snapshot carries, by id: the open ones, and
+// the log's closed ones. The feed reads what the last snapshot taught.
+function beadDepots(yard, log) {
+  const beads = new Map();
+  for (const bead of yard.beads) beads.set(bead.id, bead.depot);
+  for (const bead of log.beads) beads.set(bead.id, bead.depot);
+  return beads;
+}
+
+// Whether an event leaves with --depot: one of a depot not named goes. Its
+// depot is the one its data names; else its bead's, from the snapshot's
+// beads; else the longest depot name that prefixes the bead's id with a
+// dash (yardr-hosted-34y0 is yardr-hosted's, not yardr's). One with neither
+// a bead nor a depot (a crew's, a peer's, the quota's) passes; a bead with
+// no matching depot is cut. The snapshot's log and the feed both ask this,
+// so the two cannot disagree.
+function passes(event, served, beads, depots) {
+  const named = event.data?.depot;
+  if (typeof named === "string") return served.has(named);
+  if (typeof event.bead !== "string") return true;
+  let depot;
+  if (beads.has(event.bead)) depot = beads.get(event.bead);
+  else {
+    for (const name of depots) {
+      if (event.bead.startsWith(`${name}-`) && (typeof depot !== "string" || name.length > depot.length)) depot = name;
+    }
+  }
+  // A bead event that cannot be placed in a served depot is not public.
+  return typeof depot === "string" && served.has(depot);
+}
+
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -203,8 +241,12 @@ export function remember(file, slots) {
 //   wait      milliseconds a snapshot waits for the quota
 //   hide      the parts kept back (--hide): body, notes, events, title.
 //             Nothing hidden when empty.
-export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT, hide = [] }) {
+//   depot     the depots served (--depot). With none named, every depot
+//             shows; else a depot not named is not in the snapshot, not in
+//             the feed and answers no card.
+export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT, hide = [], depot = [] }) {
   const hidden = new Set(hide);
+  const served = new Set(depot);
   const listeners = new Set();
   let slots = memory;
   // What was kept last, as it is written.
@@ -214,6 +256,26 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   // sequence number it passed.
   let line;
   let cursor;
+  // What the last snapshot taught the feed: the depot of every bead it
+  // carried, and the yard's depot names. A filtered feed takes a snapshot
+  // before opening its stream if one has not taught it yet.
+  let known = served.size === 0 ? { beads: new Map(), depots: [] } : undefined;
+  let learning;
+
+  function teach(yard, log) {
+    known = { beads: beadDepots(yard, log), depots: yard.depots.map((d) => d.name) };
+    return known;
+  }
+
+  function learn() {
+    if (known !== undefined) return Promise.resolve(known);
+    if (learning === undefined) {
+      learning = yard.snapshot()
+        .then(({ yard: now, log }) => teach(now, log))
+        .finally(() => { learning = undefined; });
+    }
+    return learning;
+  }
   // The last answer about the quota, null when there was none; when it was
   // asked for; the question on its way; and what went wrong last, said once.
   let fuel = null;
@@ -276,7 +338,28 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       let late;
       // A provider that hangs does not hold the page: it has the last answer.
       const soon = Promise.race([refuel(), new Promise((go) => (late = setTimeout(() => go(fuel), wait)))]);
-      const [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
+      let [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
+      if (served.size > 0) {
+        // From the whole yard, hidden depots too: the feed reads it until
+        // the next snapshot.
+        teach(now, log);
+        const { beads, depots } = known;
+        now = {
+          ...now,
+          depots: now.depots.filter((d) => served.has(d.name)),
+          flows: now.flows.filter((f) => served.has(f.depot)),
+          // A route with no depot stays: it is no depot's.
+          routes: now.routes.filter((r) => r.depot === undefined || served.has(r.depot)),
+          beads: now.beads.filter((b) => served.has(b.depot)),
+          // An edge with an end in a hidden bead goes.
+          edges: now.edges.filter((e) => [e.from, e.to].every((end) => passes({ bead: end }, served, beads, depots))),
+        };
+        log = {
+          ...log,
+          beads: log.beads.filter((b) => served.has(b.depot)),
+          events: log.events.filter((e) => passes(e, served, beads, depots)),
+        };
+      }
       slots = place(now, slots);
       keep();
       let shown = hidden.has("events") ? { ...log, events: log.events.map(bare) } : log;
@@ -296,8 +379,9 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       // The yard's own beads have no depot: its journal, memories, asks. The
       // page never shows them, so they are unknown here, local or not. A
       // nameless wagon has no card either: with --hide title every bead
-      // is unknown here, and the page opens nothing.
-      if (found === undefined || !found.bead.depot || hidden.has("title")) return json(res, 404, { error: "not found" });
+      // is unknown here, and the page opens nothing. With --depot, a bead
+      // of a depot not named is unknown too.
+      if (found === undefined || !found.bead.depot || hidden.has("title") || (served.size > 0 && !served.has(found.bead.depot))) return json(res, 404, { error: "not found" });
       if (!hidden.has("body") && !hidden.has("notes")) return json(res, 200, found);
       // What is kept back is left out, not answered empty: a note without
       // text is its head alone.
@@ -349,8 +433,12 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
           tries = 0;
           cursor = event.seq;
           const shown = hidden.has("events") ? bare(event) : event;
+          // With --depot, an event of a depot not named goes to none: past
+          // the cursor, but no listener's mark moves for what it never got.
+          const goes = served.size > 0 && !passes(event, served, known.beads, known.depots);
           for (const listener of listeners) {
             if (listener.last === undefined || event.seq <= listener.last) continue;
+            if (goes) continue;
             listener.res.write(`id: ${event.seq}\ndata: ${JSON.stringify(shown)}\n\n`);
             listener.last = event.seq;
           }
@@ -400,12 +488,21 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     cursor = undefined;
   }
 
-  function answerFeed(req, res, url) {
+  async function answerFeed(req, res, url) {
     // Where the page was: what it saw last on this feed, else what its
     // snapshot held.
     const said = req.headers["last-event-id"] ?? url.searchParams.get("after");
     const last = said === null || said === "" ? undefined : Number(said);
     if (last !== undefined && !(Number.isSafeInteger(last) && last >= 0)) return json(res, 400, { error: "after: not a sequence number" });
+    if (served.size > 0) {
+      try {
+        await learn();
+      } catch (err) {
+        failed("feed snapshot", err);
+        return json(res, 502, { error: "the yard did not answer" });
+      }
+      if (req.destroyed) return;
+    }
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
     res.write(`retry: ${retry}\n\n`);
     const listener = { res, last };
@@ -506,14 +603,16 @@ async function main() {
       dir: { type: "string", default: fileURLToPath(new URL("../dist", import.meta.url)) },
       layout: { type: "string", default: layoutFile() },
       hide: { type: "string", multiple: true, default: [] },
+      depot: { type: "string", multiple: true, default: [] },
     },
   });
   const port = Number(values.port);
   const root = resolve(values.dir);
   // Repeatable, or apart with commas; each once, in the order named.
   const hide = [...new Set(values.hide.flatMap((part) => part.split(",")).map((part) => part.trim()).filter((part) => part !== ""))];
+  const depot = [...new Set(values.depot.flatMap((part) => part.split(",")).map((part) => part.trim()).filter((part) => part !== ""))];
   if (!Number.isInteger(port) || port < 0 || hide.some((part) => !HIDABLE.has(part))) {
-    console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--dir dist] [--layout file] [--hide part]");
+    console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--dir dist] [--layout file] [--hide part] [--depot name]");
     process.exit(2);
   }
   // A nameless wagon has no card: title implies body and notes, and the
@@ -535,7 +634,7 @@ async function main() {
   }
   const run = yardr();
   const yard = { snapshot: () => snapshot(run), bead: (id) => bead(run, id), head: () => head(run), follow: (after, signal) => follow(run, after, signal) };
-  const { handle, close } = routes({ yard, root, memory, remember: (slots) => remember(layout, slots), quota: () => quota(), hide });
+  const { handle, close } = routes({ yard, root, memory, remember: (slots) => remember(layout, slots), quota: () => quota(), hide, depot });
 
   const server = createServer(handle);
   server.listen(port, values.host, () => {
@@ -545,6 +644,7 @@ async function main() {
     const local = ["127.0.0.1", "::1", "localhost"].includes(values.host);
     if (!local) console.log("signalbox: no login: whoever reaches that address reads the depots' beads, their bodies and notes, its groups and events");
     if (hide.length > 0) console.log(`signalbox: hiding ${hide.join(", ")}`);
+    if (depot.length > 0) console.log(`signalbox: serving depots ${depot.join(", ")}`);
   });
   // What stopped the script goes to the log with it: the death of 22 Oct
   // left nothing behind. A death no handler catches (SIGKILL, OOM) leaves

@@ -238,7 +238,8 @@ is four routes beside the files of `dist/`:
   `quota.json` in one answer, taken now; `quota` is the last answer of the
   minute, and `null` when there is none. A provider that is slow does not
   hold the page: after three seconds the snapshot goes without, and the feed
-  brings the answer.
+  brings the answer. With `--depot <name>` the answer carries those depots
+  alone: nothing of the others leaves.
 - `GET /api/feed?after=<seq>`: server-sent events, one message for each event
   of the yard after `seq`, with its number as the id. A page that lost the
   line says where it was (`Last-Event-ID`) and misses nothing, also when the
@@ -246,6 +247,7 @@ is four routes beside the files of `dist/`:
   port is another one each time, and the open page looks for the old one.
   The quota comes on the same line when it was asked again, and once to a
   page that starts to listen: a message of the event `quota`, with no id.
+  With `--depot <name>`, no event of a depot not named is sent.
 - `GET /api/bead/<id>`: one bead for its card, `{bead, notes, hidden?}`,
   asked of the yard at the click (the view's `/beads/<id>`), less `--hide`.
   An id is lower-case letters, figures, dots and dashes, and starts with a
@@ -254,7 +256,8 @@ is four routes beside the files of `dist/`:
   and the card says "not found", as it does for a bead with no depot: the
   yard's own journal, memories and asks, which the page never shows. With
   `--hide title` every bead is a 404: a nameless wagon has no card, and a
-  click opens nothing.
+  click opens nothing; with `--depot`, a bead of a depot not named is 404
+  too.
 - `POST /api/fault`: a report of the page's, `{at, what, detail, agent,
   screen}`, answered 204 and written as one line where the script says what
   it does (`signalbox: fault <what> from <agent> <screen>: <detail> at <at>`).
@@ -274,7 +277,9 @@ starts again, and nothing of the account. And of the one bead a card asks for, l
 only and in no file, when the bead has a depot: its body and its notes, each
 with its author and time, as they were written, less `--hide` (`body` leaves
 the body out, `notes` the notes' text, `events` an event's data but its
-bead, kind, stages and group). Whoever writes a path or a key into a note
+bead, kind, stages and group). With `--depot <name>` a depot not named
+leaves nothing: no depots, flows, routes, beads or edges, no events, and
+its cards answer 404. Whoever writes a path or a key into a note
 has put it on the card. Never a path or a key the yard itself prints, nor a
 session's own name: `src/project.ts` builds each answer from the fields it
 names. There is no login, as with `yardr web serve --unsafe`: whoever reaches
