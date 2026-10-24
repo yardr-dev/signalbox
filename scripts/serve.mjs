@@ -10,8 +10,10 @@
 //
 // `--hide <part>` keeps a part back: body (a bead's body), notes (a note's
 // text: heads alone), events (an event's data but its bead, kind, stages
-// and group: enough to move engines, the words go). Repeat it, or name
-// parts apart with commas. Nothing is hidden unless named.
+// and group: enough to move engines, the words go), title (a bead's
+// title: wagons alone, and implies body and notes, since a nameless wagon
+// has no card). Repeat it, or name parts apart with commas. Nothing is
+// hidden unless named.
 //
 // Beside the built page (dist/) it answers three routes from the yard's web
 // view (scripts/yard.mjs), cut down by src/project.ts, and takes one report
@@ -31,9 +33,10 @@
 //                               notes, hidden?}, with the bead's body and
 //                               notes, less --hide; hidden names the parts
 //                               kept back; 404 when the yard has no bead
-//                               of that id, or the bead has no depot: the
-//                               yard's own (its journal, memories, asks),
-//                               which the page never shows
+//                               of that id, when --hide title keeps every
+//                               card back, or when the bead has no depot:
+//                               the yard's own (its journal, memories,
+//                               asks), which the page never shows
 //   POST /api/fault             what went wrong in the page's browser
 //                               (src/fault.ts): {at, what, detail, agent,
 //                               screen}, answered 204 and written as one
@@ -123,7 +126,7 @@ export function fault(said) {
 const ID = /^[a-z0-9][a-z0-9.-]*$/;
 
 // The parts --hide names.
-const HIDABLE = new Set(["body", "notes", "events"]);
+const HIDABLE = new Set(["body", "notes", "events", "title"]);
 
 // What an event's data keeps with --hide events: the stages (of an advance,
 // its from and to; of a created, its stage) and the group. Enough to move
@@ -142,6 +145,13 @@ function bare(event) {
   if (Object.keys(data).length > 0) cut.data = data;
   else delete cut.data;
   return cut;
+}
+
+// A bead with its title kept back: its wagon alone. Left out, not answered
+// empty, as a hidden body is.
+function untitled(bead) {
+  const { title: _title, ...rest } = bead;
+  return rest;
 }
 
 const TYPES = {
@@ -191,8 +201,8 @@ export function remember(file, slots) {
 //             without it nobody asks, and nobody knows
 //   clock     the time in milliseconds, to count QUOTA_EVERY by
 //   wait      milliseconds a snapshot waits for the quota
-//   hide      the parts kept back (--hide): body, notes, events. Nothing
-//             hidden when empty.
+//   hide      the parts kept back (--hide): body, notes, events, title.
+//             Nothing hidden when empty.
 export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota, clock = Date.now, wait = QUOTA_WAIT, hide = [] }) {
   const hidden = new Set(hide);
   const listeners = new Set();
@@ -269,7 +279,9 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       const [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
       slots = place(now, slots);
       keep();
-      json(res, 200, { yard: now, layout: slots, log: hidden.has("events") ? { ...log, events: log.events.map(bare) } : log, quota: left });
+      let shown = hidden.has("events") ? { ...log, events: log.events.map(bare) } : log;
+      if (hidden.has("title")) shown = { ...shown, beads: shown.beads.map(untitled) };
+      json(res, 200, { yard: hidden.has("title") ? { ...now, beads: now.beads.map(untitled) } : now, layout: slots, log: shown, quota: left });
     } catch (err) {
       failed("snapshot", err);
       json(res, 502, { error: "the yard did not answer" });
@@ -282,8 +294,10 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     try {
       const found = await yard.bead(id);
       // The yard's own beads have no depot: its journal, memories, asks. The
-      // page never shows them, so they are unknown here, local or not.
-      if (found === undefined || !found.bead.depot) return json(res, 404, { error: "not found" });
+      // page never shows them, so they are unknown here, local or not. A
+      // nameless wagon has no card either: with --hide title every bead
+      // is unknown here, and the page opens nothing.
+      if (found === undefined || !found.bead.depot || hidden.has("title")) return json(res, 404, { error: "not found" });
       if (!hidden.has("body") && !hidden.has("notes")) return json(res, 200, found);
       // What is kept back is left out, not answered empty: a note without
       // text is its head alone.
@@ -502,6 +516,9 @@ async function main() {
     console.error("usage: serve.mjs [--host 127.0.0.1] [--port 0] [--dir dist] [--layout file] [--hide part]");
     process.exit(2);
   }
+  // A nameless wagon has no card: title implies body and notes, and the
+  // startup line names all three.
+  if (hide.includes("title")) for (const part of ["body", "notes"]) if (!hide.includes(part)) hide.push(part);
   if (!existsSync(join(root, "index.html"))) {
     console.error(`signalbox: no page in ${root}: npm run build writes it`);
     process.exit(1);

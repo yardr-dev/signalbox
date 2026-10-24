@@ -50,6 +50,8 @@ describe("the card", () => {
     expect(c.body).toBe("");
     expect(c.notes).toEqual([{ head: "?", text: "" }]);
     expect(card({ bead, notes: [] }, when).remark).toBe("no notes");
+    // No title (--hide title): its id stands as the card's.
+    expect(card({ bead: { ...bead, title: undefined }, notes: [] }, when).title).toBe("signalbox-a");
     // A closed bead has no session to wait for.
     const closed = card({ bead: { ...bead, working: false, status: "closed" }, notes: [] }, when);
     expect(Object.fromEntries(closed.facts).group).toBe("builders · closed");

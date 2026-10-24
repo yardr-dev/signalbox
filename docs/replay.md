@@ -190,7 +190,7 @@ an open bead at an end. The replay keeps them from
     YARDR_WEB=http://127.0.0.1:9000 npm run live   # a view at another address, as for the snapshot
     npm run live -- --port 8800           # a port of your choice (a free one)
     npm run live -- --host 100.64.0.7     # an address other than this machine's own
-    npm run live -- --hide notes          # heads alone on a card; body, events hide too
+    npm run live -- --hide notes          # heads alone on a card; body, events, title hide too
 
 `npm run live` builds the page and starts `scripts/serve.mjs`, which prints
 the page's address: on 127.0.0.1 and a free port unless told otherwise. The
@@ -252,7 +252,9 @@ is four routes beside the files of `dist/`:
   letter or a figure; anything else is refused before the view is asked. A
   bead the yard does not have is a 404,
   and the card says "not found", as it does for a bead with no depot: the
-  yard's own journal, memories and asks, which the page never shows.
+  yard's own journal, memories and asks, which the page never shows. With
+  `--hide title` every bead is a 404: a nameless wagon has no card, and a
+  click opens nothing.
 - `POST /api/fault`: a report of the page's, `{at, what, detail, agent,
   screen}`, answered 204 and written as one line where the script says what
   it does (`signalbox: fault <what> from <agent> <screen>: <detail> at <at>`).
@@ -263,7 +265,8 @@ is four routes beside the files of `dist/`:
 What it exposes: what a snapshot holds, for the yard as it is
 now. Depots, flows, stages, groups, routes, crew and peers by name; of each
 open bead its id, title, type, stage, labels, whether a session works it and
-what went wrong with it last (a kind and a time);
+what went wrong with it last (a kind and a time), without the title under
+`--hide title`: wagons alone;
 of each event its number, time, kind, bead and a few names (group, depot,
 peer, stages of an advance); of each provider `aiquokka` lists with a weekly
 or a five-hour window its name, plan, the percent used of each and when it

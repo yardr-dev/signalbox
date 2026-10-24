@@ -531,6 +531,9 @@ async function start() {
   // when its card was replaced or closed is dropped.
   let turn = 0;
   const open = async (bead: Bead) => {
+    // A bead with no title has no card: with --hide title a click opens
+    // nothing, not even the asking card.
+    if (bead.title === undefined) return;
     const mine = ++turn;
     // No serve script, no yard to ask: the card is the snapshot's bead.
     if (!api) return show(brief(bead, when, NEEDS_LIVE));

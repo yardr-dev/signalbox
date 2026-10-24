@@ -1425,6 +1425,10 @@ describe("the faults of the stock", () => {
     expect(wrong(bead("sextant-a", { fault: { kind: "unrouted", at: when } }))).toBe(`unrouted ${clock(when)}`);
     expect(wrong(bead("sextant-a", { hold: true, fault: { kind: "move_refused", at: "" } }))).toBe("held · move refused");
     expect(tip(bead("sextant-a", { fault: { kind: "move_refused", at: when } }), false)).toBe(`sextant-a\nsextant-a\nsextant · task · new · move refused ${clock(when)}`);
+    // No title (--hide title): id and where alone, no empty line, worked or not.
+    const nameless = bead("sextant-a", { title: undefined });
+    expect(tip(nameless, false)).toBe("sextant-a\nsextant · task · new");
+    expect(tip(nameless, true)).toBe("sextant-a — session of ?\nsextant · task · new");
   });
 });
 

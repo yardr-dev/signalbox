@@ -121,5 +121,5 @@ export function rows(yard: Yard, beads: Bead[]): Row[] {
       return aSince < bSince ? -1 : aSince > bSince ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     })
     .slice(0, LIMIT);
-  return aged.map((bead) => ({ bead, time: etaText(bead), badge: badge(bead), title: bead.title, via: via(yard, bead), platform: bead.stage, line: bead.depot, ...remark(yard, bead) }));
+  return aged.map((bead) => ({ bead, time: etaText(bead), badge: badge(bead), title: bead.title ?? bead.id, via: via(yard, bead), platform: bead.stage, line: bead.depot, ...remark(yard, bead) }));
 }

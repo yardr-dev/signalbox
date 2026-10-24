@@ -50,8 +50,10 @@ Flags: `--port <n>` (a free one when left out), `--host <addr>` to serve
 another device, `--dir dist`, `--layout <file>` for where the yard's slots
 are kept (default `$YARDR_HOME/signalbox/layout.json`, else
 `~/.yardr/signalbox/layout.json`), `--hide <part>` to keep back a bead's
-body, its notes' text, or events' words (`body`, `notes`, `events`;
-repeatable, or apart with commas; nothing hidden unless named).
+body, its notes' text, events' words, or its title (`body`, `notes`,
+`events`, `title`; repeatable, or apart with commas; nothing hidden
+unless named). `title` shows wagons alone and implies `body` and `notes`:
+a nameless wagon has no card.
 `AIQUOKKA=/path/to/aiquokka` names the quota binary.
 
 ## A phone or another device

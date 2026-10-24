@@ -90,7 +90,8 @@ export interface Peer {
 
 export interface Bead {
   id: string;
-  title: string;
+  // Absent on a page that hides titles (--hide title): wagons alone.
+  title?: string;
   type: string;
   stage: string;
   depot: string;

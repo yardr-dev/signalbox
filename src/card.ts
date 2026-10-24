@@ -84,7 +84,9 @@ export function card(detail: Detail, when: When): Card {
   const remark = hidden.length > 0 ? `${hidden.join(" and ")} hidden on this page` : notes.length === 0 ? "no notes" : "";
   return {
     id: bead.id,
-    title: bead.title,
+    // A bead with no title is its id: with --hide title no card opens, but
+    // the card reads a snapshot's bead too.
+    title: bead.title ?? bead.id,
     facts: facts(bead, when),
     body: bead.body ?? "",
     notes,

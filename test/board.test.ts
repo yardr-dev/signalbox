@@ -94,6 +94,9 @@ describe("the board's rows", () => {
     // No group has it yet: its type stands on the badge.
     const q = rows(y, [bead("wharf-b", { type: "train" })])[0]!;
     expect(q.badge).toBe("train");
+    // No title (--hide title): its id stands as the destination.
+    const nameless = rows(y, [bead("wharf-c", { title: undefined })])[0]!;
+    expect(nameless.title).toBe("wharf-c");
   });
 
   test("the demo's day boards its states too, held beads in red", () => {

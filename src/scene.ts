@@ -1512,10 +1512,12 @@ export function awaits(w: Wait): string {
 
 // The tip of a wagon, or of the figure that works it or sits by it. age is
 // the days the wagon has waited on a person, where it does; waits is what
-// it waits for, a line for each bead (awaits).
+// it waits for, a line for each bead (awaits). A bead with no title leaves
+// no empty line: id and where alone.
 export function describe(bead: Bead, crew: boolean, age?: number, waits: string[] = []): string {
   const faults = wrong(bead);
   const stands = `${bead.depot} · ${bead.type} · ${bead.stage}${faults !== undefined ? ` · ${faults}` : ""}`;
   const where = [stands, ...(age !== undefined ? [waited(bead.stage, age)] : []), ...waits].join("\n");
-  return crew ? `${bead.id} — session of ${bead.group ?? "?"}\n${bead.title}\n${where}` : `${bead.id}\n${bead.title}\n${where}`;
+  const head = crew ? `${bead.id} — session of ${bead.group ?? "?"}` : bead.id;
+  return bead.title === undefined ? `${head}\n${where}` : `${head}\n${bead.title}\n${where}`;
 }

@@ -491,6 +491,24 @@ describe("the snapshot", () => {
     expect(log.events).toEqual([{ seq: 1, at, kind: "advanced", bead: "signalbox-a", data: { from: "new", to: "review", group: "builders" } }]);
   });
 
+  test("hidden titles: the snapshot's beads carry none, open or of the log", async () => {
+    const at = "2099-01-01T00:00:00Z";
+    const y = yard([{ seq: 1, at, kind: "closed", bead: "signalbox-done", data: {} }]);
+    y.open = [{ id: "signalbox-a", title: "a", type: "task", stage: "new", status: "open", depot: "signalbox", priority: 2 }];
+    y.closed = [{ id: "signalbox-done", title: "done", type: "task", stage: "merged", status: "closed", depot: "signalbox", priority: 2 }];
+    const s = await start(y, { hide: ["title"] });
+    const { yard: now, log } = await (await fetch(`${s.url}/api/snapshot`)).json();
+    expect(now.beads.map((b) => b.id)).toEqual(["signalbox-a"]);
+    expect(now.beads[0]).not.toHaveProperty("title");
+    expect(log.beads.map((b) => b.id)).toEqual(["signalbox-done"]);
+    expect(log.beads[0]).not.toHaveProperty("title");
+    // Without --hide the titles are there.
+    const plain = await start(y);
+    const whole = await (await fetch(`${plain.url}/api/snapshot`)).json();
+    expect(whole.yard.beads[0].title).toBe("a");
+    expect(whole.log.beads[0].title).toBe("done");
+  });
+
   test("the slots are kept in the yard's home", () => {
     expect(layoutFile({ YARDR_HOME: "/a/yard" })).toBe("/a/yard/signalbox/layout.json");
     for (const env of [{}, { YARDR_HOME: "" }]) expect(layoutFile(env)).toBe(join(homedir(), ".yardr", "signalbox", "layout.json"));
@@ -654,6 +672,15 @@ describe("the snapshot", () => {
     expect(s.url).toBeUndefined();
     expect(await s.code).toBe(2);
     expect(s.said()).toContain("usage: serve.mjs");
+  });
+
+  test("--hide title implies body and notes on the startup line: a nameless wagon has no card", async () => {
+    const home = join(dir, "home-hide-title");
+    mkdirSync(home);
+    const s = await served(home, ["--hide", "title"]);
+    expect(s.url).toBeDefined();
+    await until(() => s.told().includes("hiding"));
+    expect(s.told()).toContain("signalbox: hiding title, body, notes");
   });
 
   test("a signal stops the script, with a line saying which", async () => {
@@ -884,6 +911,14 @@ describe("a bead", () => {
       }
       expect((await fetch(`${s.url}/api/bead/signalbox-a`)).status, `${hide}`).toBe(200);
     }
+  });
+
+  test("a hidden title is not found: a nameless wagon has no card", async () => {
+    const of = { ...yard([]), bead: async () => detail };
+    const s = await start(of, { hide: ["title"] });
+    const response = await fetch(`${s.url}/api/bead/signalbox-a`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not found" });
   });
 
   test("a hidden body is left out, beside whole notes; hidden notes are heads alone, beside the body", async () => {
