@@ -134,6 +134,31 @@ serving() {
   ps -o command= -p "$1" 2>/dev/null | grep -q "serve\.mjs"
 }
 
+# The pid the login service names for its job, if it names one.
+job_pid() {
+  launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p'
+}
+
+# Whether the server the run started is still the one up. Where launchd
+# owns it, launchd says: the job names its pid, and asking the process
+# itself misread a live server once, in the first second after a restart.
+# Where the run started the server itself, kill -0 is the only check there
+# is. A failure names the check and what it said, with the log tail.
+check_alive() {
+  if [ -n "$by_launchd" ]; then
+    current=$(job_pid)
+    if [ -z "$current" ]; then
+      fail "the server died: launchctl print $job names no pid (started $pid): $(tail -n 5 "$log" | tr '\n' '; ')"
+    elif [ "$current" != "$pid" ]; then
+      fail "the server died: launchctl print $job names $current, not the started $pid (launchd restarted it): $(tail -n 5 "$log" | tr '\n' '; ')"
+    fi
+  else
+    kill_status=0
+    killed=$(kill -0 "$pid" 2>&1) || kill_status=$?
+    [ "$kill_status" -eq 0 ] || fail "the server died: kill -0 $pid exited $kill_status ($killed): $(tail -n 5 "$log" | tr '\n' '; ')"
+  fi
+}
+
 # A TERM that went unanswered for a count of seconds is a KILL; a server
 # that answers neither fails the run, and nothing starts beside it.
 stop() {
@@ -154,21 +179,23 @@ stop() {
 }
 
 if [ "$mode" != check ]; then
+  by_launchd=
   # The job loaded means launchd owns the server, so the restart goes
   # through it; the pid file follows the job's pid, and the checks below
-  # read the supervised server. Where the job is not loaded (another
+  # ask the job, not the process. Where the job is not loaded (another
   # machine, a test), the server is stopped by its pid file and started
   # beside this script, as before.
   if launchctl print "$job" >/dev/null 2>&1; then
+    by_launchd=1
     mkdir -p "$(dirname "$pidfile")" "$(dirname "$log")"
-    previous_pid=$(launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p')
+    previous_pid=$(job_pid)
     launchctl kickstart -k "$job" || fail "launchctl kickstart -k $job failed"
     # Do not mistake the process being killed for the replacement: launchctl
     # can still print its pid while the restart is in flight.
     pid=""
     waited=0
     while [ -z "$pid" ] || [ "$pid" = "$previous_pid" ]; do
-      current_pid=$(launchctl print "$job" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p')
+      current_pid=$(job_pid)
       if [ -n "$current_pid" ] && [ "$current_pid" != "$previous_pid" ]; then
         pid=$current_pid
         break
@@ -224,12 +251,12 @@ if [ "$mode" != check ]; then
   # is the feed check's to say.
   waited=0
   while ! curl -sf --max-time 2 "$at/" -o /dev/null 2>/dev/null; do
-    kill -0 "$pid" 2>/dev/null || fail "the server died: $(tail -n 5 "$log" | tr '\n' '; ')"
+    check_alive
     waited=$((waited + 1))
     [ "$waited" -lt 30 ] || fail "the server is not up after 30 s: $(tail -n 5 "$log" | tr '\n' '; ')"
     sleep 1
   done
-  kill -0 "$pid" 2>/dev/null || fail "the server died: $(tail -n 5 "$log" | tr '\n' '; ')"
+  check_alive
 fi
 
 # The served page is the built one, byte for byte, and every asset it names

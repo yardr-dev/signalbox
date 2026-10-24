@@ -88,7 +88,11 @@ function yardr(root, yard) {
 // launchd as the script runs it: print names the job's pid while its server
 // lives, kickstart -k stops that server and starts another on the script's
 // port. Overwrites checkout's failing stand-in, which keeps every other run
-// on the pid-file start.
+// on the pid-file start. Three knobs bend what print names after a restart:
+// LAUNCHCTL_FIXED_PID names that pid instead of the server's (one with no
+// process proves the run never asked kill -0); LAUNCHCTL_REPLACE_PID and
+// LAUNCHCTL_LOSE_PID, once the run has latched the started pid in its pid
+// file, name another pid or none: launchd restarted the server, or lost it.
 function launchd(root) {
   writeFileSync(
     join(root, "bin", "launchctl"),
@@ -98,6 +102,15 @@ if [ "$1" = "print" ]; then
   [ -f "$state" ] || exit 1
   pid=$(cat "$state")
   kill -0 "$pid" 2>/dev/null || exit 1
+  if [ -f "$YARDR_HOME/fixed.pid" ]; then
+    pid=$(cat "$YARDR_HOME/fixed.pid")
+  elif [ -f "$YARDR_HOME/signalbox/serve.pid" ] && [ "$(cat "$YARDR_HOME/signalbox/serve.pid")" = "$pid" ]; then
+    if [ -n "$LAUNCHCTL_REPLACE_PID" ]; then
+      pid=$LAUNCHCTL_REPLACE_PID
+    elif [ -n "$LAUNCHCTL_LOSE_PID" ]; then
+      exit 1
+    fi
+  fi
   printf '%s = {\\n\\tactive count = 5\\n\\tpid = %s\\n};\\n' "$2" "$pid"
 elif [ "$1" = "kickstart" ] && [ "$2" = "-k" ]; then
   echo "kickstart $2 $3" >>$YARDR_HOME/kickstarted
@@ -112,6 +125,9 @@ elif [ "$1" = "kickstart" ] && [ "$2" = "-k" ]; then
       root=$(dirname "$YARDR_HOME")
       mkdir -p "$YARDR_HOME/logs"
       node "$root/bin/page.mjs" "$SIGNALBOX_PORT" "$root" >>"$YARDR_HOME/logs/signalbox-serve.log" 2>&1 </dev/null &
+      # Before the state: a print between the two never names the server's
+      # pid where LAUNCHCTL_FIXED_PID asked for another.
+      [ -n "$LAUNCHCTL_FIXED_PID" ] && echo "$LAUNCHCTL_FIXED_PID" >"$YARDR_HOME/fixed.pid"
       echo $! >"$state"
     ) >/dev/null 2>&1 </dev/null &
   else
@@ -198,7 +214,7 @@ async function free() {
 // /usr/bin and /bin hold sh, curl, git and the rest; /usr/sbin lsof. Async:
 // the servers the script asks run in this process, and a synchronous run
 // would hold them mute while it waits.
-function run(args, { root, port, web = "http://127.0.0.1:1" }) {
+function run(args, { root, port, web = "http://127.0.0.1:1", env = {} }) {
   return new Promise((resolve, reject) => {
     const child = spawn("sh", [script, ...args], {
       env: {
@@ -208,6 +224,7 @@ function run(args, { root, port, web = "http://127.0.0.1:1" }) {
         YARDR_WEB: web,
         SIGNALBOX_HOST: "127.0.0.1",
         SIGNALBOX_PORT: String(port),
+        ...env,
       },
     });
     let stdout = "";
@@ -333,17 +350,9 @@ describe("the public page's restart", () => {
     expect(readFileSync(join(root, "home", "logs", "signalbox-serve.log"), "utf8")).toContain("live, at");
   }, 60000);
 
-  test("restarts the server through launchd when the job is loaded, and the pid file follows the job's pid", async () => {
-    const root = checkout("launchd");
-    yardr(root, [{ seq: 41 }]);
-    launchd(root);
-    const port = await free();
-    const pidfile = join(root, "home", "signalbox", "serve.pid");
-    const state = join(root, "home", "launchd.pid");
-    watch(pidfile);
-    stoppers.push(() => stop(state));
-
-    // The loaded job's server, started as the stand-in starts it.
+  // The loaded job's server, started as the stand-in starts it: a kickstart
+  // with no state starts it synchronously. Waits for the page it serves.
+  async function preload(root, port) {
     const env = {
       PATH: `${join(root, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin`,
       HOME: join(root, "home"),
@@ -351,7 +360,7 @@ describe("the public page's restart", () => {
       SIGNALBOX_PORT: String(port),
     };
     execFileSync(join(root, "bin", "launchctl"), ["kickstart", "-k", "gui/0/dev.yardr.signalbox-serve"], { env });
-    const old = Number(readFileSync(state, "utf8"));
+    const old = Number(readFileSync(join(root, "home", "launchd.pid"), "utf8"));
     expect(old).toBeGreaterThan(0);
     const until = Date.now() + 10000;
     for (;;) {
@@ -364,17 +373,64 @@ describe("the public page's restart", () => {
       await new Promise((go) => setTimeout(go, 100));
     }
     expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe(readFileSync(join(root, "dist/index.html"), "utf8"));
+    return old;
+  }
 
-    const ran = await run(["--start-only", root], { root, port });
-    expect(ran.status, ran.stderr).toBe(0);
-    expect(ran.stdout).toContain("restarted");
-    expect(ran.stdout).toContain("dev.yardr.signalbox-serve");
-    expect(readFileSync(join(root, "home", "kickstarted"), "utf8")).toContain("kickstart -k gui/");
+  test.each([
+    { name: "restarts the server and the pid file follows the job's pid", behavior: "same" },
+    {
+      name: "trusts the job's pid without checking the process",
+      behavior: "fixed",
+      env: { LAUNCHCTL_FIXED_PID: "987654321" },
+    },
+    {
+      name: "fails naming both pids when launchd names another pid",
+      behavior: "replaced",
+      env: { LAUNCHCTL_REPLACE_PID: "987654321" },
+    },
+    {
+      name: "fails saying so when launchd names no pid",
+      behavior: "lost",
+      env: { LAUNCHCTL_LOSE_PID: "1" },
+    },
+  ])("launchd restart: $name", async ({ behavior, env = {} }) => {
+    const root = checkout(`launchd-${behavior}`);
+    yardr(root, [{ seq: 41 }]);
+    launchd(root);
+    const port = await free();
+    const pidfile = join(root, "home", "signalbox", "serve.pid");
+    const state = join(root, "home", "launchd.pid");
+    watch(pidfile);
+    stoppers.push(() => stop(state));
+
+    const old = await preload(root, port);
+
+    const ran = await run(["--start-only", root], { root, port, env });
     const pid = Number(readFileSync(pidfile, "utf8"));
-    expect(pid).not.toBe(old);
-    expect(pid).toBe(Number(readFileSync(state, "utf8")));
-    expect(() => process.kill(old, 0)).toThrow();
-    expect(ran.stdout).toContain("1 assets, feed at 41, yard at 41");
+    if (behavior === "same") {
+      expect(ran.status, ran.stderr).toBe(0);
+      expect(ran.stdout).toContain("restarted");
+      expect(ran.stdout).toContain("dev.yardr.signalbox-serve");
+      expect(readFileSync(join(root, "home", "kickstarted"), "utf8")).toContain("kickstart -k gui/");
+      expect(pid).not.toBe(old);
+      expect(pid).toBe(Number(readFileSync(state, "utf8")));
+      expect(() => process.kill(old, 0)).toThrow();
+      expect(ran.stdout).toContain("1 assets, feed at 41, yard at 41");
+    } else if (behavior === "fixed") {
+      // Past every pid the machine hands out: kill -0 on it fails, so a pass
+      // proves the run never asked.
+      expect(ran.status, ran.stderr).toBe(0);
+      expect(pid).toBe(987654321);
+      expect(ran.stdout).toContain("1 assets, feed at 41, yard at 41");
+    } else if (behavior === "replaced") {
+      expect(ran.status).toBe(1);
+      expect(ran.stderr).toContain(`names 987654321, not the started ${pid}`);
+      expect(ran.stderr).toContain("launchd restarted it");
+    } else {
+      expect(ran.status).toBe(1);
+      expect(ran.stderr).toContain("names no pid");
+      expect(ran.stderr).toContain(String(pid));
+    }
   }, 60000);
 
   test("refuses a node older than package.json asks for, and starts nothing", async () => {
