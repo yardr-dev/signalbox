@@ -633,6 +633,21 @@ describe("the snapshot", () => {
     expect(all.log.events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     // Unfiltered, log.seq is the newest shown.
     expect(all.log.seq).toBe(9);
+    // The slots the page is sent pack the shown depots together: consecutive
+    // slots 0..n-1 in the order of their stored slots, while what is kept
+    // holds every depot's slot, so a depot shown again later gets its old
+    // place back.
+    const { y: three } = twoDepots();
+    three.structure.depots.push({ name: "yardr.dev", kind: "git" });
+    three.structure.flows.push({ name: "yardr.dev", kind: "git", flows: [{ name: "default", stages: [{ stage: "new" }] }] });
+    const written = [];
+    const cut = await start(three, { depot: ["yardr", "yardr.dev"], memory: { depots: { yardr: 0, "yardr-hosted": 1, "yardr.dev": 2 } }, remember: (slots) => written.push(slots) });
+    expect((await (await fetch(`${cut.url}/api/snapshot`)).json()).layout.depots).toEqual({ yardr: 0, "yardr.dev": 1 });
+    expect(written).toHaveLength(1);
+    expect(written[0].depots).toEqual({ yardr: 0, "yardr-hosted": 1, "yardr.dev": 2 });
+    // The packed order is the stored slots' order, not the yard's or --depot's.
+    const turned = await start(twoDepots().y, { depot: ["yardr", "yardr-hosted"], memory: { depots: { yardr: 5, "yardr-hosted": 0 } } });
+    expect((await (await fetch(`${turned.url}/api/snapshot`)).json()).layout.depots).toEqual({ "yardr-hosted": 0, yardr: 1 });
   });
 
   test("the slots are kept in the yard's home", () => {

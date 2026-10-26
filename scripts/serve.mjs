@@ -194,6 +194,14 @@ function passes(event, served, beads, depots) {
   return typeof depot === "string" && served.has(depot);
 }
 
+// The slots the page is sent with --depot: the shown depots alone, packed to
+// consecutive slots 0..n-1 in the order of their stored slots, so no empty
+// ground stands where a hidden depot would be. What is kept holds every
+// depot's slot, so a depot shown again later gets its old place back.
+function pack(depots, names) {
+  return Object.fromEntries([...names].sort((a, b) => depots[a] - depots[b]).map((name, slot) => [name, slot]));
+}
+
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -370,9 +378,13 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       }
       slots = place(now, slots);
       keep();
+      // With --depot the page is sent the packed slots; without it, what is
+      // kept. A depot shown again later is packed from its stored slot, so it
+      // gets its old place back.
+      const layout = served.size === 0 ? slots : { ...slots, depots: pack(slots.depots, now.depots.map((d) => d.name)) };
       let shown = hidden.has("events") ? { ...log, events: log.events.map(bare) } : log;
       if (hidden.has("title")) shown = { ...shown, beads: shown.beads.map(untitled) };
-      json(res, 200, { yard: hidden.has("title") ? { ...now, beads: now.beads.map(untitled) } : now, layout: slots, log: shown, quota: left });
+      json(res, 200, { yard: hidden.has("title") ? { ...now, beads: now.beads.map(untitled) } : now, layout, log: shown, quota: left });
     } catch (err) {
       failed("snapshot", err);
       json(res, 502, { error: "the yard did not answer" });
