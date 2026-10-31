@@ -150,9 +150,11 @@ export async function* follow(run, after, signal, wait) {
   for await (const raw of stream(run, after, signal, wait)) yield eventOf(raw, alias);
 }
 
-// The yard's newest sequence number: where "from now" is.
+// The yard's newest sequence number: where "from now" is. From /depots:
+// every list answer carries the yard's head, and /peers answers the
+// operator alone while this page reads as a visitor.
 export async function head(run) {
-  return (await run("/peers")).head;
+  return (await run("/depots")).head;
 }
 
 // The window of the log: what the stream carries after head minus n, read
@@ -172,15 +174,16 @@ async function recent(run, top, n) {
 
 const now = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
-// The yard now and the window of its log: yard.json and events.json.
+// The yard now and the window of its log: yard.json and events.json. No
+// /peers: it answers the operator alone, so the view is handed an empty
+// peers list and draws a yard with no peers.
 export async function snapshot(run, window = WINDOW) {
-  const [depots, flows, groups, routes, crew, peers, beads, all, sessions, deps] = await Promise.all([
+  const [depots, flows, groups, routes, crew, beads, all, sessions, deps] = await Promise.all([
     run("/depots"),
     run("/flows"),
     run("/groups"),
     run("/routes"),
     run("/crew"),
-    run("/peers"),
     // Without all: every open bead.
     run("/beads"),
     // Every bead there ever was: the ones the window names and that have
@@ -195,7 +198,7 @@ export async function snapshot(run, window = WINDOW) {
   const events = await recent(run, beads.head, window);
   const taken_at = now();
   return {
-    yard: yardOf({ depots: depots.depots, flows: flows.depots, groups: groups.groups, routes: routes.routes, crew: crew.crew, peers: peers.peers, beads: beads.beads, sessions: sessions.list, events, edges: deps.deps }, taken_at),
+    yard: yardOf({ depots: depots.depots, flows: flows.depots, groups: groups.groups, routes: routes.routes, crew: crew.crew, peers: [], beads: beads.beads, sessions: sessions.list, events, edges: deps.deps }, taken_at),
     log: logOf(taken_at, events, all.beads, alias),
   };
 }

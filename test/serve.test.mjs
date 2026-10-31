@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
 import { FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, RETRY_MOST, backoff, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
 import { bead, follow, head, quota, snapshot, yardr } from "../scripts/yard.mjs";
+import { layout } from "../src/layout.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "signalbox-"));
 const root = join(dir, "dist");
@@ -287,11 +288,42 @@ describe("the feed", () => {
     page.close();
   });
 
-  test("a page that names no place follows from now", async () => {
+  test("a visitor whose peers are refused still gets a drawn snapshot and follows from now", async () => {
     const y = yard(span(1, 5));
-    const s = await start(y);
+    const whole = y.fetch;
+    const visitor = async (url, init) => {
+      const { pathname, search } = new URL(url);
+      // Since yardr-xq5j /peers answers the operator alone; a visitor is refused.
+      if (pathname === "/peers") {
+        y.asked.push(pathname + search);
+        return Response.json({ error: "operator only" }, { status: 403 });
+      }
+      return whole(url, init);
+    };
+    const run = yardr("http://yard", visitor);
+    const of = {
+      ...y,
+      snapshot: () => snapshot(run),
+      bead: (id) => bead(run, id),
+      head: () => head(run),
+      follow: (after, signal) => follow(run, after, signal),
+    };
+    const s = await start(of);
+    const response = await fetch(`${s.url}/api/snapshot`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.yard.peers).toEqual([]);
+    expect(body.log.events).toEqual(span(1, 5));
+    expect(body.layout.peers).toEqual({});
+    // The view draws it: laid out with no peer lines.
+    expect(layout(body.yard).peers).toEqual([]);
+    // Neither the snapshot nor its head asks for what a visitor may not read.
+    expect(y.asked).not.toContain("/peers");
+    expect(y.asked).toContain("/depots");
+
     const page = await listen(`${s.url}/api/feed`);
     await until(() => y.streams.size === 1);
+    expect(y.asked).not.toContain("/peers");
     // Now is the yard's head, and the stream is asked for what comes after.
     expect(y.asked.at(-1)).toBe("/events?format=json&after=5");
     y.push(event(6));
@@ -403,7 +435,7 @@ describe("the feed", () => {
       y.down = false;
       expect((await page.next()).id).toBe(2);
       // The one that named no place follows from the head it then has.
-      await until(() => y.asked.includes("/peers") && y.streams.size === 1);
+      await until(() => y.asked.includes("/depots") && y.streams.size === 1);
       y.push(event(3));
       expect((await nowhere.next()).id).toBe(3);
       expect((await page.next()).id).toBe(3);
@@ -551,8 +583,9 @@ describe("the snapshot", () => {
     expect(body.quota).toBeNull();
     expect(body.yard.depots).toEqual(y.structure.depots);
     expect(body.log.events).toEqual(span(1, 3));
-    // Every list of the view once, and its stream for the window alone.
-    expect([...y.asked].sort()).toEqual(["/beads", "/beads?all=1", "/crew", "/depots", "/deps", "/events?format=json&after=0", "/flows", "/groups", "/peers", "/routes", "/sessions?all=1"]);
+    // Every list of the view once but /peers, which answers the operator
+    // alone, and its stream for the window alone.
+    expect([...y.asked].sort()).toEqual(["/beads", "/beads?all=1", "/crew", "/depots", "/deps", "/events?format=json&after=0", "/flows", "/groups", "/routes", "/sessions?all=1"]);
     expect(y.streams.size).toBe(0);
     // What was placed stays; what is new takes the next free slot, and keeps
     // it in the next answer.
@@ -895,6 +928,7 @@ describe("the snapshot", () => {
     expect((await snapshot(empty.run)).log.events).toEqual([]);
     expect(empty.asked.some((a) => a.startsWith("/events"))).toBe(false);
   });
+
 });
 
 describe("the quota", () => {
@@ -1024,7 +1058,8 @@ describe("the yard's edges", () => {
     const { yard: now } = await snapshot(y.run);
     expect(now.edges).toEqual([{ from: "signalbox-0", to: "signalbox-1" }]);
     expect(y.asked.filter((a) => a.startsWith("/deps"))).toEqual(["/deps"]);
-    expect(y.asked).toHaveLength(10);
+    // Nine lists: /peers answers the operator alone and is not read.
+    expect(y.asked).toHaveLength(9);
   });
 });
 
@@ -1171,7 +1206,7 @@ describe("a bead", () => {
 
   test("the view is the one YARDR_WEB names, else yardr web serve's own address, and is asked for JSON", async () => {
     const asked = [];
-    const ask = async (url, { headers }) => (asked.push([url, headers.accept]), Response.json({ peers: [], head: 7 }));
+    const ask = async (url, { headers }) => (asked.push([url, headers.accept]), Response.json({ depots: [], head: 7 }));
     const before = process.env.YARDR_WEB;
     try {
       delete process.env.YARDR_WEB;
@@ -1183,8 +1218,8 @@ describe("a bead", () => {
       else process.env.YARDR_WEB = before;
     }
     expect(asked).toEqual([
-      ["http://127.0.0.1:8791/peers", "application/json"],
-      ["http://127.0.0.1:9000/peers", "application/json"],
+      ["http://127.0.0.1:8791/depots", "application/json"],
+      ["http://127.0.0.1:9000/depots", "application/json"],
     ]);
   });
 });

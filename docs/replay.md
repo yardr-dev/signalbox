@@ -211,7 +211,7 @@ runs already, on 8791). A view on loopback is enough, also for a page
 served to another device with `--host`: the script is on the view's machine
 and is the one that asks. `YARDR_WEB` names a view at another address. What the yard
 is now the script reads as JSON, a route of the view for each list
-(`/depots`, `/flows`, `/groups`, `/routes`, `/crew`, `/peers`, `/beads`,
+(`/depots`, `/flows`, `/groups`, `/routes`, `/crew`, `/beads`,
 `/sessions`, `/deps`); what happens in it comes on the view's stream
 (`/events?format=json`), which the script holds open once, for all pages,
 while one listens. A view that is stopped and started again loses a page
