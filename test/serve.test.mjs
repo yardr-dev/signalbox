@@ -47,7 +47,9 @@ function yard(events) {
   };
   const top = () => events.at(-1)?.seq ?? 0;
   const text = new TextEncoder();
-  const sent = (e) => text.encode(`id: ${e.seq}\ndata: ${JSON.stringify({ ...e, id: String(e.seq), actor: SECRET })}\n\n`);
+  // An event a visitor is not told goes as its id alone, as the yard's view
+  // sends it since yardr-xq5j.
+  const sent = (e) => (e.untold ? text.encode(`id: ${e.seq}\n\n`) : text.encode(`id: ${e.seq}\ndata: ${JSON.stringify({ ...e, id: String(e.seq), actor: SECRET })}\n\n`));
   y.fetch = async (url, { headers = {}, signal } = {}) => {
     const { pathname, search, searchParams } = new URL(url);
     y.asked.push(pathname + search);
@@ -210,20 +212,20 @@ async function listen(url, headers = {}) {
 
 describe("the feed", () => {
   test("every event after the one asked for, each one message with its seq as the id", async () => {
-    const y = yard(span(1, 5));
+    const y = yard([...span(1, 2), { ...event(3), untold: true }, ...span(4, 5)]);
     const s = await start(y);
     const page = await listen(`${s.url}/api/feed?after=2`);
     expect(page.response.headers.get("content-type")).toBe("text/event-stream");
-    const got = await page.take(3);
-    expect(got.map((m) => m.id)).toEqual([3, 4, 5]);
+    const got = await page.take(2);
+    expect(got.map((m) => m.id)).toEqual([4, 5]);
     // Cut down: what the view sent beside is not passed on.
-    expect(got.map((m) => m.data)).toEqual(span(3, 5));
+    expect(got.map((m) => m.data)).toEqual(span(4, 5));
     // What the yard does next comes as it happens, and nothing twice.
-    y.push(...span(6, 7));
-    expect((await page.take(2)).map((m) => m.id)).toEqual([6, 7]);
+    y.push({ ...event(6), untold: true }, event(7));
+    expect((await page.take(1)).map((m) => m.id)).toEqual([7]);
     y.push(event(8));
     expect((await page.next()).id).toBe(8);
-    expect(page.messages.map((m) => m.id)).toEqual([3, 4, 5, 6, 7, 8]);
+    expect(page.messages.map((m) => m.id)).toEqual([4, 5, 7, 8]);
     // Asked of the view's stream, after the page's place, and of nothing else.
     expect(y.asked).toEqual(["/events?format=json&after=2"]);
     page.close();
@@ -927,6 +929,19 @@ describe("the snapshot", () => {
     const empty = yard([]);
     expect((await snapshot(empty.run)).log.events).toEqual([]);
     expect(empty.asked.some((a) => a.startsWith("/events"))).toBe(false);
+  });
+
+  test("the snapshot returns when the yard's newest event is one a visitor is not told", async () => {
+    // The lists say head 3, and the stream sends id 3 with no data: the
+    // yard's word that the cursor passes an untold event.
+    const y = yard([...span(1, 2), { ...event(3), untold: true }]);
+    const taking = snapshot(y.run);
+    // A told event lands while the snapshot reads: without the fix the
+    // snapshot waits for it and carries it in the window.
+    y.push(event(4));
+    const { log } = await taking;
+    expect(log.events).toEqual(span(1, 2));
+    expect(y.streams.size).toBe(0);
   });
 
 });

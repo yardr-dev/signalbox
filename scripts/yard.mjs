@@ -106,6 +106,7 @@ async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_I
     const reader = body.pipeThrough(new TextDecoderStream()).getReader();
     let text = "";
     let data = [];
+    let id;
     // Until the first write the stream is still opening.
     let first = true;
     try {
@@ -125,13 +126,22 @@ async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_I
         // The last one may go on in the next piece.
         text = lines.pop();
         for (const line of lines) {
-          if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-          // An empty line ends a message. One with no data is a comment, or
-          // the stream's word on when to come back.
-          if (line !== "" || data.length === 0) continue;
-          const said = data.join("\n");
-          data = [];
-          yield JSON.parse(said);
+          if (line.startsWith("id:")) id = line.slice(3).replace(/^ /, "");
+          else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+          // An empty line ends a message. One with no data is a comment, the
+          // stream's word on when to come back, or an id alone: the yard's
+          // word that the cursor passes an event the reader is not told.
+          if (line !== "") continue;
+          if (data.length > 0) {
+            const said = data.join("\n");
+            data = [];
+            id = undefined;
+            yield JSON.parse(said);
+          } else if (id !== undefined) {
+            const seq = Number(id);
+            id = undefined;
+            if (Number.isInteger(seq)) yield { seq, untold: true };
+          }
         }
       }
     } finally {
@@ -147,7 +157,11 @@ async function* stream(run, after, signal, { open = STREAM_OPEN, idle = STREAM_I
 // reads it, for as long as the view streams them: what the serve script's
 // feed passes on. wait bounds the stream as stream's does.
 export async function* follow(run, after, signal, wait) {
-  for await (const raw of stream(run, after, signal, wait)) yield eventOf(raw, alias);
+  for await (const raw of stream(run, after, signal, wait)) {
+    // An id alone makes no event.
+    if (raw.untold) continue;
+    yield eventOf(raw, alias);
+  }
 }
 
 // The yard's newest sequence number: where "from now" is. From /depots:
@@ -166,6 +180,11 @@ async function recent(run, top, n) {
   if (!(top > 0)) return [];
   const out = [];
   for await (const raw of stream(run, Math.max(0, top - n), AbortSignal.timeout(PATIENCE))) {
+    // An id alone makes no event, but counts as reaching that sequence.
+    if (raw.untold) {
+      if (raw.seq >= top) return out;
+      continue;
+    }
     out.push(raw);
     if (raw.seq >= top) return out;
   }
