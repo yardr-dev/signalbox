@@ -395,8 +395,13 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       // gets its old place back.
       const layout = served.size === 0 ? slots : { ...slots, depots: pack(slots.depots, now.depots.map((d) => d.name)) };
       // For /api/status: what the snapshot shows, so a depot not served is
-      // not counted either. At work, and waiting on a person in decide.
-      status = { working: now.beads.filter((b) => b.working).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
+      // not counted either. At work, and waiting on a person in decide. A
+      // bead held by a manual group (backlog, siding) holds a session, so
+      // its working is true, but no agent is at work on it: left out of
+      // the count. The beads keep their working: the board reads it.
+      const runners = new Map(now.groups.map((g) => [g.name, g.runner]));
+      const atWork = (b) => b.working && runners.get(b.group) !== "manual";
+      status = { working: now.beads.filter(atWork).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
       let shown = hidden.has("events") ? { ...log, events: log.events.map(bare) } : log;
       if (hidden.has("title")) shown = { ...shown, beads: shown.beads.map(untitled) };
       json(res, 200, { yard: hidden.has("title") ? { ...now, beads: now.beads.map(untitled) } : now, layout, log: shown, quota: left });

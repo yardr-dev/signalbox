@@ -32,11 +32,11 @@ const SECRET = "/Users/someone/.yardr/secret";
 // view that is not there.
 function yard(events) {
   const structure = { depots: [{ name: "signalbox", kind: "git" }], flows: [{ name: "signalbox", kind: "git", flows: [{ name: "default", stages: [{ stage: "new" }, { stage: "review" }] }] }] };
-  const y = { events, structure, asked: [], streams: new Set(), down: false, open: [], closed: [], deps: [], pages: {}, routes: [] };
+  const y = { events, structure, asked: [], streams: new Set(), down: false, open: [], closed: [], deps: [], pages: {}, routes: [], groups: [] };
   const lists = {
     "/depots": () => ({ depots: structure.depots }),
     "/flows": () => ({ depots: structure.flows }),
-    "/groups": () => ({ groups: [] }),
+    "/groups": () => ({ groups: y.groups }),
     "/routes": () => ({ routes: y.routes }),
     "/crew": () => ({ crew: [] }),
     "/peers": () => ({ peers: [] }),
@@ -947,19 +947,26 @@ describe("the snapshot", () => {
 });
 
 describe("the status", () => {
-  // Two at work (one waiting on a person too), two waiting, one neither.
+  // Two with sessions (one waiting on a person too), two waiting, one neither.
   const crew = [
-    { id: "signalbox-a", title: "a", type: "task", stage: "new", status: "open", depot: "signalbox", priority: 1, session: "4wbdbdwypgzzjr5vgfwr" },
-    { id: "signalbox-b", title: "b", type: "task", stage: "decide", status: "open", depot: "signalbox", priority: 2, session: "8xkq2m0vn9zzjr5vgfwr" },
+    { id: "signalbox-a", title: "a", type: "task", stage: "backlog", status: "open", depot: "signalbox", priority: 1, group: "backlog", session: "4wbdbdwypgzzjr5vgfwr" },
+    { id: "signalbox-b", title: "b", type: "task", stage: "decide", status: "open", depot: "signalbox", priority: 2, group: "builders", session: "8xkq2m0vn9zzjr5vgfwr" },
     { id: "signalbox-c", title: "c", type: "task", stage: "decide", status: "open", depot: "signalbox", priority: 3 },
     { id: "signalbox-d", title: "d", type: "task", stage: "review", status: "open", depot: "signalbox", priority: 4 },
   ];
 
   test("this yard's working and waiting counts for yardr.dev, from the last snapshot, starting none", async () => {
     const y = yard([]);
+    y.groups = [
+      { name: "backlog", runner: "manual" },
+      { name: "builders", runner: "herdr" },
+    ];
     y.open = crew;
     const s = await start(y);
-    const taken = (await (await fetch(`${s.url}/api/snapshot`)).json()).yard.taken_at;
+    const snap = (await (await fetch(`${s.url}/api/snapshot`)).json()).yard;
+    const taken = snap.taken_at;
+    // Both beads hold a session, so they stay working for the board.
+    expect(snap.beads.slice(0, 2).map((b) => b.working)).toEqual([true, true]);
     const asked = y.asked.length;
     const response = await fetch(`${s.url}/api/status`);
     expect(response.status).toBe(200);
@@ -969,7 +976,7 @@ describe("the status", () => {
     const body = await response.json();
     // Only those keys: no titles, ids or names.
     expect(Object.keys(body).sort()).toEqual(["taken_at", "waiting", "working"]);
-    expect(body).toEqual({ working: 2, waiting: 2, taken_at: taken });
+    expect(body).toEqual({ working: 1, waiting: 2, taken_at: taken });
     // Neither this request nor the next asked the view for anything.
     expect(y.asked).toHaveLength(asked);
     expect(await (await fetch(`${s.url}/api/status`)).json()).toEqual(body);
