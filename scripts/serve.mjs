@@ -378,6 +378,15 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     // event.
     const seqs = log.events.map((e) => e && e.seq).filter(Number.isInteger);
     log = { ...log, seq: seqs.length > 0 ? Math.max(...seqs) : undefined };
+    // For /api/status: every depot of the yard, served or not, so yardr.dev's
+    // header shows how busy the yard is. At work, and waiting on a person in
+    // decide. A bead held by a manual group (backlog, siding) holds a
+    // session, so its working is true, but no agent is at work on it: left
+    // out of the count. The counts alone leave: no names, titles or ids.
+    // Counted here, before the cut below: the snapshot stays filtered.
+    const runners = new Map(now.groups.map((g) => [g.name, g.runner]));
+    const atWork = (b) => b.working && runners.get(b.group) !== "manual";
+    status = { working: now.beads.filter(atWork).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
     if (served.size > 0) {
       // From the whole yard, hidden depots too: the feed reads it until
       // the next snapshot.
@@ -405,14 +414,7 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     // kept. A depot shown again later is packed from its stored slot, so it
     // gets its old place back.
     const layout = served.size === 0 ? slots : { ...slots, depots: pack(slots.depots, now.depots.map((d) => d.name)) };
-    // For /api/status: what the snapshot shows, so a depot not served is
-    // not counted either. At work, and waiting on a person in decide. A
-    // bead held by a manual group (backlog, siding) holds a session, so
-    // its working is true, but no agent is at work on it: left out of
-    // the count. The beads keep their working: the board reads it.
-    const runners = new Map(now.groups.map((g) => [g.name, g.runner]));
-    const atWork = (b) => b.working && runners.get(b.group) !== "manual";
-    status = { working: now.beads.filter(atWork).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
+    // The beads keep their working: the board reads it.
     return { yard: now, log, layout, quota: left };
   }
 

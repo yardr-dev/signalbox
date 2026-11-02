@@ -1083,14 +1083,22 @@ describe("the status", () => {
     expect(takes).toBe(1);
   });
 
-  test("--depot counts the served depots alone: nothing hidden is counted", async () => {
+  test("--depot: /api/status counts every depot while /api/snapshot leaves out the hidden one", async () => {
     const { y } = twoDepots();
+    const served = y.open.find((b) => b.id === "yardr-1");
+    served.stage = "decide";
+    served.session = "4wbdbdwypgzzjr5vgfwr";
     const hidden = y.open.find((b) => b.id === "yardr-hosted-2");
     hidden.stage = "decide";
-    hidden.session = "4wbdbdwypgzzjr5vgfwr";
+    hidden.session = "8xkq2m0vn9zzjr5vgfwr";
     const s = await start(y, { depot: ["yardr"] });
-    const taken = (await (await fetch(`${s.url}/api/snapshot`)).json()).yard.taken_at;
-    expect(await (await fetch(`${s.url}/api/status`)).json()).toEqual({ working: 0, waiting: 0, taken_at: taken });
+    const snap = await (await fetch(`${s.url}/api/snapshot`)).json();
+    expect(snap.yard.beads.map((b) => b.id)).toEqual(["yardr-1"]);
+    const body = await (await fetch(`${s.url}/api/status`)).json();
+    // The counts alone leave: no names, titles or ids.
+    expect(Object.keys(body).sort()).toEqual(["taken_at", "waiting", "working"]);
+    expect(JSON.stringify(body)).not.toContain("yardr-hosted");
+    expect(body).toEqual({ working: 2, waiting: 2, taken_at: snap.yard.taken_at });
   });
 });
 
