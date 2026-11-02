@@ -29,7 +29,7 @@
 		<key>YARDR_HOME</key>
 		<string>/Users/mckean/.yardr</string>
 		<key>YARDR_WEB</key>
-		<string>http://127.0.0.1:8791</string>
+		<string>http://127.0.0.1:8793</string>
 	</dict>
 	<key>WorkingDirectory</key>
 	<string>/Users/mckean/projects/repos/signalbox</string>

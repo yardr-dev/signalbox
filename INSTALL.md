@@ -127,7 +127,7 @@ the yard's, not this repository's: neither is here.
 The public page is the server in the operator's checkout, reached through
 the Cloudflare tunnel of "The public" above:
 
-    YARDR_WEB=http://127.0.0.1:8791 YARDR_HOME=~/.yardr \
+    YARDR_WEB=http://127.0.0.1:8793 YARDR_HOME=~/.yardr \
       node scripts/serve.mjs --host 0.0.0.0 --port 8792 \
       >> ~/.yardr/logs/signalbox-serve.log 2>&1
 
