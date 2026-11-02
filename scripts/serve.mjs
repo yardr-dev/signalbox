@@ -20,10 +20,10 @@
 // depots apart with commas. A name that is no depot of the yard is no
 // error: the yard may add it later. With no --depot, every depot shows.
 //
-// Beside the built page (dist/) it answers three routes from the yard's web
-// view (scripts/yard.mjs), cut down by src/project.ts, and takes one report
-// from the page. It starts no process of yardr's: it is one more reader of
-// the view's JSON and stream.
+// Beside the built page (dist/) it answers four routes: three from the yard's
+// web view (scripts/yard.mjs), cut down by src/project.ts, one (status) from
+// the last snapshot it took, and takes one report from the page. It starts no
+// process of yardr's: it is one more reader of the view's JSON and stream.
 //
 //   GET /api/snapshot           the yard now, its slots, the window of its
 //                               log and the providers' quota: {yard, layout,
@@ -31,6 +31,14 @@
 //                               answer; quota is null when nobody knows it,
 //                               and log.seq is the yard's newest event,
 //                               shown or not
+//   GET /api/status             this yard's working and waiting counts for
+//                               yardr.dev's pages: {working, waiting,
+//                               taken_at}, from the last snapshot taken, so a
+//                               burst of visitors starts no snapshot work;
+//                               503 when no snapshot has been taken yet.
+//                               Readable from https://yardr.dev alone, and
+//                               cached for thirty seconds; the counts only,
+//                               no titles, ids or names
 //   GET /api/feed?after=<seq>   server-sent events: every event of the yard
 //                               after seq, each one message with its seq as
 //                               the id, for as long as the page listens; and
@@ -271,6 +279,10 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   // before opening its stream if one has not taught it yet.
   let known = served.size === 0 ? { beads: new Map(), depots: [] } : undefined;
   let learning;
+  // What the last snapshot taught /api/status: this yard's working and
+  // waiting counts and when they were taken. Nothing until the first
+  // snapshot has been taken.
+  let status;
 
   function teach(yard, log) {
     known = { beads: beadDepots(yard, log), depots: yard.depots.map((d) => d.name) };
@@ -382,6 +394,9 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       // kept. A depot shown again later is packed from its stored slot, so it
       // gets its old place back.
       const layout = served.size === 0 ? slots : { ...slots, depots: pack(slots.depots, now.depots.map((d) => d.name)) };
+      // For /api/status: what the snapshot shows, so a depot not served is
+      // not counted either. At work, and waiting on a person in decide.
+      status = { working: now.beads.filter((b) => b.working).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
       let shown = hidden.has("events") ? { ...log, events: log.events.map(bare) } : log;
       if (hidden.has("title")) shown = { ...shown, beads: shown.beads.map(untitled) };
       json(res, 200, { yard: hidden.has("title") ? { ...now, beads: now.beads.map(untitled) } : now, layout, log: shown, quota: left });
@@ -389,6 +404,20 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
       failed("snapshot", err);
       json(res, 502, { error: "the yard did not answer" });
     }
+  }
+
+  // This yard's working and waiting counts for yardr.dev's pages, from the
+  // last snapshot taken: a burst of visitors starts no snapshot work. Until
+  // the first snapshot there is nothing to say. The counts alone leave, read
+  // from yardr.dev's pages and cached for thirty seconds.
+  function answerStatus(res) {
+    if (status === undefined) {
+      res.writeHead(503, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "https://yardr.dev" });
+      res.end(JSON.stringify({ error: "no snapshot yet" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=30", "access-control-allow-origin": "https://yardr.dev" });
+    res.end(JSON.stringify(status));
   }
 
   async function answerBead(res, id) {
@@ -600,6 +629,7 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     if (url.pathname === "/api/fault") return req.method === "POST" ? answerFault(req, res) : json(res, 405, { error: "POST only" });
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "GET only" });
     if (url.pathname === "/api/snapshot") return void answerSnapshot(res);
+    if (url.pathname === "/api/status") return answerStatus(res);
     if (url.pathname === "/api/feed") return answerFeed(req, res, url);
     if (url.pathname.startsWith("/api/bead/")) return void answerBead(res, url.pathname.slice("/api/bead/".length));
     if (url.pathname.startsWith("/api/")) return json(res, 404, { error: "not found" });

@@ -946,6 +946,61 @@ describe("the snapshot", () => {
 
 });
 
+describe("the status", () => {
+  // Two at work (one waiting on a person too), two waiting, one neither.
+  const crew = [
+    { id: "signalbox-a", title: "a", type: "task", stage: "new", status: "open", depot: "signalbox", priority: 1, session: "4wbdbdwypgzzjr5vgfwr" },
+    { id: "signalbox-b", title: "b", type: "task", stage: "decide", status: "open", depot: "signalbox", priority: 2, session: "8xkq2m0vn9zzjr5vgfwr" },
+    { id: "signalbox-c", title: "c", type: "task", stage: "decide", status: "open", depot: "signalbox", priority: 3 },
+    { id: "signalbox-d", title: "d", type: "task", stage: "review", status: "open", depot: "signalbox", priority: 4 },
+  ];
+
+  test("this yard's working and waiting counts for yardr.dev, from the last snapshot, starting none", async () => {
+    const y = yard([]);
+    y.open = crew;
+    const s = await start(y);
+    const taken = (await (await fetch(`${s.url}/api/snapshot`)).json()).yard.taken_at;
+    const asked = y.asked.length;
+    const response = await fetch(`${s.url}/api/status`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toMatch(/^application\/json/);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://yardr.dev");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=30");
+    const body = await response.json();
+    // Only those keys: no titles, ids or names.
+    expect(Object.keys(body).sort()).toEqual(["taken_at", "waiting", "working"]);
+    expect(body).toEqual({ working: 2, waiting: 2, taken_at: taken });
+    // Neither this request nor the next asked the view for anything.
+    expect(y.asked).toHaveLength(asked);
+    expect(await (await fetch(`${s.url}/api/status`)).json()).toEqual(body);
+    expect(y.asked).toHaveLength(asked);
+    // The next snapshot teaches new counts.
+    y.open = y.open.slice(2);
+    const next = (await (await fetch(`${s.url}/api/snapshot`)).json()).yard.taken_at;
+    expect(await (await fetch(`${s.url}/api/status`)).json()).toEqual({ working: 0, waiting: 1, taken_at: next });
+  });
+
+  test("no snapshot yet is no status, and starts none", async () => {
+    const y = yard([]);
+    const s = await start(y);
+    const response = await fetch(`${s.url}/api/status`);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://yardr.dev");
+    expect(await response.json()).toEqual({ error: "no snapshot yet" });
+    expect(y.asked).toEqual([]);
+  });
+
+  test("--depot counts the served depots alone: nothing hidden is counted", async () => {
+    const { y } = twoDepots();
+    const hidden = y.open.find((b) => b.id === "yardr-hosted-2");
+    hidden.stage = "decide";
+    hidden.session = "4wbdbdwypgzzjr5vgfwr";
+    const s = await start(y, { depot: ["yardr"] });
+    const taken = (await (await fetch(`${s.url}/api/snapshot`)).json()).yard.taken_at;
+    expect(await (await fetch(`${s.url}/api/status`)).json()).toEqual({ working: 0, waiting: 0, taken_at: taken });
+  });
+});
+
 describe("the quota", () => {
   const fuel = (used) => ({ taken_at: "2099-01-01T00:00:00Z", providers: [{ key: "claude", name: "Claude", weekly: { used_percent: used } }] });
   // aiquokka: how often it was asked, and a clock the test moves.

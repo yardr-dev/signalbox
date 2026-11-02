@@ -232,7 +232,7 @@ The silos' levels the script asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquo
 binary), which is a call over the network for every provider: once a minute
 at most, however many pages are open, and not at all while none is. Without
 `aiquokka` the silos say "unknown" and the rest of the page is as ever. It
-is four routes beside the files of `dist/`:
+is five routes beside the files of `dist/`:
 
 - `GET /api/snapshot`: `yard.json`, `layout.json`, `events.json` and
   `quota.json` in one answer, taken now; `quota` is the last answer of the
@@ -240,6 +240,11 @@ is four routes beside the files of `dist/`:
   hold the page: after three seconds the snapshot goes without, and the feed
   brings the answer. With `--depot <name>` the answer carries those depots
   alone: nothing of the others leaves.
+- `GET /api/status`: this yard's working and waiting counts for
+  `yardr.dev`'s pages, `{working, waiting, taken_at}`, from the last
+  snapshot taken, so a burst of visitors starts no snapshot work; 503 when
+  no snapshot has been taken yet. Readable from `https://yardr.dev` alone,
+  and cached for thirty seconds. The counts only: no titles, ids or names.
 - `GET /api/feed?after=<seq>`: server-sent events, one message for each event
   of the yard after `seq`, with its number as the id. A page that lost the
   line says where it was (`Last-Event-ID`) and misses nothing, also when the
