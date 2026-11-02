@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, RETRY_MOST, backoff, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
+import { FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, RETRY_MOST, STATUS_EVERY, backoff, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
 import { bead, follow, head, quota, snapshot, yardr } from "../scripts/yard.mjs";
 import { layout } from "../src/layout.ts";
 
@@ -987,14 +987,100 @@ describe("the status", () => {
     expect(await (await fetch(`${s.url}/api/status`)).json()).toEqual({ working: 0, waiting: 1, taken_at: next });
   });
 
-  test("no snapshot yet is no status, and starts none", async () => {
+  test("no snapshot yet is no status, and starts one refresh", async () => {
     const y = yard([]);
+    let takes = 0;
+    const whole = y.snapshot;
+    y.snapshot = async (...args) => { takes++; return whole(...args); };
     const s = await start(y);
     const response = await fetch(`${s.url}/api/status`);
     expect(response.status).toBe(503);
     expect(response.headers.get("access-control-allow-origin")).toBe("https://yardr.dev");
     expect(await response.json()).toEqual({ error: "no snapshot yet" });
-    expect(y.asked).toEqual([]);
+    expect(takes).toBe(1);
+    // The refresh lands: the next status answers.
+    let body;
+    for (let n = 0; n < 200; n++) {
+      const next = await fetch(`${s.url}/api/status`);
+      if (next.status === 200) { body = await next.json(); break; }
+      await new Promise((go) => setTimeout(go, 5));
+    }
+    expect(body).toBeDefined();
+    expect(Object.keys(body).sort()).toEqual(["taken_at", "waiting", "working"]);
+    expect(takes).toBe(1);
+  });
+
+  test("an old status starts one refresh in the background, and answers without waiting", async () => {
+    expect(STATUS_EVERY).toBe(60_000);
+    const y = yard([]);
+    y.groups = [
+      { name: "backlog", runner: "manual" },
+      { name: "builders", runner: "herdr" },
+    ];
+    y.open = crew;
+    const whole = y.snapshot;
+    const old = new Date(Date.now() - STATUS_EVERY - 5000).toISOString();
+    let takes = 0;
+    y.snapshot = async (...args) => {
+      takes++;
+      const out = await whole(...args);
+      out.yard = { ...out.yard, taken_at: old };
+      return out;
+    };
+    const s = await start(y);
+    await fetch(`${s.url}/api/snapshot`);
+    expect(takes).toBe(1);
+    // The refresh takes fresh snapshots now, with new counts to show it landed.
+    y.snapshot = async (...args) => { takes++; return whole(...args); };
+    y.open = y.open.slice(2);
+    const first = await (await fetch(`${s.url}/api/status`)).json();
+    expect(first).toEqual({ working: 1, waiting: 2, taken_at: old });
+    expect(takes).toBe(2);
+    let body = first;
+    for (let n = 0; n < 200 && body.taken_at === old; n++) {
+      await new Promise((go) => setTimeout(go, 5));
+      body = await (await fetch(`${s.url}/api/status`)).json();
+    }
+    expect(body.taken_at).not.toBe(old);
+    expect(body).toEqual({ working: 0, waiting: 1, taken_at: body.taken_at });
+    expect(takes).toBe(2);
+  });
+
+  test("a burst of visitors starts one refresh", async () => {
+    const y = yard([]);
+    y.groups = [
+      { name: "backlog", runner: "manual" },
+      { name: "builders", runner: "herdr" },
+    ];
+    y.open = crew;
+    const whole = y.snapshot;
+    const old = new Date(Date.now() - STATUS_EVERY - 5000).toISOString();
+    y.snapshot = async (...args) => {
+      const out = await whole(...args);
+      out.yard = { ...out.yard, taken_at: old };
+      return out;
+    };
+    const s = await start(y);
+    await fetch(`${s.url}/api/snapshot`);
+    let takes = 0;
+    let release;
+    const gate = new Promise((go) => (release = go));
+    try {
+      y.snapshot = async (...args) => { takes++; await gate; return whole(...args); };
+      const burst = await Promise.all(Array.from({ length: 5 }, () => fetch(`${s.url}/api/status`).then((r) => r.json())));
+      for (const body of burst) expect(body.taken_at).toBe(old);
+      expect(takes).toBe(1);
+    } finally {
+      release();
+    }
+    let body;
+    for (let n = 0; n < 200; n++) {
+      body = await (await fetch(`${s.url}/api/status`)).json();
+      if (body.taken_at !== old) break;
+      await new Promise((go) => setTimeout(go, 5));
+    }
+    expect(body.taken_at).not.toBe(old);
+    expect(takes).toBe(1);
   });
 
   test("--depot counts the served depots alone: nothing hidden is counted", async () => {

@@ -33,9 +33,12 @@
 //                               shown or not
 //   GET /api/status             this yard's working and waiting counts for
 //                               yardr.dev's pages: {working, waiting,
-//                               taken_at}, from the last snapshot taken, so a
-//                               burst of visitors starts no snapshot work;
-//                               503 when no snapshot has been taken yet.
+//                               taken_at}, from the last snapshot taken. When
+//                               none has been taken yet, or it is older than
+//                               a minute, the request starts one snapshot
+//                               refresh in the background, at most one at a
+//                               time, and answers with what is held, without
+//                               waiting; 503 when nothing is held yet.
 //                               Readable from https://yardr.dev alone, and
 //                               cached for thirty seconds; the counts only,
 //                               no titles, ids or names
@@ -109,6 +112,10 @@ export function backoff(retry, most, tries) {
 // for the page when it comes.
 export const QUOTA_EVERY = 60_000;
 export const QUOTA_WAIT = 3000;
+
+// The milliseconds a status answer stays fresh: older than this, a request
+// to /api/status starts one snapshot refresh in the background.
+export const STATUS_EVERY = 60_000;
 
 // A report of the page's: the bytes its body may have, and the milliseconds
 // a connection waits before its next one is taken.
@@ -281,8 +288,10 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   let learning;
   // What the last snapshot taught /api/status: this yard's working and
   // waiting counts and when they were taken. Nothing until the first
-  // snapshot has been taken.
+  // snapshot has been taken. refreshing is the snapshot refresh a status
+  // request started, while it is on its way: at most one at a time.
   let status;
+  let refreshing;
 
   function teach(yard, log) {
     known = { beads: beadDepots(yard, log), depots: yard.depots.map((d) => d.name) };
@@ -355,53 +364,61 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     }
   }
 
+  // The yard now, its slots, the window of its log and the quota: what
+  // /api/snapshot answers, and what teaches /api/status. Both routes take
+  // it the same way; a status refresh keeps the teaching for later.
+  async function takeSnapshot() {
+    let late;
+    // A provider that hangs does not hold the page: it has the last answer.
+    const soon = Promise.race([refuel(), new Promise((go) => (late = setTimeout(() => go(fuel), wait)))]);
+    let [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
+    // How far the server has read, apart from what it shows: the newest
+    // seq of the yard's log events before the cut below, filtered or not,
+    // so the reader has one field. Nothing names it when the log holds no
+    // event.
+    const seqs = log.events.map((e) => e && e.seq).filter(Number.isInteger);
+    log = { ...log, seq: seqs.length > 0 ? Math.max(...seqs) : undefined };
+    if (served.size > 0) {
+      // From the whole yard, hidden depots too: the feed reads it until
+      // the next snapshot.
+      teach(now, log);
+      const { beads, depots } = known;
+      now = {
+        ...now,
+        depots: now.depots.filter((d) => served.has(d.name)),
+        flows: now.flows.filter((f) => served.has(f.depot)),
+        // A route with no depot stays: it is no depot's.
+        routes: now.routes.filter((r) => r.depot === undefined || served.has(r.depot)),
+        beads: now.beads.filter((b) => served.has(b.depot)),
+        // An edge with an end in a hidden bead goes.
+        edges: now.edges.filter((e) => [e.from, e.to].every((end) => passes({ bead: end }, served, beads, depots))),
+      };
+      log = {
+        ...log,
+        beads: log.beads.filter((b) => served.has(b.depot)),
+        events: log.events.filter((e) => passes(e, served, beads, depots)),
+      };
+    }
+    slots = place(now, slots);
+    keep();
+    // With --depot the page is sent the packed slots; without it, what is
+    // kept. A depot shown again later is packed from its stored slot, so it
+    // gets its old place back.
+    const layout = served.size === 0 ? slots : { ...slots, depots: pack(slots.depots, now.depots.map((d) => d.name)) };
+    // For /api/status: what the snapshot shows, so a depot not served is
+    // not counted either. At work, and waiting on a person in decide. A
+    // bead held by a manual group (backlog, siding) holds a session, so
+    // its working is true, but no agent is at work on it: left out of
+    // the count. The beads keep their working: the board reads it.
+    const runners = new Map(now.groups.map((g) => [g.name, g.runner]));
+    const atWork = (b) => b.working && runners.get(b.group) !== "manual";
+    status = { working: now.beads.filter(atWork).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
+    return { yard: now, log, layout, quota: left };
+  }
+
   async function answerSnapshot(res) {
     try {
-      let late;
-      // A provider that hangs does not hold the page: it has the last answer.
-      const soon = Promise.race([refuel(), new Promise((go) => (late = setTimeout(() => go(fuel), wait)))]);
-      let [{ yard: now, log }, left] = await Promise.all([yard.snapshot(), soon]).finally(() => clearTimeout(late));
-      // How far the server has read, apart from what it shows: the newest
-      // seq of the yard's log events before the cut below, filtered or not,
-      // so the reader has one field. Nothing names it when the log holds no
-      // event.
-      const seqs = log.events.map((e) => e && e.seq).filter(Number.isInteger);
-      log = { ...log, seq: seqs.length > 0 ? Math.max(...seqs) : undefined };
-      if (served.size > 0) {
-        // From the whole yard, hidden depots too: the feed reads it until
-        // the next snapshot.
-        teach(now, log);
-        const { beads, depots } = known;
-        now = {
-          ...now,
-          depots: now.depots.filter((d) => served.has(d.name)),
-          flows: now.flows.filter((f) => served.has(f.depot)),
-          // A route with no depot stays: it is no depot's.
-          routes: now.routes.filter((r) => r.depot === undefined || served.has(r.depot)),
-          beads: now.beads.filter((b) => served.has(b.depot)),
-          // An edge with an end in a hidden bead goes.
-          edges: now.edges.filter((e) => [e.from, e.to].every((end) => passes({ bead: end }, served, beads, depots))),
-        };
-        log = {
-          ...log,
-          beads: log.beads.filter((b) => served.has(b.depot)),
-          events: log.events.filter((e) => passes(e, served, beads, depots)),
-        };
-      }
-      slots = place(now, slots);
-      keep();
-      // With --depot the page is sent the packed slots; without it, what is
-      // kept. A depot shown again later is packed from its stored slot, so it
-      // gets its old place back.
-      const layout = served.size === 0 ? slots : { ...slots, depots: pack(slots.depots, now.depots.map((d) => d.name)) };
-      // For /api/status: what the snapshot shows, so a depot not served is
-      // not counted either. At work, and waiting on a person in decide. A
-      // bead held by a manual group (backlog, siding) holds a session, so
-      // its working is true, but no agent is at work on it: left out of
-      // the count. The beads keep their working: the board reads it.
-      const runners = new Map(now.groups.map((g) => [g.name, g.runner]));
-      const atWork = (b) => b.working && runners.get(b.group) !== "manual";
-      status = { working: now.beads.filter(atWork).length, waiting: now.beads.filter((b) => b.stage === "decide").length, taken_at: now.taken_at };
+      const { yard: now, log, layout, quota: left } = await takeSnapshot();
       let shown = hidden.has("events") ? { ...log, events: log.events.map(bare) } : log;
       if (hidden.has("title")) shown = { ...shown, beads: shown.beads.map(untitled) };
       json(res, 200, { yard: hidden.has("title") ? { ...now, beads: now.beads.map(untitled) } : now, layout, log: shown, quota: left });
@@ -412,10 +429,20 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   }
 
   // This yard's working and waiting counts for yardr.dev's pages, from the
-  // last snapshot taken: a burst of visitors starts no snapshot work. Until
-  // the first snapshot there is nothing to say. The counts alone leave, read
-  // from yardr.dev's pages and cached for thirty seconds.
+  // last snapshot taken. When none has been taken yet, or it is older than
+  // a minute, the request starts one snapshot refresh in the background,
+  // at most one at a time, and answers with what is held, without waiting.
+  // Until the first snapshot there is nothing to say. The counts alone
+  // leave, read from yardr.dev's pages and cached for thirty seconds.
   function answerStatus(res) {
+    const taken = status === undefined ? Number.NaN : Date.parse(status.taken_at);
+    if (status === undefined || Number.isNaN(taken) || clock() - taken > STATUS_EVERY) {
+      if (refreshing === undefined) {
+        refreshing = takeSnapshot()
+          .catch((err) => failed("snapshot", err))
+          .finally(() => { refreshing = undefined; });
+      }
+    }
     if (status === undefined) {
       res.writeHead(503, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "https://yardr.dev" });
       res.end(JSON.stringify({ error: "no snapshot yet" }));
