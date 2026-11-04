@@ -19,6 +19,7 @@ import {
   PLATFORM_LENGTH,
   SHED_WIDTH,
   SIDING_Z,
+  stationName,
   type Layout,
   type Person,
   type Point,
@@ -660,10 +661,11 @@ export function draw(l: Layout, kit: Kit): Picture {
     rails.run({ x: p.at.x, z: p.at.z + PEER_RAIL_Z }, p.length);
     rails.run({ x: p.at.x, z: p.at.z - PEER_RAIL_Z }, p.length);
     root.add(block("bed", p.length, -GROUND_Y - 0.02, 1.6 + 2 * PEER_RAIL_Z, p.at.x + p.length / 2, GROUND_Y, p.at.z));
-    // The sign, behind the far rail.
+    // The sign, behind the far rail: the way to a peer, the name of a
+    // source's station.
     root.add(block(building.board[0], 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
     root.add(block("slate", 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 2));
-    root.add(label(`to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 2, [0.5, 1]));
+    root.add(label(p.source ? stationName(p.name) : `to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 2, [0.5, 1]));
     grow(p.at.x - 2, p.at.z - 3);
   }
 
@@ -1310,12 +1312,12 @@ export class Stock {
     }
   }
 
-  // Goods on a peer's line: out to the peer past the yard's edge behind the
-  // line's locomotive, or in from there behind an engine of the peer's to the
-  // yard's end, where they stand a moment. kind is the message's (mail,
-  // ping, bead), files how many crossed with it, speed the replay's. They
-  // are one order like any, however many wagons: they wait their turn out of
-  // sight, and with too many before them are not seen.
+  // Goods on a peer's line, or a source's station: out past the yard's edge
+  // behind the line's locomotive, or in from there behind the far engine to
+  // the yard's end, where they stand a moment. kind is the message's (mail,
+  // ping, bead) or the call's name, files how many crossed with it, speed
+  // the replay's. They are one order like any, however many wagons: they
+  // wait their turn out of sight, and with too many before them are not seen.
   goods(peer: string, way: "out" | "in", kind: string | undefined, speed: number, files = 0) {
     const line = this.layout.peers.find((p) => p.name === peer);
     const engine = line && this.engines.get(`${line.key}/${way}`);

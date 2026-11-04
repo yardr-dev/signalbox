@@ -20,10 +20,11 @@ import { begin, canvas, failed, handheld, keep, lighter, Losses, LOST, Refused }
 import { agreed, ASKING, brief, card, missing, NEEDS_LIVE, NO_ANSWER } from "./card";
 import { listen, report, served } from "./fault";
 import { loadKit } from "./kit";
-import { layout } from "./layout";
+import { layout, sources } from "./layout";
+import { goodsSeconds } from "./motion";
 import { css, dress, palette, SHADE } from "./palette";
 import { Player, SPEEDS } from "./player";
-import { line, outgrown, trains } from "./replay";
+import { calls, line, outgrown, trains } from "./replay";
 import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
 import "./style.css";
@@ -237,8 +238,11 @@ async function start() {
   // now is where a replay stands: a wagon's age is as of then.
   // What changes is the beads and what they wait for: a state's, or the
   // snapshot's own.
-  // A state has the works' gates too; the snapshot knows of none.
-  const plan = (at: Pick<Yard, "beads" | "edges"> & Partial<Pick<State, "works">>, now?: number) => layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now, at.works);
+  // A state has the works' gates too; the snapshot knows of none. stations
+  // are the sources the address asked a line for (?sources=).
+  const stations = sources(window.location.search);
+  const plan = (at: Pick<Yard, "beads" | "edges"> & Partial<Pick<State, "works">>, now?: number) =>
+    layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now, at.works, stations);
   // The quota is as it is now, whatever time the picture is of. Live, a tower
   // stands for every provider in use, and says "unknown" when nobody knows
   // its level. A snapshot's files without a quota have no tower.
@@ -682,13 +686,17 @@ async function start() {
     for (const touch of ["pointerup", "keydown"]) window.addEventListener(touch, () => sound.wake());
     // The files that crossed a link since its last mail: that mail's wagons.
     const loaded = new Map<string, number>();
+    // A source's call is a round trip: goods out now, and back when the out
+    // leg arrives. Each waits its seconds of the page, as the leg does.
+    const returns: { source: string; call: string; wait: number; speed: number }[] = [];
     // A scrub is a new state, not a move: everything stands where it was
-    // then, and no file waits for its mail. It leaves the yard as it runs
-    // for the replay of the window.
+    // then, and no file waits for its mail, nor any goods for their way
+    // back. It leaves the yard as it runs for the replay of the window.
     const seek = (clock: number) => {
       player.live = false;
       player.seek(clock);
       loaded.clear();
+      returns.length = 0;
       present({ tween: false });
       stale = true;
       told();
@@ -705,6 +713,19 @@ async function start() {
       for (const cue of cues(passed)) sound.play(cue);
       for (const e of passed) if (e.kind === "hook") stock.flash();
       for (const t of trains(passed, loaded)) stock.goods(t.peer, t.way, t.kind, speed, t.files);
+      // Only the sources the address asked a line for; other calls pass by.
+      for (const c of calls(passed)) {
+        if (!stations.includes(c.source)) continue;
+        stock.goods(c.source, "out", c.call, speed);
+        if (!c.failed) returns.push({ source: c.source, call: c.call, wait: goodsSeconds(speed), speed });
+      }
+      for (let i = returns.length - 1; i >= 0; i--) {
+        const r = returns[i]!;
+        r.wait -= dt;
+        if (r.wait > 0) continue;
+        returns.splice(i, 1);
+        stock.goods(r.source, "in", r.call, r.speed);
+      }
       if (passed.length > 0) {
         // A bead an advance took out of the state went past the buffer.
         const left = new Set(passed.filter((e) => e.kind === "advanced").map((e) => e.bead ?? ""));

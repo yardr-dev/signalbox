@@ -187,6 +187,20 @@ describe("the projection", () => {
     for (const kind of ["group_set", "group_removed", "route_removed"]) {
       expect(eventOf({ seq: 11, at: "t", kind, data: { group: "reviewers", runner: SECRET, limit: 2, members: [SECRET], routes: [route] } }, alias)).toEqual({ seq: 11, at: "t", kind, data: { group: "reviewers" } });
     }
+    // A source call keeps its source, its call and its status, as text; its
+    // params, values, bytes and how long it took stay behind: the page is public.
+    const call = { source: "snowflake", call: "query", kind: "read", crew: "yardmaster", status: 200, ms: 1614, bytes: 2346, params: ["q"], values: { q: SECRET } };
+    const kept = eventOf({ seq: 12, at: "t", kind: "source_call", data: call }, alias);
+    expect(kept.data).toEqual({ kind: "read", crew: "yardmaster", source: "snowflake", call: "query", status: "200" });
+    expect(JSON.stringify(kept)).not.toMatch(/secret/);
+    // Refused: the status is the yard's word for why, and still text.
+    expect(eventOf({ seq: 13, at: "t", kind: "source_call", data: { source: "snowflake", call: "query", status: "not_granted" } }, alias).data).toEqual({
+      source: "snowflake",
+      call: "query",
+      status: "not_granted",
+    });
+    // On no other kind are they names.
+    expect(eventOf({ seq: 14, at: "t", kind: "noted", bead: "signalbox-a", data: { source: SECRET, call: SECRET, status: 200 } }, alias)).toEqual({ seq: 14, at: "t", kind: "noted", bead: "signalbox-a" });
   });
 
   test("the log's beads are the closed ones its window names", () => {

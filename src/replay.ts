@@ -40,6 +40,11 @@ export interface YardEvent {
     // Of a peer message that was refused: in or out.
     direction?: string;
     crew?: string;
+    // Of a source call: the source, the call's name, and what the service
+    // answered, a status as text, or why the call was refused.
+    source?: string;
+    call?: string;
+    status?: string;
     // Of a close: merged, a landing. No other reason leaves the yard.
     reason?: string;
   };
@@ -136,8 +141,9 @@ export const FAULTS = new Map([
   ["unrouted", "unrouted"],
 ]);
 
-// The kinds the replay shows: step's, and the two that are no state (a peer's
-// goods, a hook's flash). Any other kind is passed over.
+// The kinds the replay shows: step's, and the three that are no state (a
+// peer's goods, a source's round trip, a hook's flash). Any other kind is
+// passed over.
 export const SHOWN = new Set([
   "created",
   "advanced",
@@ -153,6 +159,7 @@ export const SHOWN = new Set([
   "dep_removed",
   "peer_message_sent",
   "peer_message_received",
+  "source_call",
   "hook",
 ]);
 
@@ -195,6 +202,27 @@ export function trains(events: readonly YardEvent[], loaded: Map<string, number>
     }
     if (crossed) out.push({ peer, way, kind, files: loaded.get(key) ?? 0 });
     loaded.delete(key);
+  }
+  return out;
+}
+
+// A source's call that is a round trip on its line: goods out to the
+// source's station, then back. One event per finished call, sent after the
+// answer, so the one event is the whole trip. A status other than 2xx never
+// comes back: like a peer's message that failed, the return leg is lost.
+export interface SourceCall {
+  source: string;
+  call: string;
+  failed: boolean;
+}
+
+export function calls(events: readonly YardEvent[]): SourceCall[] {
+  const out: SourceCall[] = [];
+  for (const e of events) {
+    if (e.kind !== "source_call") continue;
+    const { source, call, status } = e.data ?? {};
+    if (source === undefined || call === undefined) continue;
+    out.push({ source, call, failed: status === undefined || !status.startsWith("2") });
   }
   return out;
 }
@@ -453,11 +481,12 @@ export function state(yard: Yard, log: Log, n: number = log.events.length): Stat
 
 // An event in one line, for the bar: kind, bead, from -> to.
 export function line(event: YardEvent): string {
-  const { from, to, outcome, peer, kind, group, type } = event.data ?? {};
+  const { from, to, outcome, peer, kind, group, type, source, call } = event.data ?? {};
   const parts = [event.kind.replaceAll("_", " ")];
   if (event.bead !== undefined) parts.push(event.bead);
   if (from !== undefined && to !== undefined) parts.push(`${from} -> ${to}${outcome !== undefined ? ` (${outcome})` : ""}`);
   else if (peer !== undefined) parts.push(`${peer}${kind !== undefined ? ` · ${kind}` : ""}`);
+  else if (source !== undefined) parts.push(`${source}${call !== undefined ? ` · ${call}` : ""}`);
   else if (event.kind.startsWith("dep_") && from !== undefined) parts.push(kind === "blocks" ? `waits for ${from}` : `${kind ?? "edge"} ${from}`);
   else if (event.kind === "claimed" && group !== undefined) parts.push(group);
   else if (event.kind === "hook" && type !== undefined) parts.push(type);

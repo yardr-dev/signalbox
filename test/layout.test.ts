@@ -40,7 +40,9 @@ import {
   SIDING_SHED_Z,
   SLOT_PITCH,
   SLOTS,
+  sources,
   STAGE_PITCH,
+  stationName,
   TAIL_PITCH,
   TAIL_X,
   TOWER_X,
@@ -991,5 +993,37 @@ describe("a coaling tower for every provider the yard burns the quota of", () =>
     expect([19.9, 5].map(coal)).toEqual(["low", "low"]);
     expect([4.9, 0.1].map(coal)).toEqual(["last", "last"]);
     expect(coal(0)).toBe("out");
+  });
+});
+
+describe("a station for every source the address names", () => {
+  test("?sources= is a comma list, each once, in order; none without it", () => {
+    expect(sources("")).toEqual([]);
+    expect(sources("?board")).toEqual([]);
+    expect(sources("?sources=")).toEqual([]);
+    expect(sources("?sources=snowflake")).toEqual(["snowflake"]);
+    expect(sources("?sources=snowflake,linear")).toEqual(["snowflake", "linear"]);
+    expect(sources("?sources=+snowflake+,linear,snowflake")).toEqual(["snowflake", "linear"]);
+    expect(sources("?board&sources=linear")).toEqual(["linear"]);
+  });
+
+  test("a line like a peer's below the peers' lines, its sign the source's name", () => {
+    const l = layout(yard, {}, undefined, {}, ["snowflake", "linear"]);
+    expect(l.peers.map((p) => p.name)).toEqual(["quay", "snowflake", "linear"]);
+    const [quay, snow, lin] = l.peers;
+    expect(snow).toMatchObject({ key: "source/snowflake", source: true, length: quay!.length });
+    expect(snow!.at).toEqual({ x: 0, z: PEER_Z - PEER_PITCH });
+    expect(lin!.at).toEqual({ x: 0, z: PEER_Z - 2 * PEER_PITCH });
+    expect(stationName("snowflake")).toBe("Snowflake");
+    expect(stationName("linear")).toBe("Linear");
+  });
+
+  test("none by default; one a peer's line already goes to is that line", () => {
+    expect(layout(yard).peers.map((p) => p.name)).toEqual(["quay"]);
+    const l = layout(yard, {}, undefined, {}, ["quay", "snowflake", "snowflake"]);
+    expect(l.peers.map((p) => [p.name, p.key])).toEqual([
+      ["quay", "peer/quay"],
+      ["snowflake", "source/snowflake"],
+    ]);
   });
 });

@@ -200,12 +200,14 @@ export function cardOf(raw: Raw): Detail {
 
 // The names an event's data may carry, each only as a string. An advance
 // alone keeps from and to, an edge its from, the bead at its other end, and a
-// created its stage: on other kinds they are people and builds.
+// created its stage: on other kinds they are people and builds. A source call
+// keeps its source and its call; its status is kept below, as text.
 const NAMES = ["group", "depot", "type", "peer", "kind", "crew"];
 const OF_ADVANCE = ["from", "to", "outcome"];
 const OF_EDGE = ["from"];
 const OF_CREATED = ["stage"];
-const MORE: Record<string, string[]> = { advanced: OF_ADVANCE, dep_added: OF_EDGE, dep_removed: OF_EDGE, created: OF_CREATED };
+const OF_SOURCE_CALL = ["source", "call"];
+const MORE: Record<string, string[]> = { advanced: OF_ADVANCE, dep_added: OF_EDGE, dep_removed: OF_EDGE, created: OF_CREATED, source_call: OF_SOURCE_CALL };
 // A close's reason is what somebody wrote, but for the yard's own word for a
 // landing: that one is passed on, and no other.
 const LANDED = "merged";
@@ -222,6 +224,10 @@ export function eventOf(raw: Raw, alias: (session: string) => string): YardEvent
   }
   if (typeof from.session === "string") data.session = alias(from.session);
   if (raw.kind === "closed" && from.reason === LANDED) data.reason = LANDED;
+  // A source call's status is what the service answered, a number, or why
+  // the call was refused, a word: kept as text either way. Its params,
+  // values, bytes and how long it took stay behind: the page is public.
+  if (raw.kind === "source_call" && (typeof from.status === "string" || typeof from.status === "number")) data.status = String(from.status);
   const event = pick(raw, ["seq", "at", "kind", "bead"], { data: Object.keys(data).length > 0 ? data : null });
   return event as unknown as YardEvent;
 }

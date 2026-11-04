@@ -370,6 +370,25 @@ export interface PeerLine {
   name: string;
   at: Point;
   length: number;
+  // A source's station, not a peer's line: its sign reads the source's
+  // name, not the way to it.
+  source?: true;
+}
+
+// The sources the page draws a station for: the ?sources= query parameter,
+// a comma list, each once, in order. None without it.
+export function sources(search: string): string[] {
+  const seen = new Set<string>();
+  for (const name of (new URLSearchParams(search).get("sources") ?? "").split(",")) {
+    const source = name.trim();
+    if (source !== "" && !seen.has(source)) seen.add(source);
+  }
+  return [...seen];
+}
+
+// A source's station, as its sign reads it: Snowflake for snowflake.
+export function stationName(source: string): string {
+  return source.charAt(0).toUpperCase() + source.slice(1);
 }
 
 export interface Layout {
@@ -526,7 +545,9 @@ function byAge(a: Bead, b: Bead): number {
 // now is the time the picture is of, for the wagons' ages: when the snapshot
 // was taken, or where a replay stands. gates are the works' at that time, by
 // their buildings' keys: the snapshot has none, a replay's state does.
-export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Date.parse(yard.taken_at), gates: Record<string, Gate> = {}): Layout {
+// stations are the sources the page draws a line for (?sources=), below the
+// peers' lines.
+export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Date.parse(yard.taken_at), gates: Record<string, Gate> = {}, stations: string[] = []): Layout {
   const slots = place(yard, memory);
   const out: Layout = {
     boards: [],
@@ -815,6 +836,15 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
       length: PEER_LENGTH,
     });
   });
+  // A source's station: a line like a peer's, below the peers' lines, each
+  // once; one a peer's line already goes to is that line.
+  const drawn = new Set(yard.peers.map((p) => p.name));
+  let rank = Math.max(-1, ...Object.values(slots.peers));
+  for (const name of stations) {
+    if (drawn.has(name)) continue;
+    drawn.add(name);
+    out.peers.push({ key: `source/${name}`, name, source: true, at: { x: 0, z: PEER_Z - ++rank * PEER_PITCH }, length: PEER_LENGTH });
+  }
   out.wire.length = Math.max(right, yard.crew.length * CREW_PITCH) - BOARD_X;
   return out;
 }

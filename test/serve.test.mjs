@@ -290,6 +290,22 @@ describe("the feed", () => {
     page.close();
   });
 
+  test("a source call reaches the page as its source, its call and its status, past the --depot filter", async () => {
+    const at = "2099-01-01T00:00:00Z";
+    const y = yard([
+      { seq: 1, at, kind: "source_call", data: { source: "snowflake", call: "query", kind: "read", crew: "yardmaster", status: 200, ms: 1614, bytes: 2346, params: ["q"], values: { q: "select 1" } } },
+      { seq: 2, at, kind: "source_call", data: { source: "snowflake", call: "query", status: "not_granted" } },
+    ]);
+    const s = await start(y, { depot: ["signalbox"] });
+    const page = await listen(`${s.url}/api/feed?after=0`);
+    // No bead, so no depot to filter by: both pass, cut to what the replay reads.
+    expect(await page.take(2)).toEqual([
+      { id: 1, event: "message", data: { seq: 1, at, kind: "source_call", data: { kind: "read", crew: "yardmaster", source: "snowflake", call: "query", status: "200" } } },
+      { id: 2, event: "message", data: { seq: 2, at, kind: "source_call", data: { source: "snowflake", call: "query", status: "not_granted" } } },
+    ]);
+    page.close();
+  });
+
   test("a visitor whose peers are refused still gets a drawn snapshot and follows from now", async () => {
     const y = yard(span(1, 5));
     const whole = y.fetch;

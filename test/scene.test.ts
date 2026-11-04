@@ -1804,6 +1804,42 @@ describe("the shunters of the stock", () => {
       for (const o of train) expect(stock.root.children).not.toContain(o);
     }
   });
+
+  test("a source's call is goods out and back on its station's line, saying only the call and the source", () => {
+    const l = layout({ ...yard, beads: [] }, {}, undefined, {}, ["snowflake"]);
+    const line = l.peers.find((p) => p.name === "snowflake")!;
+    for (const way of ["out", "in"] as const) {
+      const stock = new Stock(l, kit);
+      const engine = shunter(stock, `${line.key}/${way}`);
+      const before = new Set(stock.root.children);
+      stock.goods(line.name, way, "query", 1);
+      const goods = stock.root.children.find((o) => !before.has(o))!;
+      expect(goods.visible).toBe(false);
+      stock.tick(goodsSeconds(1) / 2);
+      expect(goods.visible && engine.visible).toBe(true);
+      expect((engine.position.x - goods.position.x) * (way === "out" ? 1 : -1)).toBeCloseTo(COUPLING);
+      const labels = goods.children.filter((c) => "element" in c);
+      expect(labels).toHaveLength(1);
+      expect((labels[0] as unknown as { element: { textContent: string } }).element.textContent).toBe("query · snowflake");
+      run(stock, () => 0);
+      expect(stock.root.children).not.toContain(goods);
+    }
+    // None for a source the page shows no station for.
+    const stock = new Stock(l, kit);
+    const before = new Set(stock.root.children);
+    stock.goods("linear", "out", "issues", 1);
+    expect(stock.root.children.filter((o) => !before.has(o))).toEqual([]);
+  });
+
+  test("a source's station sign reads the source's name, a peer's the way to it", () => {
+    const picture = draw(layout({ ...yard, beads: [] }, {}, undefined, {}, ["snowflake"]), kit);
+    const signs: string[] = [];
+    picture.root.traverse((o) => {
+      const el = (o as unknown as { element?: { textContent: string; className: string } }).element;
+      if (el?.className === "label peer") signs.push(el.textContent);
+    });
+    expect(signs).toEqual(["to quay →", "Snowflake"]);
+  });
 });
 
 describe("the lamps of the wagons that wait", () => {

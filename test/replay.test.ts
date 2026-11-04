@@ -3,7 +3,7 @@ import window from "../public/events.json";
 import snapshot from "../public/yard.json";
 import { atWork, layout, people } from "../src/layout";
 import { Player } from "../src/player";
-import { FAULTS, line, opening, outgrown, SHOWN, state, step, STRUCTURE, trains, world, type Log, type State, type YardEvent } from "../src/replay";
+import { calls, FAULTS, line, opening, outgrown, SHOWN, state, step, STRUCTURE, trains, world, type Log, type State, type YardEvent } from "../src/replay";
 import type { Bead, Yard } from "../src/yard";
 
 // The committed snapshot and its events are the fixture: the demo yard and
@@ -118,7 +118,7 @@ describe("the reducer", () => {
 
   test("unknown kinds leave the state unchanged", () => {
     expect(FAULTS.has("constructor")).toBe(false);
-    const kinds = ["noted", "crew_status", "hook", "peer_message_sent", "peer_message_received", "a_kind_of_tomorrow", ""];
+    const kinds = ["noted", "crew_status", "hook", "peer_message_sent", "peer_message_received", "source_call", "a_kind_of_tomorrow", ""];
     for (const kind of kinds) {
       expect(step(start, event(kind, "sextant-a", { from: "new", to: "review", session: "s1" }), w), kind).toBe(start);
       expect(step(start, event(kind), w), kind).toBe(start);
@@ -445,6 +445,7 @@ describe("the player", () => {
     expect(line({ seq: 3, at: "", kind: "closed", bead: "sextant-a" })).toBe("closed · sextant-a");
     expect(line({ seq: 4, at: "", kind: "dep_added", bead: "sextant-b", data: { from: "sextant-a", kind: "blocks" } })).toBe("dep added · sextant-b · waits for sextant-a");
     expect(line({ seq: 5, at: "", kind: "dep_removed", bead: "sextant-b", data: { from: "sextant-a", kind: "discovered-from" } })).toBe("dep removed · sextant-b · discovered-from sextant-a");
+    expect(line({ seq: 6, at: "", kind: "source_call", data: { source: "snowflake", call: "query", status: "200" } })).toBe("source call · snowflake · query");
   });
 });
 
@@ -493,6 +494,23 @@ describe("a peer's trains", () => {
     expect(trains([received("file"), refused("mail", "in"), received("mail")], new Map())).toEqual([{ peer: "quay", way: "in", kind: "mail", files: 0 }]);
     // Mail refused the other way is another rail's.
     expect(trains([received("file"), refused("mail", "out"), received("mail")], new Map())[0]!.files).toBe(1);
+  });
+});
+
+describe("a source's round trips", () => {
+  const call = (source = "snowflake", name = "query", status = "200") => event("source_call", undefined, { source, call: name, status });
+
+  test("one finished call is one round trip: its source, its call, and whether it comes back", () => {
+    expect(calls([call()])).toEqual([{ source: "snowflake", call: "query", failed: false }]);
+    expect(calls([call("linear", "issues")])).toEqual([{ source: "linear", call: "issues", failed: false }]);
+    // Any other kind, or a call that names no source or no call, is none.
+    expect(calls([event("hook"), event("peer_message_sent", undefined, { peer: "quay", kind: "mail" }), event("source_call", undefined, { source: "snowflake" })])).toEqual([]);
+  });
+
+  test("a status other than 2xx never comes back: the return leg is lost", () => {
+    for (const status of ["200", "201", "204"]) expect(calls([call("snowflake", "query", status)])[0]!.failed, status).toBe(false);
+    for (const status of ["404", "500", "0", "not_granted", "limit"]) expect(calls([call("snowflake", "query", status)])[0]!.failed, status).toBe(true);
+    expect(calls([event("source_call", undefined, { source: "snowflake", call: "query" })])[0]!.failed).toBe(true);
   });
 });
 
