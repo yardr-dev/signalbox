@@ -58,6 +58,7 @@ import {
 } from "./motion";
 import { building, fault, iron, lamp, liveried, paint, smoke, tinted, weathering, type Accent, type Tone } from "./palette";
 import { consist, freight, hauling, keeps, Shunter, shunting, type Haul, type Order, type Plan } from "./shunt";
+import { SNOW, type Theme } from "./theme";
 import type { Allowance, Bead, Provider, Quota } from "./yard";
 
 // Heights, and the few sizes layout.ts has no say in.
@@ -463,13 +464,14 @@ export function gateLamp(gate: Gate | undefined): number {
 }
 
 // A signal box: its lower floor in its walls' accent, the upper one, which
-// is all windows, a tone, under its roof's accent.
-function signalBox(x: number, z: number): THREE.Object3D {
+// is all windows, a tone, under its roof's accent, snow under the snowflake
+// theme.
+function signalBox(x: number, z: number, theme?: Theme): THREE.Object3D {
   const [wall, roof] = building.box;
   const g = new THREE.Group();
   g.add(block(wall, 3, 1.6, 2.2, x, 0, z));
   g.add(block("wall", 3.3, 1.2, 2.5, x, 1.6, z));
-  g.add(block(roof, 3.8, 0.3, 3, x, 2.8, z));
+  g.add(block(theme === "snowflake" ? SNOW : roof, 3.8, 0.3, 3, x, 2.8, z));
   return g;
 }
 
@@ -567,7 +569,7 @@ export function refuel(towers: THREE.Object3D[], quota: Quota | undefined) {
   }
 }
 
-export function draw(l: Layout, kit: Kit): Picture {
+export function draw(l: Layout, kit: Kit, theme?: Theme): Picture {
   const root = new THREE.Group();
   const bounds = new THREE.Box3();
   const sheds: THREE.Object3D[] = [];
@@ -628,7 +630,7 @@ export function draw(l: Layout, kit: Kit): Picture {
   }
 
   for (const b of l.boxes) {
-    root.add(signalBox(b.at.x, b.at.z));
+    root.add(signalBox(b.at.x, b.at.z, theme));
     root.add(label(b.name, "crew", b.at.x, BOX_HEIGHT, b.at.z, [0.5, 1]));
     grow(b.at.x - 2, b.at.z - 2, BOX_HEIGHT);
     grow(b.at.x + 2, b.at.z + 2);
@@ -759,6 +761,64 @@ function facing(faces: 1 | -1): number {
   return (-faces * Math.PI) / 2;
 }
 
+// Falling snow under the snowflake theme: one Points object of FLAKES flakes
+// over the bounds, each falling at its own pace and swaying as it goes, from
+// the top back to it. A flake is 2.5 pixels at any zoom. tick moves it on;
+// a picture that does not move leaves it where it is.
+const FLAKES = 600;
+const SNOW_TOP = 20;
+const SNOW_SWAY = 0.6;
+
+class Snow {
+  readonly root: THREE.Points;
+  private readonly at: THREE.BufferAttribute;
+  // Units fallen a second, the sway's phase, and the x and z each flake
+  // sways about.
+  private readonly fall = new Float32Array(FLAKES);
+  private readonly phase = new Float32Array(FLAKES);
+  private readonly home = new Float32Array(2 * FLAKES);
+  private seconds = 0;
+
+  constructor(bounds: THREE.Box3) {
+    const { min, max } = bounds;
+    const at = new Float32Array(3 * FLAKES);
+    for (let i = 0; i < FLAKES; i++) {
+      const x = min.x + Math.random() * (max.x - min.x);
+      const z = min.z + Math.random() * (max.z - min.z);
+      this.home[2 * i] = x;
+      this.home[2 * i + 1] = z;
+      at[3 * i] = x;
+      at[3 * i + 1] = Math.random() * SNOW_TOP;
+      at[3 * i + 2] = z;
+      this.fall[i] = 2 + Math.random() * 2.5;
+      this.phase[i] = Math.random() * 2 * Math.PI;
+    }
+    this.at = new THREE.BufferAttribute(at, 3);
+    this.at.setUsage(THREE.DynamicDrawUsage);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", this.at);
+    this.root = new THREE.Points(
+      geometry,
+      new THREE.PointsMaterial({ color: SNOW, size: 2.5, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false }),
+    );
+    // The flakes stay in their bounds: never culled out of them.
+    this.root.frustumCulled = false;
+  }
+
+  tick(dt: number) {
+    if (!Number.isFinite(dt)) return;
+    this.seconds += dt;
+    const at = this.at.array as Float32Array;
+    for (let i = 0; i < FLAKES; i++) {
+      let y = (at[3 * i + 1]! - this.fall[i]! * dt) % SNOW_TOP;
+      if (y < 0) y += SNOW_TOP;
+      at[3 * i + 1] = y;
+      at[3 * i] = this.home[2 * i]! + Math.sin(this.seconds + this.phase[i]!) * SNOW_SWAY;
+    }
+    this.at.needsUpdate = true;
+  }
+}
+
 export interface Show {
   // Move to the new places, or stand there at once (a scrub, the first view).
   tween: boolean;
@@ -808,15 +868,20 @@ export class Stock {
   private readonly fumes = new THREE.Group();
   private readonly stacks = new Map<string, Stack>();
   private readonly lit: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
+  private readonly snow?: Snow;
   private layout: Layout;
 
   // sheds are the buildings draw made: a crew's carries where its sign is.
+  // snow are the bounds snow falls over, under the snowflake theme only.
   constructor(
     l: Layout,
     private readonly kit: Kit,
     private sheds: THREE.Object3D[] = [],
+    snow?: THREE.Box3,
   ) {
     this.layout = l;
+    this.snow = snow === undefined ? undefined : new Snow(snow);
+    if (this.snow) this.root.add(this.snow.root);
     // The wire, lit: over the slate one, and seen only after a hook.
     const wire = l.wire;
     this.lit = new THREE.Mesh(
@@ -1407,6 +1472,12 @@ export class Stock {
     if (this.beat(dt)) moving = true;
     for (const at of this.stacks.values()) {
       if (this.fume(at, dt)) moving = true;
+    }
+    // Snow falls while the picture moves, and hangs where it is when asked
+    // for less motion.
+    if (this.snow && !this.calm && Number.isFinite(dt)) {
+      this.snow.tick(dt);
+      moving = true;
     }
     // The shunters, after what moves by itself: a wagon behind one is where
     // the shunter has it. No time is every order done at once, unseen.

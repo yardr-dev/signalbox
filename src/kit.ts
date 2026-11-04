@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { building, hat, paint, stand, steam, type Accent, type Tone } from "./palette";
+import { SNOW, SNOWFLAKE, type Theme } from "./theme";
 
 export type Part = "rail" | "wagon" | "van" | "locomotive" | "shunter" | "station" | "hut" | "office" | "works" | "silo";
 export type Outfit = "builder" | "reviewer" | "crew";
@@ -124,7 +125,7 @@ const boxes: Record<Part, [number, number, number, Tone | Accent | number]> = {
   silo: [3.6, SILO_HEIGHT, 3.6, building.silo[0]],
 };
 
-function box(part: Part): THREE.Object3D {
+function box(part: Part, theme?: Theme): THREE.Object3D {
   const [length, height, width, wears] = boxes[part];
   const body = block(wears, length, height, width, 0);
   const group = new THREE.Group().add(body);
@@ -136,7 +137,7 @@ function box(part: Part): THREE.Object3D {
   }
   if (part !== "works") return group;
   // A works smokes: its box has a stub of a chimney on the roof.
-  const stub = block(building.works[1], STUB, STUB, STUB, height);
+  const stub = block(theme === "snowflake" ? SNOW : building.works[1], STUB, STUB, STUB, height);
   stub.position.x = length / 4;
   group.userData[CHIMNEY] = [length / 4, height + STUB, 0];
   return group.add(stub);
@@ -400,6 +401,22 @@ export function accented(model: THREE.Object3D, [first, other]: readonly [Wear, 
   });
 }
 
+// The blue the pack painted the crew's caps and shirts, where hue() has it on
+// the wheel: the swatch's faces lie at 0.61 to 0.65. Skin is at 0.05 and the
+// yellow trim at 0.10, so HUE's neighbourhood keeps them as they came.
+const CREW_BLUE = 0.63;
+
+// A crew figure under the snowflake theme: its cap and its shirt in
+// Snowflake's blue. Only the faces the pack painted that blue; the skin and
+// the yellow trim stay.
+export function snowflaked(model: THREE.Object3D) {
+  const blue = (u: number, v: number, own: THREE.Material) => {
+    const is = texture(u, v, own);
+    return is !== undefined && coloured(...is) && round(hue(...is), CREW_BLUE) < HUE;
+  };
+  sorted(model, (u, v, own) => (blue(u, v, own) ? paint(SNOWFLAKE) : own));
+}
+
 // Paint a model flat: every face in the palette's paint of what tone names
 // for it, by the middle of the face on its texture and the material it
 // wore. A face the scene paints itself (TINT) stays as it is, or becomes of
@@ -420,10 +437,11 @@ function block(of: Tone | Accent | number, width: number, height: number, depth:
 }
 
 // The figure of two boxes: a body in its outfit's colour, and a head.
-function boxFigure(outfit: Outfit): Figure {
+function boxFigure(outfit: Outfit, theme?: Theme): Figure {
   const body = FIGURE_HEIGHT * 0.6;
   const object = new THREE.Group();
-  object.add(block(outfit === "crew" ? "slate" : hat[outfit], 0.4, body, 0.55, 0), block("wall", 0.45, FIGURE_HEIGHT - body, 0.45, body));
+  const wears = outfit === "crew" ? (theme === "snowflake" ? SNOWFLAKE : "slate") : hat[outfit];
+  object.add(block(wears, 0.4, body, 0.55, 0), block("wall", 0.45, FIGURE_HEIGHT - body, 0.45, body));
   return { object, clips: {} };
 }
 
@@ -443,7 +461,7 @@ function wear(figure: THREE.Object3D, colour: number) {
   head.add(hat);
 }
 
-export async function loadKit(base: string): Promise<Kit> {
+export async function loadKit(base: string, theme?: Theme): Promise<Kit> {
   const loader = new GLTFLoader().setPath(`${base}kit/`);
   const load = async (name: string) => {
     try {
@@ -463,8 +481,11 @@ export async function loadKit(base: string): Promise<Kit> {
     const group = new THREE.Group().add(model);
     if (part === "silo") banded(model);
     const trim = trims[part];
+    // Under the snowflake theme a building's roof wears snow; the steam
+    // locomotive keeps its livery's navy and brass.
+    const wears: typeof trim = trim && theme === "snowflake" && part !== "locomotive" ? [trim[0], SNOW] : trim;
     if (part === "rail") flat(model, sleeper);
-    else if (trim) accented(model, trim);
+    else if (wears) accented(model, wears);
     // What else rolls is the pack's own, as a figure is.
     else sunlit(model);
     const mouth = part === "works" ? chimney(group) : undefined;
@@ -494,17 +515,21 @@ export async function loadKit(base: string): Promise<Kit> {
   ]);
   const models = new Map<Part, (THREE.Object3D | undefined)[]>(parts.map((part, i) => [part, loaded[i] ?? []]));
   const people = new Map<Outfit, (Figure | undefined)[]>(outfits.map((outfit, i) => [outfit, cast[i] ?? []]));
+  // Once, on the models: every figure shares its model's sorted faces, as a
+  // part's clones share its own. Sorting a figure again would drop the faces
+  // the first pass moved.
+  if (theme === "snowflake") for (const crew of people.get("crew") ?? []) if (crew) snowflaked(crew.object);
 
   return {
     make(part, pick = 0) {
       const kinds = models.get(part) ?? [];
       const model = kinds[Math.abs(pick) % Math.max(kinds.length, 1)];
-      return model ? model.clone() : box(part);
+      return model ? model.clone() : box(part, theme);
     },
     figure(outfit, pick = 0) {
       const kinds = people.get(outfit) ?? [];
       const model = kinds[Math.abs(pick) % Math.max(kinds.length, 1)];
-      if (!model) return boxFigure(outfit);
+      if (!model) return boxFigure(outfit, theme);
       // A plain clone would move the first figure's bones.
       const object = cloneSkinned(model.object);
       if (outfit !== "crew") wear(object, hat[outfit]);

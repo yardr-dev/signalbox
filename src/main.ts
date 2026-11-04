@@ -27,6 +27,7 @@ import { Player, SPEEDS } from "./player";
 import { calls, line, outgrown, trains } from "./replay";
 import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
+import { frost, themed } from "./theme";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots, Tower } from "./layout";
@@ -97,10 +98,14 @@ function choose(dark: boolean) {
   }
 }
 let dark = chosen() ?? system.matches;
+// The page's theme, read once from the address with the rest of its query
+// (?board is read where the page opens): what draws is handed this.
+const theme = themed(window.location.search);
 // The palette's tones as they are now, and the three of them the stylesheet
 // draws the page and its labels with.
 function dressed() {
   dress(dark);
+  frost(theme, dark);
   const page = document.documentElement;
   page.dataset.theme = dark ? "dark" : "light";
   for (const tone of ["ground", "ink", "pill"] as const) page.style.setProperty(`--${tone}`, css(tone));
@@ -232,7 +237,7 @@ async function start() {
   const dir = own ? OWN : base;
   made.hidden = !demo;
   let { yard, layout: slots } = api ?? own ?? (await files(base))!;
-  const kit = await loadKit(base);
+  const kit = await loadKit(base, theme);
   // The structure stands through a replay; only the beads change. Live, a
   // new snapshot may bring another structure: see adopt.
   // now is where a replay stands: a wagon's age is as of then.
@@ -248,14 +253,14 @@ async function start() {
   // its level. A snapshot's files without a quota have no tower.
   let quota = api ? (api.quota ?? undefined) : await fuel(dir);
   const stands = (): ReturnType<typeof plan> => ({ ...plan(yard), ...(api || quota ? {} : { towers: [] }) });
-  let picture = draw(stands(), kit);
+  let picture = draw(stands(), kit, theme);
   refuel(picture.towers, quota);
   const log = api ? api.log : await events(dir);
   // Live, the window ends when the snapshot was taken, and the page opens
   // there; a replay opens at its start.
   const first = log && new Player(yard, log, api && Date.parse(yard.taken_at));
   if (api) first?.follow();
-  const stock = new Stock(plan(first ? first.state : yard, first?.clock), kit, picture.sheds);
+  const stock = new Stock(plan(first ? first.state : yard, first?.clock), kit, picture.sheds, theme === "snowflake" ? picture.bounds : undefined);
 
   // The arrivals board: the beads in progress and when they are expected,
   // a replay's state or the snapshot's own. All of it is text of the yard:
@@ -784,7 +789,7 @@ async function start() {
             if (o instanceof CSS2DObject) o.element.remove();
           });
           scene.remove(picture.root);
-          picture = draw(stands(), kit);
+          picture = draw(stands(), kit, theme);
           scene.add(picture.root);
           stock.house(picture.sheds);
           shine();

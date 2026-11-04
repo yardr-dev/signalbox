@@ -10,6 +10,7 @@ import { curve, GOODS_END, goodsSeconds, measure, PUFF_SECONDS, PUFFS, RUN_OUT, 
 import { accents, building, dress, engine, fault as tint, hat, iron, lamp, liveried, livery, paint, palette, SHADE, shade, smoke, stand, steam, tinted, weathering, type Accent, type Tone } from "../src/palette";
 import { BACKLOG, COUPLING } from "../src/shunt";
 import { awaits, delivery, describe as tip, draw, fuelled, gateLamp, house, Rails, refuel, resets, sign, Stock, titled, waited, wrong } from "../src/scene";
+import { SNOW, SNOWFLAKE } from "../src/theme";
 import type { Bead, Edge, Provider, Quota, Yard } from "../src/yard";
 
 // A picture as a page has it once it is read: its size and its pixels, four
@@ -261,6 +262,26 @@ describe("a kit whose files are missing", () => {
     // The red, the green and the blue of the containers: no accent is left.
     const tones: Tone[] = [toned(0xe0, 0x50, 0x58), toned(0x60, 0xcc, 0x90), toned(0x60, 0x90, 0xd8)];
     for (const tone of tones) expect(["pale", "roof"]).toContain(tone);
+  });
+
+  test("under the snowflake theme a crew figure wears Snowflake blue and a works' chimney snow; the rest is as it was", async () => {
+    // No file loads twice through the stub: a second failing load hangs in
+    // the loader, so the themed kit's files fail outright, as the figures'.
+    const loading = vi.spyOn(GLTFLoader.prototype, "loadAsync").mockRejectedValue(new Error("no such file"));
+    const snowy = await loadKit("/", "snowflake");
+    loading.mockRestore();
+    const wears = (o: THREE.Object3D) => {
+      const seen: THREE.Material[] = [];
+      o.traverse((part) => {
+        if (part instanceof THREE.Mesh) seen.push(part.material as THREE.Material);
+      });
+      return seen;
+    };
+    expect(wears(snowy.figure("crew").object)).toEqual([paint(SNOWFLAKE), paint("wall")]);
+    expect(wears(snowy.figure("builder").object)).toEqual(wears(kit.figure("builder").object));
+    expect(wears(snowy.figure("reviewer").object)).toEqual(wears(kit.figure("reviewer").object));
+    expect(wears(snowy.make("works"))).toEqual([paint(building.works[0]), paint(SNOW)]);
+    expect(wears(snowy.make("hut"))).toEqual(wears(kit.make("hut")));
   });
 });
 
@@ -637,6 +658,44 @@ describe("the kit's own models", () => {
     accented(mesh, [TINT, TINT]);
     expect(mesh.material).toEqual([worn]);
     expect(mesh.castShadow && mesh.receiveShadow).toBe(true);
+  });
+
+  test("under the snowflake theme the crew wears Snowflake blue and the roofs snow; the locomotive keeps its livery", async () => {
+    vi.stubGlobal("fetch", served);
+    const snowy = await loadKit(KIT, "snowflake");
+    vi.stubGlobal("fetch", async () => new Response("", { status: 404 }));
+    const materials = (o: THREE.Object3D) => {
+      const seen = new Set<THREE.Material>();
+      o.traverse((part) => {
+        if (part instanceof THREE.Mesh) for (const m of [part.material].flat()) seen.add(m as THREE.Material);
+      });
+      return seen;
+    };
+    // The crew figure: Snowflake blue on its cap and shirt, the rest the pack's.
+    expect(materials(snowy.figure("crew").object).has(paint(SNOWFLAKE))).toBe(true);
+    expect(materials(own.figure("crew").object).has(paint(SNOWFLAKE))).toBe(false);
+    // Builders keep the pack's colours altogether.
+    expect(materials(snowy.figure("builder").object).has(paint(SNOWFLAKE))).toBe(false);
+    // Every figure keeps all its faces: sorting runs once, on the model, so
+    // a second figure drops none of the first's.
+    const faces = (o: THREE.Object3D) => {
+      let n = 0;
+      o.traverse((part) => {
+        if (part instanceof THREE.Mesh) n += (part.geometry as THREE.BufferGeometry).getIndex()!.count;
+      });
+      return n;
+    };
+    const first = snowy.figure("crew").object;
+    const whole = faces(first);
+    snowy.figure("crew");
+    expect(faces(first)).toBe(whole);
+    // A hut's roof wears snow for its peach, its walls their yellow.
+    expect(Object.keys(worn(own.make("hut")))).toContain("peach");
+    const hut = Object.keys(worn(snowy.make("hut")));
+    expect(hut).toEqual(expect.arrayContaining(["other", "texture", "yellow"]));
+    expect(hut).not.toContain("peach");
+    // The locomotive keeps its livery's navy and brass.
+    expect(Object.keys(worn(snowy.make("locomotive"))).sort()).toEqual(["brass", "navy", "texture"]);
   });
 });
 
@@ -1313,6 +1372,69 @@ describe("the figures of the stock", () => {
     expect(house(station)).toBe(`${station.group}\nmanual · limit 50`);
     const works = quiet.sheds.find((s) => s.key === "sextant/default/approved/sextant-assembly")!;
     expect(sign(works)).toBe("sextant-assembly · 1");
+  });
+});
+
+describe("the snowflake theme", () => {
+  const l = layout(yard);
+  const flakes = (stock: Stock) => {
+    const found: THREE.Points[] = [];
+    stock.root.traverse((part) => {
+      if (part instanceof THREE.Points) found.push(part);
+    });
+    return found;
+  };
+  const heights = (stock: Stock) => {
+    const at = flakes(stock)[0]!.geometry.getAttribute("position") as THREE.BufferAttribute;
+    return [...at.array].filter((_, i) => i % 3 === 1);
+  };
+
+  test("snow falls over the bounds it was given, and wraps from the ground to the top", () => {
+    expect(flakes(new Stock(l, kit))).toEqual([]);
+    const stock = new Stock(l, kit, [], draw(l, kit).bounds);
+    expect(flakes(stock).length).toBe(1);
+    const before = heights(stock);
+    expect(before.length).toBeGreaterThan(100);
+    expect(stock.tick(0.1)).toBe(true);
+    const after = heights(stock);
+    for (const [i, y] of after.entries()) {
+      // Lower, or wrapped back to the top.
+      expect(y! < before[i]! || y! > before[i]! + 10).toBe(true);
+      expect(y!).toBeGreaterThanOrEqual(0);
+    }
+    expect(after.some((y, i) => y! < before[i]!)).toBe(true);
+    // A long step wraps every flake back over the yard.
+    stock.tick(60);
+    for (const y of heights(stock)) {
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThanOrEqual(20);
+    }
+  });
+
+  test("snow hangs where it is when the picture does not move", () => {
+    const stock = new Stock(l, kit, [], draw(l, kit).bounds);
+    const before = heights(stock);
+    stock.still = true;
+    stock.tick(1);
+    expect(heights(stock)).toEqual(before);
+    stock.still = false;
+    stock.tick(0.1);
+    expect(heights(stock)).not.toEqual(before);
+  });
+
+  test("the signal boxes' roofs wear snow under the theme and their accent without it", () => {
+    expect(l.boxes.length).toBeGreaterThan(0);
+    const roofs = (theme?: "snowflake") => {
+      const seen = new Set<THREE.Material>();
+      draw(l, kit, theme).root.traverse((part) => {
+        if (part instanceof THREE.Mesh) [part.material].flat().forEach((m) => seen.add(m as THREE.Material));
+      });
+      return seen;
+    };
+    expect(roofs().has(paint(building.box[1]))).toBe(true);
+    expect(roofs().has(paint(SNOW))).toBe(false);
+    expect(roofs("snowflake").has(paint(SNOW))).toBe(true);
+    expect(roofs("snowflake").has(paint(building.box[1]))).toBe(false);
   });
 });
 
