@@ -11,6 +11,12 @@ import { paint, palette } from "./palette";
 const THEMES = ["snowflake"] as const;
 export type Theme = (typeof THEMES)[number];
 
+// The sources a theme draws a station for, added to ?sources=: one row per
+// theme, so ?theme=snowflake alone draws the Snowflake station.
+export const STATIONS: Record<Theme, readonly string[]> = {
+  snowflake: ["snowflake"],
+};
+
 // Snowflake's brand blue, worn by the crew under the theme: the theme's one
 // sanctioned exception to copying tokens, approved by mckean. Snow is white,
 // as a reviewer's hat already is.

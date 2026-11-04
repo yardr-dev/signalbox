@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, test } from "vitest";
 import { dress, paint, palette } from "../src/palette";
-import { frost, SNOW, SNOWFLAKE, themed } from "../src/theme";
+import { frost, SNOW, SNOWFLAKE, STATIONS, themed } from "../src/theme";
 
 describe("the page's theme", () => {
   test("?theme=snowflake asks for snow; anything else is no theme", () => {
@@ -11,6 +11,10 @@ describe("the page's theme", () => {
     expect(themed("?board")).toBeUndefined();
     expect(themed("?theme=nope")).toBeUndefined();
     expect(themed("?theme=")).toBeUndefined();
+  });
+
+  test("?theme=snowflake draws the snowflake station: one row of stations per theme", () => {
+    expect(STATIONS.snowflake).toEqual(["snowflake"]);
   });
 
   test("the crew wears Snowflake's brand blue, the roofs snow", () => {

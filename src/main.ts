@@ -27,7 +27,7 @@ import { Player, SPEEDS } from "./player";
 import { calls, line, outgrown, trains } from "./replay";
 import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
-import { frost, themed } from "./theme";
+import { frost, STATIONS, themed } from "./theme";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots, Tower } from "./layout";
@@ -244,8 +244,9 @@ async function start() {
   // What changes is the beads and what they wait for: a state's, or the
   // snapshot's own.
   // A state has the works' gates too; the snapshot knows of none. stations
-  // are the sources the address asked a line for (?sources=).
-  const stations = sources(window.location.search);
+  // are the sources the address asked a line for: ?sources=, and the theme's
+  // own, in lower case.
+  const stations = [...(theme === undefined ? [] : STATIONS[theme]), ...sources(window.location.search)];
   const plan = (at: Pick<Yard, "beads" | "edges"> & Partial<Pick<State, "works">>, now?: number) =>
     layout({ ...yard, beads: at.beads, edges: at.edges ?? [] }, slots, now, at.works, stations);
   // The quota is as it is now, whatever time the picture is of. Live, a tower
@@ -719,10 +720,12 @@ async function start() {
       for (const e of passed) if (e.kind === "hook") stock.flash();
       for (const t of trains(passed, loaded)) stock.goods(t.peer, t.way, t.kind, speed, t.files);
       // Only the sources the address asked a line for; other calls pass by.
+      // The match is case-insensitive: the line keeps the lower case.
       for (const c of calls(passed)) {
-        if (!stations.includes(c.source)) continue;
-        stock.goods(c.source, "out", c.call, speed);
-        if (!c.failed) returns.push({ source: c.source, call: c.call, wait: goodsSeconds(speed), speed });
+        const source = c.source.toLowerCase();
+        if (!stations.includes(source)) continue;
+        stock.goods(source, "out", c.call, speed);
+        if (!c.failed) returns.push({ source, call: c.call, wait: goodsSeconds(speed), speed });
       }
       for (let i = returns.length - 1; i >= 0; i--) {
         const r = returns[i]!;

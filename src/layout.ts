@@ -376,19 +376,21 @@ export interface PeerLine {
 }
 
 // The sources the page draws a station for: the ?sources= query parameter,
-// a comma list, each once, in order. None without it.
+// a comma list, each once, in order, in lower case. None without it. Matches
+// case-insensitively: Snowflake, SNOWFLAKE and snowflake are one source.
 export function sources(search: string): string[] {
   const seen = new Set<string>();
   for (const name of (new URLSearchParams(search).get("sources") ?? "").split(",")) {
-    const source = name.trim();
+    const source = name.trim().toLowerCase();
     if (source !== "" && !seen.has(source)) seen.add(source);
   }
   return [...seen];
 }
 
-// A source's station, as its sign reads it: Snowflake for snowflake.
+// A source's station, as its sign reads it: Snowflake for snowflake,
+// whatever the case.
 export function stationName(source: string): string {
-  return source.charAt(0).toUpperCase() + source.slice(1);
+  return source.charAt(0).toUpperCase() + source.slice(1).toLowerCase();
 }
 
 export interface Layout {
@@ -837,10 +839,12 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
     });
   });
   // A source's station: a line like a peer's, below the peers' lines, each
-  // once; one a peer's line already goes to is that line.
-  const drawn = new Set(yard.peers.map((p) => p.name));
+  // once; one a peer's line already goes to is that line. Sources match
+  // case-insensitively: the line keeps the lower case.
+  const drawn = new Set(yard.peers.map((p) => p.name.toLowerCase()));
   let rank = Math.max(-1, ...Object.values(slots.peers));
-  for (const name of stations) {
+  for (const station of stations) {
+    const name = station.toLowerCase();
     if (drawn.has(name)) continue;
     drawn.add(name);
     out.peers.push({ key: `source/${name}`, name, source: true, at: { x: 0, z: PEER_Z - ++rank * PEER_PITCH }, length: PEER_LENGTH });

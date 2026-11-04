@@ -1962,6 +1962,19 @@ describe("the shunters of the stock", () => {
     });
     expect(signs).toEqual(["to quay →", "Snowflake"]);
   });
+
+  test("a source station's sign stands along its line past its neighbour's", () => {
+    const picture = draw(layout({ ...yard, beads: [] }, {}, undefined, {}, ["snowflake", "linear"]), kit);
+    const signs = new Map<string, number>();
+    picture.root.traverse((o) => {
+      const at = o as unknown as { element?: { textContent: string; className: string }; position: { x: number } };
+      if (at.element?.className === "label peer") signs.set(at.element.textContent, at.position.x);
+    });
+    // A peer's sign is where it was; each station's is a step past the last.
+    expect(signs.get("to quay →")).toBe(2);
+    expect(signs.get("Snowflake")).toBeGreaterThan(signs.get("to quay →")!);
+    expect(signs.get("Linear")).toBeGreaterThan(signs.get("Snowflake")!);
+  });
 });
 
 describe("the lamps of the wagons that wait", () => {

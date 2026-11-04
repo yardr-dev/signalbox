@@ -1005,6 +1005,9 @@ describe("a station for every source the address names", () => {
     expect(sources("?sources=snowflake,linear")).toEqual(["snowflake", "linear"]);
     expect(sources("?sources=+snowflake+,linear,snowflake")).toEqual(["snowflake", "linear"]);
     expect(sources("?board&sources=linear")).toEqual(["linear"]);
+    // Case-insensitive: one source however it is written.
+    expect(sources("?sources=Snowflake")).toEqual(["snowflake"]);
+    expect(sources("?sources=SNOWFLAKE,snowflake,Snowflake")).toEqual(["snowflake"]);
   });
 
   test("a line like a peer's below the peers' lines, its sign the source's name", () => {
@@ -1016,12 +1019,20 @@ describe("a station for every source the address names", () => {
     expect(lin!.at).toEqual({ x: 0, z: PEER_Z - 2 * PEER_PITCH });
     expect(stationName("snowflake")).toBe("Snowflake");
     expect(stationName("linear")).toBe("Linear");
+    expect(stationName("Snowflake")).toBe("Snowflake");
+    expect(stationName("SNOWFLAKE")).toBe("Snowflake");
   });
 
   test("none by default; one a peer's line already goes to is that line", () => {
     expect(layout(yard).peers.map((p) => p.name)).toEqual(["quay"]);
     const l = layout(yard, {}, undefined, {}, ["quay", "snowflake", "snowflake"]);
     expect(l.peers.map((p) => [p.name, p.key])).toEqual([
+      ["quay", "peer/quay"],
+      ["snowflake", "source/snowflake"],
+    ]);
+    // Stations match case-insensitively too: one line, whatever the case.
+    const mixed = layout(yard, {}, undefined, {}, ["Quay", "Snowflake", "SNOWFLAKE"]);
+    expect(mixed.peers.map((p) => [p.name, p.key])).toEqual([
       ["quay", "peer/quay"],
       ["snowflake", "source/snowflake"],
     ]);

@@ -67,6 +67,9 @@ const PLATFORM_HEIGHT = 0.45;
 const PLATFORM_WIDTH = 1.4;
 // A sign is this far from its building's middle, away from the track.
 const SIGN_Z = 1.3;
+// A source station's sign stands this far along its line past its neighbour's,
+// each station one step further: at the fit zoom the signs read apart.
+const STATION_STEP = 32;
 const POLE_PITCH = 12;
 const POLE_HEIGHT = 3.2;
 // A signal box's sign, over its roof.
@@ -658,16 +661,19 @@ export function draw(l: Layout, kit: Kit, theme?: Theme): Picture {
   root.add(label("hooks", "wire", wire.at.x + 1, POLE_HEIGHT, wire.at.z, [0, 1]));
   grow(wire.at.x, wire.at.z, POLE_HEIGHT);
 
+  let station = 0;
   for (const p of l.peers) {
     // A rail each way: out on the near one, in on the far one.
     rails.run({ x: p.at.x, z: p.at.z + PEER_RAIL_Z }, p.length);
     rails.run({ x: p.at.x, z: p.at.z - PEER_RAIL_Z }, p.length);
     root.add(block("bed", p.length, -GROUND_Y - 0.02, 1.6 + 2 * PEER_RAIL_Z, p.at.x + p.length / 2, GROUND_Y, p.at.z));
     // The sign, behind the far rail: the way to a peer, the name of a
-    // source's station.
-    root.add(block(building.board[0], 2.4, 0.9, 0.2, p.at.x + 2, 1.2, p.at.z - 2));
-    root.add(block("slate", 0.16, 1.2, 0.16, p.at.x + 2, 0, p.at.z - 2));
-    root.add(label(p.source ? stationName(p.name) : `to ${p.name} →`, "peer", p.at.x + 2, 2.3, p.at.z - 2, [0.5, 1]));
+    // source's station. A station's stands along its line past its
+    // neighbour's, one step a station, so the two read apart at the fit zoom.
+    const x = p.at.x + 2 + (p.source ? ++station * STATION_STEP : 0);
+    root.add(block(building.board[0], 2.4, 0.9, 0.2, x, 1.2, p.at.z - 2));
+    root.add(block("slate", 0.16, 1.2, 0.16, x, 0, p.at.z - 2));
+    root.add(label(p.source ? stationName(p.name) : `to ${p.name} →`, "peer", x, 2.3, p.at.z - 2, [0.5, 1]));
     grow(p.at.x - 2, p.at.z - 3);
   }
 
