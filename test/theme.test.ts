@@ -1,7 +1,7 @@
 // @vitest-environment node
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { dress, paint, palette } from "../src/palette";
-import { frost, SNOW, SNOWFLAKE, STATIONS, themed } from "../src/theme";
+import { frost, loadLogo, SNOW, SNOWFLAKE, STATIONS, themed } from "../src/theme";
 
 describe("the page's theme", () => {
   test("?theme=snowflake asks for snow; anything else is no theme", () => {
@@ -20,6 +20,18 @@ describe("the page's theme", () => {
   test("the crew wears Snowflake's brand blue, the roofs snow", () => {
     expect(SNOWFLAKE).toBe(0x29b5e8);
     expect(SNOW).toBe(0xffffff);
+  });
+
+  test("without the theme no logo is asked for; one that does not load is no logo", async () => {
+    await expect(loadLogo("http://logo.test/", undefined)).resolves.toBeUndefined();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // No document here, so no image loads: the billboard is blank instead.
+      await expect(loadLogo("http://logo.test/", "snowflake")).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

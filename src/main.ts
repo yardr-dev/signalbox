@@ -27,7 +27,7 @@ import { Player, SPEEDS } from "./player";
 import { calls, line, outgrown, trains } from "./replay";
 import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
-import { frost, STATIONS, themed } from "./theme";
+import { frost, loadLogo, STATIONS, themed } from "./theme";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots, Tower } from "./layout";
@@ -237,7 +237,7 @@ async function start() {
   const dir = own ? OWN : base;
   made.hidden = !demo;
   let { yard, layout: slots } = api ?? own ?? (await files(base))!;
-  const kit = await loadKit(base, theme);
+  const [kit, logo] = await Promise.all([loadKit(base, theme), loadLogo(base, theme)]);
   // The structure stands through a replay; only the beads change. Live, a
   // new snapshot may bring another structure: see adopt.
   // now is where a replay stands: a wagon's age is as of then.
@@ -254,7 +254,7 @@ async function start() {
   // its level. A snapshot's files without a quota have no tower.
   let quota = api ? (api.quota ?? undefined) : await fuel(dir);
   const stands = (): ReturnType<typeof plan> => ({ ...plan(yard), ...(api || quota ? {} : { towers: [] }) });
-  let picture = draw(stands(), kit, theme);
+  let picture = draw(stands(), kit, theme, logo);
   refuel(picture.towers, quota);
   const log = api ? api.log : await events(dir);
   // Live, the window ends when the snapshot was taken, and the page opens
@@ -792,7 +792,7 @@ async function start() {
             if (o instanceof CSS2DObject) o.element.remove();
           });
           scene.remove(picture.root);
-          picture = draw(stands(), kit, theme);
+          picture = draw(stands(), kit, theme, logo);
           scene.add(picture.root);
           stock.house(picture.sheds);
           shine();

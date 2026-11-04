@@ -1436,6 +1436,61 @@ describe("the snowflake theme", () => {
     expect(roofs("snowflake").has(paint(SNOW))).toBe(true);
     expect(roofs("snowflake").has(paint(building.box[1]))).toBe(false);
   });
+
+  const boards = (root: THREE.Object3D) => {
+    const found: THREE.Object3D[] = [];
+    root.traverse((part) => {
+      if (part.userData.billboard === true) found.push(part);
+    });
+    return found;
+  };
+
+  test("a billboard stands under the theme where the layout stands it, and none without it", () => {
+    expect(boards(draw(l, kit).root)).toEqual([]);
+    const themed = draw(l, kit, "snowflake");
+    const found = boards(themed.root);
+    expect(found.length).toBe(1);
+    const board = found[0]!;
+    // Where the layout stands it, facing the reader as the peers' boards do.
+    expect(board.position.x).toBe(l.billboard.x);
+    expect(board.position.z).toBe(l.billboard.z);
+    expect(board.rotation.y).toBe(0);
+    // Two posts and a frame in slate, the panel snow white.
+    const wears = new Map<THREE.Material, number>();
+    board.traverse((part) => {
+      if (part instanceof THREE.Mesh) [part.material].flat().forEach((m) => wears.set(m as THREE.Material, (wears.get(m as THREE.Material) ?? 0) + 1));
+    });
+    expect(wears.get(paint("slate"))).toBe(3);
+    expect(wears.get(paint(SNOW))).toBe(1);
+    // The first view holds it; without the theme the bounds are as they were.
+    const top = new THREE.Box3().setFromObject(board).max.y;
+    expect(themed.bounds.max.y).toBeCloseTo(top, 5);
+    expect(draw(l, kit).bounds.max.y).toBeLessThan(top);
+  });
+
+  test("the billboard shows the logo it was given, and is blank without it", () => {
+    const logo = new THREE.DataTexture(new Uint8Array([41, 181, 232, 255]), 1, 1);
+    const [board] = boards(draw(l, kit, "snowflake", logo).root);
+    const faces: THREE.Mesh[] = [];
+    board!.traverse((part) => {
+      if (part instanceof THREE.Mesh && (part.material as THREE.MeshLambertMaterial).map === logo) faces.push(part);
+    });
+    expect(faces.length).toBe(1);
+    expect((faces[0]!.material as THREE.MeshLambertMaterial).transparent).toBe(true);
+    // Without the logo the white panel still stands, with no face on it.
+    const [blank] = boards(draw(l, kit, "snowflake").root);
+    let maps = 0;
+    let panels = 0;
+    blank!.traverse((part) => {
+      if (!(part instanceof THREE.Mesh)) return;
+      for (const m of [part.material].flat() as THREE.MeshLambertMaterial[]) {
+        if (m.map) maps++;
+        if (m === paint(SNOW)) panels++;
+      }
+    });
+    expect(maps).toBe(0);
+    expect(panels).toBe(1);
+  });
 });
 
 // A fault's time of day as the tip has it: the reader's own.

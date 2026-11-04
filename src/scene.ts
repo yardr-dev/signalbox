@@ -117,6 +117,24 @@ const WAIT_Y = 0.3;
 const GATE_LAMP_X = SHED_WIDTH / 2 + 0.4;
 const GATE_LAMP_Y = 1.9;
 const ROOF_Y = 2.2;
+// The billboard under the snowflake theme: Snowflake's logo this wide on a
+// white panel, in the logo's own aspect (snowflake-logo-color-rgb@2x.png is
+// 1221 by 279), the panel's foot this high, on two slate posts this far
+// either side of its middle, a slate frame behind it. The foot clears the
+// peers' signs in front of it, and the logo reads at the first view.
+const LOGO_ASPECT = 1221 / 279;
+const LOGO_W = 24;
+const PANEL_W = 28;
+const PANEL_H = 7.5;
+const PANEL_D = 0.12;
+const PANEL_Y = 2;
+const FRAME = 0.4;
+const BACKING = 0.08;
+const BACKING_Z = 0.1;
+const FACE_OUT = 0.02;
+const POST = 0.4;
+const POST_X = 7;
+const POST_Z = 0.15;
 
 export interface Picture {
   root: THREE.Group;
@@ -466,6 +484,26 @@ export function gateLamp(gate: Gate | undefined): number {
   return gate.last === "landed" ? lamp.clear : lamp.stop;
 }
 
+// A billboard: Snowflake's logo on a white panel in a slate frame, on two
+// slate posts, facing the reader as the peers' boards do. The logo is a face
+// of its own off the panel, for the brand's clear space round it; it throws
+// no shadow of its own. Without the logo it is a blank white panel.
+function billboard(at: Point, logo?: THREE.Texture): THREE.Object3D {
+  const g = new THREE.Group();
+  g.position.set(at.x, 0, at.z);
+  for (const side of [-1, 1]) g.add(block("slate", POST, PANEL_Y + PANEL_H, POST, side * POST_X, 0, -POST_Z));
+  g.add(block("slate", PANEL_W + FRAME, PANEL_H + FRAME, BACKING, 0, PANEL_Y - FRAME / 2, -BACKING_Z));
+  g.add(block(SNOW, PANEL_W, PANEL_H, PANEL_D, 0, PANEL_Y, 0));
+  if (logo !== undefined) {
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_W, LOGO_W / LOGO_ASPECT), new THREE.MeshLambertMaterial({ map: logo, transparent: true }));
+    face.position.set(0, PANEL_Y + PANEL_H / 2, PANEL_D / 2 + FACE_OUT);
+    face.receiveShadow = true;
+    g.add(face);
+  }
+  g.userData.billboard = true;
+  return g;
+}
+
 // A signal box: its lower floor in its walls' accent, the upper one, which
 // is all windows, a tone, under its roof's accent, snow under the snowflake
 // theme.
@@ -572,7 +610,7 @@ export function refuel(towers: THREE.Object3D[], quota: Quota | undefined) {
   }
 }
 
-export function draw(l: Layout, kit: Kit, theme?: Theme): Picture {
+export function draw(l: Layout, kit: Kit, theme?: Theme, logo?: THREE.Texture): Picture {
   const root = new THREE.Group();
   const bounds = new THREE.Box3();
   const sheds: THREE.Object3D[] = [];
@@ -675,6 +713,14 @@ export function draw(l: Layout, kit: Kit, theme?: Theme): Picture {
     root.add(block("slate", 0.16, 1.2, 0.16, x, 0, p.at.z - 2));
     root.add(label(p.source ? stationName(p.name) : `to ${p.name} →`, "peer", x, 2.3, p.at.z - 2, [0.5, 1]));
     grow(p.at.x - 2, p.at.z - 3);
+  }
+
+  // The billboard under the snowflake theme, where the layout stands it:
+  // nothing without the theme, and the bounds as they were.
+  if (theme === "snowflake") {
+    root.add(billboard(l.billboard, logo));
+    grow(l.billboard.x - (PANEL_W + FRAME) / 2, l.billboard.z - 0.2, PANEL_Y + PANEL_H + FRAME / 2);
+    grow(l.billboard.x + (PANEL_W + FRAME) / 2, l.billboard.z + 0.2);
   }
 
   root.add(rails.build(kit.make("rail")));

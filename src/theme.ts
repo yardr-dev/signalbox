@@ -29,6 +29,22 @@ export function themed(search: string): Theme | undefined {
   return name !== null && (THEMES as readonly string[]).includes(name) ? (name as Theme) : undefined;
 }
 
+// The billboard's face under the theme: Snowflake's official logo, kept
+// under the theme's folder (NOTICE says whose it is). Without the theme
+// nothing is asked for; a logo that does not load leaves a blank white
+// panel, and the page still draws.
+export async function loadLogo(base: string, theme: Theme | undefined): Promise<THREE.Texture | undefined> {
+  if (theme === undefined) return undefined;
+  try {
+    const logo = await new THREE.TextureLoader().loadAsync(`${base}theme/snowflake/snowflake-logo-color-rgb@2x.png`);
+    logo.colorSpace = THREE.SRGBColorSpace;
+    return logo;
+  } catch (err) {
+    console.warn("theme: the Snowflake logo did not load, the billboard is blank", err);
+    return undefined;
+  }
+}
+
 // A light frost on the ground under the theme: the ground and the depots'
 // beds mixed toward white, further by day than by night. After dress, so a
 // change of day and night keeps it; dress alone gives the frost back.

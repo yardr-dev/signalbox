@@ -115,6 +115,9 @@ export const PEER_PITCH = 4;
 export const PEER_RAIL_Z = 0.75;
 // A peer's line runs on past any yard's right edge.
 export const PEER_LENGTH = 600;
+// Where a billboard would stand on x: right of the peers' signs and their
+// labels, which stand at x=2, so at the first view no label lies over it.
+export const BILLBOARD_X = 24;
 
 export interface Board {
   key: string;
@@ -407,6 +410,10 @@ export interface Layout {
   boxes: SignalBox[];
   towers: Tower[];
   peers: PeerLine[];
+  // Where a billboard would stand: the next free peer slot, below the
+  // peers' lines and the sources' stations. What draws decides whether one
+  // stands there.
+  billboard: Point;
   // The telegraph wire: its left end and its length.
   wire: { at: Point; length: number };
 }
@@ -564,6 +571,7 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
     boxes: [],
     towers: [],
     peers: [],
+    billboard: { x: BILLBOARD_X, z: PEER_Z },
     wire: { at: { x: BOARD_X, z: WIRE_Z }, length: 0 },
   };
   const groups = new Map<string, Group>(yard.groups.map((g) => [g.name, g]));
@@ -849,6 +857,9 @@ export function layout(yard: Yard, memory: Partial<Slots> = {}, now: number = Da
     drawn.add(name);
     out.peers.push({ key: `source/${name}`, name, source: true, at: { x: 0, z: PEER_Z - ++rank * PEER_PITCH }, length: PEER_LENGTH });
   }
+  // A slot of its own below those, as a station takes: what left the yard
+  // keeps its slot above it, and a source's station its own.
+  out.billboard.z = PEER_Z - ++rank * PEER_PITCH;
   out.wire.length = Math.max(right, yard.crew.length * CREW_PITCH) - BOARD_X;
   return out;
 }
@@ -873,6 +884,7 @@ export function positions(l: Layout): Map<string, Point> {
   l.boxes.forEach((e) => put("box", e.key, e.at));
   l.towers.forEach((e) => put("tower", e.key, e.at));
   l.peers.forEach((e) => put("peer", e.key, e.at));
+  // No billboard: it follows the peers' last slot, so a new peer moves it.
   put("wire", "wire", l.wire.at);
   return at;
 }

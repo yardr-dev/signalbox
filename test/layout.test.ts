@@ -4,6 +4,7 @@ import snapshot from "../public/yard.json";
 import {
   age,
   atWork,
+  BILLBOARD_X,
   BOARD_GAP,
   BOARD_HEAD,
   BOX_FRONT_Z,
@@ -566,7 +567,7 @@ describe("the mapping", () => {
     // Every session of this yard's crews: both of wharf-builders, each at its wagon.
     expect(l.work.map((w) => w.key).sort()).toEqual(["sextant-n3wd", "wharf-z3fy"]);
     for (const w of l.work) expect(w.at.x).toBe(l.vehicles.find((v) => v.key === w.key)!.at.x);
-    expect(Object.keys(g).sort()).toEqual(["boards", "boxes", "counts", "lamps", "peers", "platforms", "sheds", "sidings", "towers", "tracks", "vehicles", "wire", "work"]);
+    expect(Object.keys(g).sort()).toEqual(["billboard", "boards", "boxes", "counts", "lamps", "peers", "platforms", "sheds", "sidings", "towers", "tracks", "vehicles", "wire", "work"]);
   });
 
   test("the places taken are the limit less the sessions at work, and the sign's count is the sessions", () => {
@@ -1036,5 +1037,34 @@ describe("a station for every source the address names", () => {
       ["quay", "peer/quay"],
       ["snowflake", "source/snowflake"],
     ]);
+  });
+});
+
+describe("where a billboard would stand", () => {
+  test("the next free peer slot, below the peers' lines and the sources' stations", () => {
+    // The demo yard's peer takes slot 0; the billboard takes slot 1, right
+    // of the peers' signs and their labels.
+    expect(layout(yard).billboard).toEqual({ x: BILLBOARD_X, z: PEER_Z - PEER_PITCH });
+    // Below the sources' stations too: each takes its slot first.
+    expect(layout(yard, {}, undefined, {}, ["snowflake", "linear"]).billboard).toEqual({ x: BILLBOARD_X, z: PEER_Z - 3 * PEER_PITCH });
+    // One a peer's line already goes to takes no slot, as no station.
+    expect(layout(yard, {}, undefined, {}, ["quay", "snowflake"]).billboard).toEqual({ x: BILLBOARD_X, z: PEER_Z - 2 * PEER_PITCH });
+    // A yard with no peers: the first slot.
+    const alone = copy();
+    alone.peers = [];
+    expect(layout(alone).billboard).toEqual({ x: BILLBOARD_X, z: PEER_Z });
+  });
+
+  test("what left the yard keeps its slot above the billboard, and a new peer moves it", () => {
+    const grown = copy();
+    grown.peers.push({ name: "beyond" });
+    // The new line takes the billboard's old slot; the billboard moves
+    // beyond it. It is no position that is kept, so positions() has none.
+    expect(layout(yard).billboard.z).toBe(PEER_Z - PEER_PITCH);
+    expect(layout(grown, place(yard)).billboard.z).toBe(PEER_Z - 2 * PEER_PITCH);
+    expect(positions(layout(grown)).has("billboard:billboard")).toBe(false);
+    // A remembered slot outlasts its peer: the gap stays above it.
+    const memory = { peers: { quay: 0, gone: 3 } };
+    expect(layout(yard, memory).billboard).toEqual({ x: BILLBOARD_X, z: PEER_Z - 4 * PEER_PITCH });
   });
 });
