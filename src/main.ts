@@ -27,7 +27,7 @@ import { Player, SPEEDS } from "./player";
 import { calls, line, outgrown, trains } from "./replay";
 import { describe, draw, fuelled, GROUND_Y, house, refuel, Stock, type Show } from "./scene";
 import { clankCue, cues, Sound } from "./sound";
-import { frost, loadLogo, STATIONS, themed } from "./theme";
+import { frost, loadLogo, STATIONS, starCard, themed } from "./theme";
 import "./style.css";
 import type { Card, Detail } from "./card";
 import type { Shed, Slots, Tower } from "./layout";
@@ -59,6 +59,7 @@ const base = import.meta.env.BASE_URL;
 const host = document.getElementById("yard")!;
 const tip = document.getElementById("tip")!;
 const side = document.getElementById("card")!;
+const star = document.getElementById("star")!;
 const note = document.getElementById("note")!;
 const bar = document.getElementById("bar")!;
 const play = document.getElementById("play")!;
@@ -113,6 +114,15 @@ function dressed() {
 }
 // Before anything is loaded: the page is the ground's colour from the start.
 dressed();
+// The star card under the theme: GitHub's mark and a QR code to yardr's
+// repository, fixed in the page's top right corner. Nothing without it.
+{
+  const starring = starCard(base, theme);
+  if (starring !== "") {
+    star.innerHTML = starring;
+    star.hidden = false;
+  }
+}
 // And an error from here on is told to the script, when one serves the page.
 listen();
 

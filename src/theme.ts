@@ -45,6 +45,31 @@ export async function loadLogo(base: string, theme: Theme | undefined): Promise<
   }
 }
 
+// Where the star card points: yardr's repository on GitHub.
+export const STAR_URL = "https://github.com/yardr-dev/yardr";
+
+// The star card under the theme: GitHub's official mark beside a QR code
+// to yardr's repository, with the call to action "Star us on GitHub". The
+// page shows it fixed in its top right corner, outside the 3D scene; the
+// mark and the code are plain pictures, kept under the theme's folder
+// (NOTICE says whose the mark is). GitHub's logo rules ask the mark to
+// link to GitHub, so the card is a link to the repository. Without the
+// theme there is no card. The code opens exactly STAR_URL; it was drawn
+// with python-qrcode 8.2, error correction M, dark on white, one pixel a
+// module, 29 modules with a quiet zone of four (37 pixels):
+// qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+// box_size=1, border=4); qr.add_data("https://github.com/yardr-dev/yardr").
+export function starCard(base: string, theme: Theme | undefined): string {
+  if (theme === undefined) return "";
+  const at = (file: string) => `${base}theme/snowflake/${file}`;
+  return (
+    `<a href="${STAR_URL}">` +
+    `<img class="mark" src="${at("GitHub_Invertocat_Black.png")}" alt="GitHub"/>` +
+    `<img class="qr" src="${at("github-qr.png")}" alt="QR code to yardr on GitHub"/>` +
+    `<span>Star us on GitHub</span></a>`
+  );
+}
+
 // A light frost on the ground under the theme: the ground and the depots'
 // beds mixed toward white, further by day than by night. After dress, so a
 // change of day and night keeps it; dress alone gives the frost back.

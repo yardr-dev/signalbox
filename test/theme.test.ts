@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { dress, paint, palette } from "../src/palette";
-import { frost, loadLogo, SNOW, SNOWFLAKE, STATIONS, themed } from "../src/theme";
+import { frost, loadLogo, SNOW, SNOWFLAKE, STAR_URL, STATIONS, starCard, themed } from "../src/theme";
 
 describe("the page's theme", () => {
   test("?theme=snowflake asks for snow; anything else is no theme", () => {
@@ -32,6 +32,20 @@ describe("the page's theme", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test("without the theme there is no star card; with it the mark and the code link to the repository", () => {
+    expect(STAR_URL).toBe("https://github.com/yardr-dev/yardr");
+    expect(starCard("http://logo.test/", undefined)).toBe("");
+    const card = starCard("http://logo.test/", "snowflake");
+    // One link to the repository, the mark beside the code, the call to
+    // action under them; the pictures are the theme's, off the base.
+    expect(card).toBe(
+      `<a href="https://github.com/yardr-dev/yardr">` +
+        `<img class="mark" src="http://logo.test/theme/snowflake/GitHub_Invertocat_Black.png" alt="GitHub"/>` +
+        `<img class="qr" src="http://logo.test/theme/snowflake/github-qr.png" alt="QR code to yardr on GitHub"/>` +
+        `<span>Star us on GitHub</span></a>`,
+    );
   });
 });
 

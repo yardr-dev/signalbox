@@ -129,6 +129,52 @@ body.past .label.now {
   background: var(--pill);
 }
 
+/* The star card under the snowflake theme: GitHub's mark beside a QR code
+   to yardr's repository, the call to action under them, fixed in the
+   page's top right corner. A white rounded card in the bead card's ink, by
+   day and by night alike; the bead's card paints above it when open. The
+   code is drawn pixelated, so its modules stay hard-edged. */
+#star {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+}
+
+#star[hidden] {
+  display: none;
+}
+
+#star a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 10px 12px 8px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #1f262d;
+  background: #fff;
+  box-shadow: 0 1px 6px rgb(31 38 45 / 0.35);
+}
+
+#star img.mark {
+  width: 52px;
+  height: 51px;
+}
+
+#star img.qr {
+  width: 128px;
+  height: 128px;
+  image-rendering: pixelated;
+}
+
+#star span {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* The player's bar, along the bottom; the note stands above it. */
 body.replay #note {
   bottom: 54px;
