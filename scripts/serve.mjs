@@ -20,10 +20,11 @@
 // depots apart with commas. A name that is no depot of the yard is no
 // error: the yard may add it later. With no --depot, every depot shows.
 //
-// Beside the built page (dist/) it answers four routes: three from the yard's
-// web view (scripts/yard.mjs), cut down by src/project.ts, one (status) from
-// the last snapshot it took, and takes one report from the page. It starts no
-// process of yardr's: it is one more reader of the view's JSON and stream.
+// Beside the built page (dist/) it answers five routes: three from the yard's
+// web view (scripts/yard.mjs), cut down by src/project.ts, two (status, badge)
+// from the last snapshot it took, and takes one report from the page. It
+// starts no process of yardr's: it is one more reader of the view's JSON and
+// stream.
 //
 //   GET /api/snapshot           the yard now, its slots, the window of its
 //                               log and the providers' quota: {yard, layout,
@@ -42,6 +43,18 @@
 //                               Readable from https://yardr.dev alone, and
 //                               cached for thirty seconds; the counts only,
 //                               no titles, ids or names
+//   GET /api/badge              the same counts as a shields.io endpoint
+//                               badge for yardr's README: {schemaVersion: 1,
+//                               label: "yard", message, color}, "<working>
+//                               working · <waiting> waiting" in brightgreen
+//                               while the snapshot is fresher than ten
+//                               minutes, "offline" in grey when it is older
+//                               or none has been taken yet, never an error,
+//                               so the badge never breaks. A snapshot older
+//                               than a minute starts one refresh in the
+//                               background, as /api/status does; cached for
+//                               a minute, and readable from https://yardr.dev
+//                               alone, as /api/status is
 //   GET /api/feed?after=<seq>   server-sent events: every event of the yard
 //                               after seq, each one message with its seq as
 //                               the id, for as long as the page listens; and
@@ -116,6 +129,11 @@ export const QUOTA_WAIT = 3000;
 // The milliseconds a status answer stays fresh: older than this, a request
 // to /api/status starts one snapshot refresh in the background.
 export const STATUS_EVERY = 60_000;
+
+// The milliseconds a badge answer stays live: older than this, /api/badge
+// answers "offline" in grey, as yardr.dev's header shows nothing of a
+// snapshot older than ten minutes.
+export const BADGE_EVERY = 600_000;
 
 // A report of the page's: the bytes its body may have, and the milliseconds
 // a connection waits before its next one is taken.
@@ -286,10 +304,11 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   // before opening its stream if one has not taught it yet.
   let known = served.size === 0 ? { beads: new Map(), depots: [] } : undefined;
   let learning;
-  // What the last snapshot taught /api/status: this yard's working and
-  // waiting counts and when they were taken. Nothing until the first
-  // snapshot has been taken. refreshing is the snapshot refresh a status
-  // request started, while it is on its way: at most one at a time.
+  // What the last snapshot taught /api/status and /api/badge: this yard's
+  // working and waiting counts and when they were taken. Nothing until the
+  // first snapshot has been taken. refreshing is the snapshot refresh a
+  // status or badge request started, while it is on its way: at most one
+  // at a time.
   let status;
   let refreshing;
 
@@ -365,8 +384,9 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   }
 
   // The yard now, its slots, the window of its log and the quota: what
-  // /api/snapshot answers, and what teaches /api/status. Both routes take
-  // it the same way; a status refresh keeps the teaching for later.
+  // /api/snapshot answers, and what teaches /api/status and /api/badge.
+  // All three routes take it the same way; a refresh keeps the teaching
+  // for later.
   async function takeSnapshot() {
     let late;
     // A provider that hangs does not hold the page: it has the last answer.
@@ -378,8 +398,9 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     // event.
     const seqs = log.events.map((e) => e && e.seq).filter(Number.isInteger);
     log = { ...log, seq: seqs.length > 0 ? Math.max(...seqs) : undefined };
-    // For /api/status: every depot of the yard, served or not, so yardr.dev's
-    // header shows how busy the yard is. At work, and waiting on a person in
+    // For /api/status and /api/badge: every depot of the yard, served or
+    // not, so yardr.dev's header and the README's badge show how busy the
+    // yard is. At work, and waiting on a person in
     // decide. A bead held by a manual group (backlog, siding) holds a
     // session, so its working is true, but no agent is at work on it: left
     // out of the count. The counts alone leave: no names, titles or ids.
@@ -430,6 +451,19 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     }
   }
 
+  // A snapshot with no usable time, one dated in the future, or one older
+  // than a minute is refreshed in the background, at most one at a time:
+  // /api/status and /api/badge both ask this, so either keeps the numbers
+  // live, and answers with what is held, without waiting.
+  function refreshIfOld() {
+    const age = status === undefined ? Number.NaN : clock() - Date.parse(status.taken_at);
+    if ((!Number.isFinite(age) || age < 0 || age > STATUS_EVERY) && refreshing === undefined) {
+      refreshing = takeSnapshot()
+        .catch((err) => failed("snapshot", err))
+        .finally(() => { refreshing = undefined; });
+    }
+  }
+
   // This yard's working and waiting counts for yardr.dev's pages, from the
   // last snapshot taken. When none has been taken yet, or it is older than
   // a minute, the request starts one snapshot refresh in the background,
@@ -437,14 +471,7 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
   // Until the first snapshot there is nothing to say. The counts alone
   // leave, read from yardr.dev's pages and cached for thirty seconds.
   function answerStatus(res) {
-    const taken = status === undefined ? Number.NaN : Date.parse(status.taken_at);
-    if (status === undefined || Number.isNaN(taken) || clock() - taken > STATUS_EVERY) {
-      if (refreshing === undefined) {
-        refreshing = takeSnapshot()
-          .catch((err) => failed("snapshot", err))
-          .finally(() => { refreshing = undefined; });
-      }
-    }
+    refreshIfOld();
     if (status === undefined) {
       res.writeHead(503, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "https://yardr.dev" });
       res.end(JSON.stringify({ error: "no snapshot yet" }));
@@ -452,6 +479,24 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     }
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=30", "access-control-allow-origin": "https://yardr.dev" });
     res.end(JSON.stringify(status));
+  }
+
+  // The same counts as a shields.io endpoint badge for yardr's README, from
+  // the last snapshot taken. While it is fresher than ten minutes the badge
+  // reads "<working> working · <waiting> waiting" in brightgreen; older
+  // than that, or with none taken yet, it reads "offline" in grey, never
+  // an error, so the badge never breaks. A snapshot older than a minute
+  // starts one refresh in the background, as /api/status does. The counts
+  // alone leave, cached for a minute.
+  function answerBadge(res) {
+    refreshIfOld();
+    const age = status === undefined ? Number.NaN : clock() - Date.parse(status.taken_at);
+    const live = Number.isFinite(age) && age >= 0 && age <= BADGE_EVERY;
+    const badge = live
+      ? { schemaVersion: 1, label: "yard", message: `${status.working} working · ${status.waiting} waiting`, color: "brightgreen" }
+      : { schemaVersion: 1, label: "yard", message: "offline", color: "lightgrey" };
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=60", "access-control-allow-origin": "https://yardr.dev" });
+    res.end(JSON.stringify(badge));
   }
 
   async function answerBead(res, id) {
@@ -664,6 +709,7 @@ export function routes({ yard, root, retry = RETRY, memory = {}, remember, quota
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "GET only" });
     if (url.pathname === "/api/snapshot") return void answerSnapshot(res);
     if (url.pathname === "/api/status") return answerStatus(res);
+    if (url.pathname === "/api/badge") return answerBadge(res);
     if (url.pathname === "/api/feed") return answerFeed(req, res, url);
     if (url.pathname.startsWith("/api/bead/")) return void answerBead(res, url.pathname.slice("/api/bead/".length));
     if (url.pathname.startsWith("/api/")) return json(res, 404, { error: "not found" });

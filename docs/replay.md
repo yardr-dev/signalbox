@@ -232,7 +232,7 @@ The silos' levels the script asks of `aiquokka --json` (`AIQUOKKA=/path/to/aiquo
 binary), which is a call over the network for every provider: once a minute
 at most, however many pages are open, and not at all while none is. Without
 `aiquokka` the silos say "unknown" and the rest of the page is as ever. It
-is five routes beside the files of `dist/`:
+is six routes beside the files of `dist/`:
 
 - `GET /api/snapshot`: `yard.json`, `layout.json`, `events.json` and
   `quota.json` in one answer, taken now; `quota` is the last answer of the
@@ -245,6 +245,13 @@ is five routes beside the files of `dist/`:
   snapshot taken, so a burst of visitors starts no snapshot work; 503 when
   no snapshot has been taken yet. Readable from `https://yardr.dev` alone,
   and cached for thirty seconds. The counts only: no titles, ids or names.
+- `GET /api/badge`: the same counts as a shields.io endpoint badge for
+  yardr's README, `{schemaVersion: 1, label: "yard", message, color}`:
+  `"<working> working · <waiting> waiting"` in brightgreen while the
+  snapshot is fresher than ten minutes, `"offline"` in grey when it is
+  older or none has been taken yet, never an error, so the badge never
+  breaks. Cached for a minute, and readable from `https://yardr.dev`
+  alone, as `/api/status` is.
 - `GET /api/feed?after=<seq>`: server-sent events, one message for each event
   of the yard after `seq`, with its number as the id. A page that lost the
   line says where it was (`Last-Event-ID`) and misses nothing, also when the
