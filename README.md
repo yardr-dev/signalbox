@@ -81,7 +81,6 @@ page, [docs/code.md](docs/code.md) each of these files at length.
 - `src/main.ts`: the page: camera, pan and zoom, labels, the card, the bar, the board.
 - `test/`: the tests, one file for each of these it tests.
 
-
 ## Licence
 
 Source-available under the Functional Source License, FSL-1.1-ALv2
