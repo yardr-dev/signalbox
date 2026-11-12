@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
-import { BADGE_EVERY, FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, RETRY_MOST, STATUS_EVERY, backoff, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
+import { BADGE_EVERY, BADGE_WAIT, FAULT_BYTES, FAULT_EVERY, QUOTA_EVERY, RETRY_MOST, STATUS_EVERY, backoff, fault, layoutFile, recall, remember, routes } from "../scripts/serve.mjs";
 import { bead, follow, head, quota, snapshot, yardr } from "../scripts/yard.mjs";
 import { layout } from "../src/layout.ts";
 
@@ -1155,30 +1155,32 @@ describe("the badge", () => {
     expect(await (await fetch(`${s.url}/api/badge`)).json()).toEqual({ schemaVersion: 1, label: "yard", message: "0 working · 1 waiting", color: "brightgreen" });
   });
 
-  test("no snapshot yet is offline, never an error, and starts one refresh", async () => {
+  test("no snapshot yet shares one refresh and answers both visitors", async () => {
     const y = yard([]);
     let takes = 0;
+    let release;
+    const gate = new Promise((go) => (release = go));
     const whole = y.snapshot;
-    y.snapshot = async (...args) => { takes++; return whole(...args); };
+    y.snapshot = async (...args) => { takes++; await gate; return whole(...args); };
     const s = await start(y);
-    const response = await fetch(`${s.url}/api/badge`);
-    expect(response.status).toBe(200);
-    expect(response.headers.get("access-control-allow-origin")).toBe("https://yardr.dev");
-    expect(response.headers.get("cache-control")).toBe("public, max-age=60");
-    expect(await response.json()).toEqual({ schemaVersion: 1, label: "yard", message: "offline", color: "lightgrey" });
-    expect(takes).toBe(1);
-    // The refresh lands: the badge reads the counts.
-    let body;
-    for (let n = 0; n < 200; n++) {
-      body = await (await fetch(`${s.url}/api/badge`)).json();
-      if (body.message !== "offline") break;
-      await new Promise((go) => setTimeout(go, 5));
+    try {
+      const waiting = [fetch(`${s.url}/api/badge`), fetch(`${s.url}/api/badge`)];
+      // Both visitors are waiting on the same initial refresh.
+      await until(() => takes === 1);
+      release();
+      for (const response of await Promise.all(waiting)) {
+        expect(response.status).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBe("https://yardr.dev");
+        expect(response.headers.get("cache-control")).toBe("public, max-age=60");
+        expect(await response.json()).toEqual({ schemaVersion: 1, label: "yard", message: "0 working · 0 waiting", color: "brightgreen" });
+      }
+    } finally {
+      release();
     }
-    expect(body.message).toBe("0 working · 0 waiting");
     expect(takes).toBe(1);
   });
 
-  test("stale and future timestamps are offline, and start one refresh", async () => {
+  test("stale and future timestamps wait for the refresh and answer the counts", async () => {
     expect(BADGE_EVERY).toBe(600_000);
     const y = yard([]);
     y.groups = groups;
@@ -1198,19 +1200,14 @@ describe("the badge", () => {
     // The refresh takes fresh snapshots now, with new counts to show it landed.
     y.snapshot = async (...args) => { takes++; return whole(...args); };
     y.open = y.open.slice(2);
-    const first = await (await fetch(`${s.url}/api/badge`)).json();
-    expect(first).toEqual({ schemaVersion: 1, label: "yard", message: "offline", color: "lightgrey" });
-    expect(takes).toBe(2);
-    let body = first;
-    for (let n = 0; n < 200 && body.message === "offline"; n++) {
-      await new Promise((go) => setTimeout(go, 5));
-      body = await (await fetch(`${s.url}/api/badge`)).json();
-    }
-    expect(body).toEqual({ schemaVersion: 1, label: "yard", message: "0 working · 1 waiting", color: "brightgreen" });
+    const response = await fetch(`${s.url}/api/badge`);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(await response.json()).toEqual({ schemaVersion: 1, label: "yard", message: "0 working · 1 waiting", color: "brightgreen" });
     expect(takes).toBe(2);
 
     // The header hides a future timestamp too. Treat it as unknown and
-    // refresh rather than displaying counts the header would hide.
+    // wait for the refresh rather than displaying counts the header would
+    // hide.
     const futureY = yard([]);
     const futureWhole = futureY.snapshot;
     const now = 1_000_000;
@@ -1231,15 +1228,51 @@ describe("the badge", () => {
       out.yard = { ...out.yard, taken_at: new Date(now).toISOString() };
       return out;
     };
-    let futureBody = await (await fetch(`${futureServer.url}/api/badge`)).json();
-    expect(futureBody).toEqual({ schemaVersion: 1, label: "yard", message: "offline", color: "lightgrey" });
+    const futureBody = await (await fetch(`${futureServer.url}/api/badge`)).json();
+    expect(futureBody).toEqual({ schemaVersion: 1, label: "yard", message: "0 working · 0 waiting", color: "brightgreen" });
     expect(futureTakes).toBe(2);
-    for (let n = 0; n < 200 && futureBody.message === "offline"; n++) {
-      await new Promise((go) => setTimeout(go, 5));
-      futureBody = await (await fetch(`${futureServer.url}/api/badge`)).json();
+  });
+
+  test("a refresh that fails is offline with max-age=10, never an error", async () => {
+    const y = yard([]);
+    y.down = true;
+    let takes = 0;
+    const whole = y.snapshot;
+    y.snapshot = async (...args) => { takes++; return whole(...args); };
+    const s = await start(y);
+    let response;
+    const said = await terminal(async () => (response = await fetch(`${s.url}/api/badge`)));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://yardr.dev");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=10");
+    expect(await response.json()).toEqual({ schemaVersion: 1, label: "yard", message: "offline", color: "lightgrey" });
+    expect(takes).toBe(1);
+    // The terminal has which route it was, and why.
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/^signalbox: snapshot: http:\/\/yard\/\S+: connect ECONNREFUSED 127\.0\.0\.1:8791$/);
+  });
+
+  test("a refresh held past the bound is offline with max-age=10, and the next badge reads the counts", async () => {
+    expect(BADGE_WAIT).toBe(3000);
+    const y = yard([]);
+    let takes = 0;
+    let release;
+    const gate = new Promise((go) => (release = go));
+    const whole = y.snapshot;
+    const s = await start(y);
+    try {
+      y.snapshot = async (...args) => { takes++; await gate; return whole(...args); };
+      const response = await fetch(`${s.url}/api/badge`);
+      expect(response.headers.get("cache-control")).toBe("public, max-age=10");
+      expect(await response.json()).toEqual({ schemaVersion: 1, label: "yard", message: "offline", color: "lightgrey" });
+      expect(takes).toBe(1);
+    } finally {
+      release();
     }
-    expect(futureBody.message).toBe("0 working · 0 waiting");
-    expect(futureTakes).toBe(2);
+    // The held refresh lands: the next badge reads the counts, from the
+    // same refresh.
+    expect(await (await fetch(`${s.url}/api/badge`)).json()).toEqual({ schemaVersion: 1, label: "yard", message: "0 working · 0 waiting", color: "brightgreen" });
+    expect(takes).toBe(1);
   });
 
   test("a burst of badge and status visitors starts one refresh", async () => {
