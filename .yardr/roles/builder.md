@@ -80,6 +80,11 @@ closing, or holding).
    The reviewer goes by that line instead of running the tests again, so it
    must be true of the commit you hand on: commit after it, and you run them
    again.
+   Between the test line and the Friction line, state the change's size:
+   `lines: +A -R product TS, +A -R tests, +A -R docs, +A -R other`,
+   counted from the numstat of the branch against the base. Product TS is
+   `*.ts` and `*.mjs` outside `test/`; tests are `test/`; docs are `*.md`;
+   everything else is other, in one bucket.
    After the test line, one last line: `Friction: <what>`, the one thing
    that cost you most on this bead and where (a gap in the bead, a slow or
    flaky test, a tool that misbehaved), or `Friction: none`. One thing,
