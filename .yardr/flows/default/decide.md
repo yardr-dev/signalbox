@@ -15,3 +15,10 @@ the person answering moves it (`yardr review`, or
 A decision that is not about one piece of work can be a bead created straight
 into `decide`, closed with the answer as its reason
 (`yardr bead close <id> --reason "..."`).
+
+## Ask
+kind: moves
+question: Where should this bead go next?
+context:
+- The bead waits for a person; what it needs is in its notes.
+- Pick where it goes. Your words with the pick stay on the bead for whoever works it next.
